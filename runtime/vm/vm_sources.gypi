@@ -336,6 +336,7 @@
     'precompiler.h',
     'dil.h',
     'dil.cc',
+    'dil_reader.cc',
     'proccpuinfo.cc',
     'proccpuinfo.h',
     'profiler_service.cc',

@@ -155,6 +155,7 @@ void SuperMethodInvocation::AcceptExpressionVisitor(ExpressionVisitor* visitor) 
   visitor->VisitSuperMethodInvocation(this);
 }
 
+StaticInvocation::~StaticInvocation() {}
 void StaticInvocation::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
   visitor->VisitStaticInvocation(this);
 }

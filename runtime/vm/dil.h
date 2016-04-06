@@ -93,7 +93,7 @@ class List {
  private:
   DISALLOW_COPY_AND_ASSIGN(List);
 
-  Child<T>* array_;
+  T** array_;
   int length_;
 };
 
@@ -109,6 +109,9 @@ class Tuple {
   }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Tuple);
+  Tuple() {}
+
   Child<A> first_;
   Child<B> second_;
 };
@@ -122,10 +125,12 @@ class String {
     memcpy(buffer_, utf8, length);
   }
   ~String() {
-    delete buffer_;
+    delete[] buffer_;
   }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(String);
+
   uint8_t* buffer_;
   int size_;
 };
@@ -170,6 +175,7 @@ class Node {
 // TODO(kustermann): Maybe we need a [parent] pointer here.
 class TreeNode : public Node {
  public:
+  TreeNode() {}
   virtual ~TreeNode();
 
   virtual void AcceptVisitor(Visitor* visitor);
@@ -180,7 +186,6 @@ class Library : public TreeNode {
  public:
   Library* ReadFrom(Reader* reader);
 
-  Library() : name_(NULL) {}
   virtual ~Library();
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
@@ -191,6 +196,12 @@ class Library : public TreeNode {
   List<Procedure>& procedures() { return procedures_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Library);
+  Library() : name_(NULL) {}
+
+  template<typename T>
+  friend class List;
+
   Child<String> name_;
   List<Class> classes_;
   List<Field> fields_;
@@ -201,7 +212,6 @@ class Class : public TreeNode {
  public:
   Class* ReadFrom(Reader* reader);
 
-  Class() : name_(NULL), is_abstract_(false) {}
   virtual ~Class();
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
@@ -216,7 +226,12 @@ class Class : public TreeNode {
   virtual List<Constructor>& constructors() = 0;
   virtual List<Procedure>& procedures() = 0;
 
+ protected:
+  Class() : is_abstract_(false) {}
+
  private:
+  DISALLOW_COPY_AND_ASSIGN(Class);
+
   Child<String> name_;
   bool is_abstract_;
 };
@@ -237,6 +252,12 @@ class NormalClass : public Class {
   virtual List<Procedure>& procedures() { return procedures_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(NormalClass);
+  NormalClass() {}
+
+  template<typename T>
+  friend class List;
+
   List<TypeParameter> type_parameters_;
   Child<InterfaceType> super_class_;
   List<InterfaceType> implemented_classes_;
@@ -262,6 +283,14 @@ class MixinClass : public Class {
   virtual List<Procedure>& procedures() { return procedures_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(MixinClass);
+  MixinClass() {}
+
+  template<typename T>
+  friend class List;
+
+  bool is_abstract_;
+  Child<String> name_;
   List<TypeParameter> type_parameters_;
   Child<InterfaceType> first_;
   Child<InterfaceType> second_;
@@ -291,9 +320,8 @@ class Member : public TreeNode {
 
 class Field : public Member {
  public:
-  static Field* ReadFrom(Reader* reader);
+  Field* ReadFrom(Reader* reader);
 
-  Field() {}
   virtual ~Field();
 
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
@@ -303,6 +331,12 @@ class Field : public Member {
   Expression* initializer() { return initializer_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Field);
+  Field() {}
+
+  template<typename T>
+  friend class List;
+
   word flags_;
   Child<DartType> type_;
   Child<Expression> initializer_;
@@ -310,16 +344,26 @@ class Field : public Member {
 
 class Constructor : public Member {
  public:
-  static Constructor* ReadFrom(Reader* reader);
+  Constructor* ReadFrom(Reader* reader);
 
   virtual ~Constructor();
 
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
 
+  Name* name() { return name_; }
   FunctionNode* function() { return function_; }
   List<Initializer>& initializers() { return initializers_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Constructor);
+
+  template<typename T>
+  friend class List;
+
+  Constructor() {}
+
+  bool is_const_;
+  Child<Name> name_;
   Child<FunctionNode> function_;
   List<Initializer> initializers_;
 };
@@ -346,7 +390,6 @@ class Procedure : public Member {
 
   Procedure* ReadFrom(Reader* reader);
 
-  Procedure() : kind_(kIncompleteProcedure), flags_(0), function_(NULL) {}
   virtual ~Procedure();
 
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
@@ -356,6 +399,12 @@ class Procedure : public Member {
   FunctionNode* function() { return function_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Procedure);
+  Procedure() : kind_(kIncompleteProcedure), flags_(0), function_(NULL) {}
+
+  template<typename T>
+  friend class List;
+
   ProcedureKind kind_;
   word flags_;
   Child<FunctionNode> function_;
@@ -363,6 +412,8 @@ class Procedure : public Member {
 
 class Initializer : public TreeNode {
  public:
+  static Initializer* ReadFrom(Reader* reader);
+
   virtual ~Initializer();
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
@@ -371,12 +422,16 @@ class Initializer : public TreeNode {
 
 class InvalidInitializer : public Initializer {
  public:
+  static InvalidInitializer* ReadFrom(Reader* reader);
+
   virtual ~InvalidInitializer();
   virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
 };
 
 class FieldInitializer : public Initializer {
  public:
+  static FieldInitializer* ReadFromImpl(Reader* reader);
+
   virtual ~FieldInitializer();
 
   virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
@@ -385,12 +440,17 @@ class FieldInitializer : public Initializer {
   Expression* value() { return value_; }
 
  private:
-  Child<Field> field_;
+  DISALLOW_COPY_AND_ASSIGN(FieldInitializer);
+  FieldInitializer() {}
+
+  Ref<Field> field_;
   Child<Expression> value_;
 };
 
 class SuperInitializer : public Initializer {
  public:
+  static SuperInitializer* ReadFrom(Reader* reader);
+
   virtual ~SuperInitializer();
 
   virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
@@ -399,12 +459,17 @@ class SuperInitializer : public Initializer {
   Arguments* arguments() { return arguments_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(SuperInitializer);
+  SuperInitializer() {}
+
   Ref<Constructor> target_;
   Child<Arguments> arguments_;
 };
 
 class RedirectingInitializer : public Initializer {
  public:
+  static RedirectingInitializer* ReadFrom(Reader* reader);
+
   virtual ~RedirectingInitializer();
 
   virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
@@ -413,6 +478,9 @@ class RedirectingInitializer : public Initializer {
   Arguments* arguments() { return arguments_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(RedirectingInitializer);
+  RedirectingInitializer() {}
+
   Ref<Constructor> target_;
   Child<Arguments> arguments_;
 };
@@ -433,7 +501,8 @@ class FunctionNode : public TreeNode {
   Statement* body() { return body_; }
 
  private:
-  FunctionNode() : required_parameter_count_(-1), return_type_(NULL), body_(NULL) {}
+  DISALLOW_COPY_AND_ASSIGN(FunctionNode);
+  FunctionNode() {}
 
   List<TypeParameter> type_parameters_;
   int required_parameter_count_;
@@ -473,6 +542,9 @@ class VariableGet : public Expression {
   VariableDeclaration* variable() { return variable_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(VariableGet);
+  VariableGet() {}
+
   Ref<VariableDeclaration> variable_;
 };
 
@@ -488,6 +560,9 @@ class VariableSet : public Expression {
   Expression* expression() { return expression_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(VariableSet);
+  VariableSet() {}
+
   Ref<VariableDeclaration> variable_;
   Child<Expression> expression_;
 };
@@ -504,6 +579,9 @@ class PropertyGet : public Expression {
   Name* name() { return name_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(PropertyGet);
+  PropertyGet() {}
+
   Child<Expression> receiver_;
   Child<Name> name_;
 };
@@ -521,6 +599,9 @@ class PropertySet : public Expression {
   Expression* value() { return value_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(PropertySet);
+  PropertySet() {}
+
   Child<Expression> receiver_;
   Child<Name> name_;
   Child<Expression> value_;
@@ -537,6 +618,9 @@ class SuperPropertyGet : public Expression {
   Member* target() { return target_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(SuperPropertyGet);
+  SuperPropertyGet() {}
+
   Ref<Member> target_;
 };
 
@@ -552,6 +636,9 @@ class SuperPropertySet : public Expression {
   Expression* expression() { return expression_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(SuperPropertySet);
+  SuperPropertySet() {}
+
   Ref<Member> target_;
   Child<Expression> expression_;
 };
@@ -567,6 +654,9 @@ class StaticGet : public Expression {
   Member* target() { return target_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(StaticGet);
+  StaticGet() {}
+
   Ref<Member> target_;
 };
 
@@ -582,6 +672,9 @@ class StaticSet : public Expression {
   Expression* expression() { return expression_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(StaticSet);
+  StaticSet() {}
+
   Ref<Member> target_;
   Child<Expression> expression_;
 };
@@ -599,6 +692,9 @@ class Arguments : public TreeNode {
   List<NamedExpression>& named() { return named_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Arguments);
+  Arguments() {}
+
   List<DartType> types_;
   List<Expression> positional_;
   List<NamedExpression> named_;
@@ -617,6 +713,9 @@ class NamedExpression : public TreeNode {
   Expression* expression() { return expression_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(NamedExpression);
+  NamedExpression() {}
+
   Child<String> name_;
   Child<Expression> expression_;
 };
@@ -634,6 +733,9 @@ class MethodInvocation : public Expression {
   Arguments* arguments() { return arguments_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(MethodInvocation);
+  MethodInvocation() {}
+
   Child<Expression> receiver_;
   Child<Name> name_;
   Child<Arguments> arguments_;
@@ -651,6 +753,9 @@ class SuperMethodInvocation : public Expression {
   Arguments* arguments() { return arguments_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(SuperMethodInvocation);
+  SuperMethodInvocation() {}
+
   Ref<Procedure> target_;
   Child<Arguments> arguments_;
 };
@@ -661,10 +766,7 @@ class StaticInvocation : public Expression {
 
   explicit StaticInvocation(Procedure* procedure, Arguments* args)
       : procedure_(procedure), arguments_(args) {}
-  ~StaticInvocation() {
-    // NOTE: [procedure_] is a weak handle.
-    delete arguments_;
-  }
+  ~StaticInvocation();
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
 
@@ -672,6 +774,9 @@ class StaticInvocation : public Expression {
   Arguments* arguments() { return arguments_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(StaticInvocation);
+  StaticInvocation() {}
+
   Ref<Procedure> procedure_;
   Child<Arguments> arguments_;
 };
@@ -688,7 +793,10 @@ class FunctionInvocation : public Expression {
   Arguments* arguments() { return arguments_; }
 
  private:
-  Ref<Expression> function_;
+  DISALLOW_COPY_AND_ASSIGN(FunctionInvocation);
+  FunctionInvocation() {}
+
+  Child<Expression> function_;
   Child<Arguments> arguments_;
 };
 
@@ -700,14 +808,17 @@ class ConstructorInvocation : public Expression {
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
 
+  bool is_const() { return is_const_; }
   Constructor* target() { return target_; }
   Arguments* arguments() { return arguments_; }
-  bool is_const() { return is_const_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ConstructorInvocation);
+  ConstructorInvocation() {}
+
+  bool is_const_;
   Ref<Constructor> target_;
   Child<Arguments> arguments_;
-  bool is_const_;
 };
 
 class Not : public Expression {
@@ -721,6 +832,9 @@ class Not : public Expression {
   Expression* expression() { return expression_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Not);
+  Not() {}
+
   Child<Expression> expression_;
 };
 
@@ -733,12 +847,15 @@ class LogicalExpression : public Expression {
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
 
   Expression* left() { return left_; }
-  String* op() { return operator_; }
+  uint8_t op() { return operator_; }
   Expression* right() { return right_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(LogicalExpression);
+  LogicalExpression() {}
+
   Child<Expression> left_;
-  Child<String> operator_;
+  uint8_t operator_;
   Child<Expression> right_;
 };
 
@@ -755,6 +872,9 @@ class ConditionalExpression : public Expression {
   Expression* otherwise() { return otherwise_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ConditionalExpression);
+  ConditionalExpression() {}
+
   Child<Expression> condition_;
   Child<Expression> then_;
   Child<Expression> otherwise_;
@@ -771,6 +891,9 @@ class StringConcatenation : public Expression {
   List<Expression>& expressions() { return expressions_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(StringConcatenation);
+  StringConcatenation() {}
+
   List<Expression> expressions_;
 };
 
@@ -786,6 +909,9 @@ class IsExpression : public Expression {
   DartType* type() { return type_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(IsExpression);
+  IsExpression() {}
+
   Child<Expression> operand_;
   Child<DartType> type_;
 };
@@ -802,6 +928,9 @@ class AsExpression : public Expression {
   DartType* type() { return type_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(AsExpression);
+  AsExpression() {}
+
   Child<Expression> operand_;
   Child<DartType> type_;
 };
@@ -823,6 +952,9 @@ class StringLiteral : public BasicLiteral {
   String* value() { return value_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(StringLiteral);
+  StringLiteral() {}
+
   Child<String> value_;
 };
 
@@ -837,7 +969,10 @@ class IntLiteral : public BasicLiteral {
   int32_t value() { return value_; }
 
  private:
-  int32_t value_; // FIXME: What about arbitrary size integers?
+  DISALLOW_COPY_AND_ASSIGN(IntLiteral);
+  IntLiteral() {}
+
+  int32_t value_;
 };
 
 class DoubleLiteral : public BasicLiteral {
@@ -848,10 +983,13 @@ class DoubleLiteral : public BasicLiteral {
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
 
-  double value() { return value_; }
+  double value() { return 42.0; }
 
  private:
-  double value_;
+  DISALLOW_COPY_AND_ASSIGN(DoubleLiteral);
+  DoubleLiteral() {}
+
+  Child<String> value_;
 };
 
 class BoolLiteral : public BasicLiteral {
@@ -865,6 +1003,9 @@ class BoolLiteral : public BasicLiteral {
   bool value() { return value_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(BoolLiteral);
+  BoolLiteral() {}
+
   bool value_;
 };
 
@@ -888,6 +1029,9 @@ class SymbolLiteral : public Expression {
   String* value() { return value_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(SymbolLiteral);
+  SymbolLiteral() {}
+
   Child<String> value_;
 };
 
@@ -901,6 +1045,9 @@ class TypeLiteral : public Expression {
   DartType* type() { return type_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(TypeLiteral);
+  TypeLiteral() {}
+
   Child<DartType> type_;
 };
 
@@ -933,6 +1080,9 @@ class Throw : public Expression {
   Expression* expression() { return expression_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Throw);
+  Throw() {}
+
   Child<Expression> expression_;
 };
 
@@ -949,6 +1099,9 @@ class ListLiteral : public Expression {
   List<Expression>& expressions() { return expressions_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ListLiteral);
+  ListLiteral() {}
+
   bool is_const_;
   Child<DartType> type_;
   List<Expression> expressions_;
@@ -968,6 +1121,9 @@ class MapLiteral : public Expression {
   List<MapEntry>& entries() { return entries_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(MapLiteral);
+  MapLiteral() {}
+
   bool is_const_;
   Child<DartType> key_type_;
   Child<DartType> value_type_;
@@ -976,6 +1132,8 @@ class MapLiteral : public Expression {
 
 class MapEntry : public TreeNode {
  public:
+  static MapEntry* ReadFrom(Reader* reader);
+
   virtual ~MapEntry();
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
@@ -984,6 +1142,12 @@ class MapEntry : public TreeNode {
   Expression* value() { return value_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(MapEntry);
+  MapEntry() {}
+
+  template<typename T>
+  friend class List;
+
   Child<Expression> key_;
   Child<Expression> value_;
 };
@@ -999,6 +1163,9 @@ class AwaitExpression : public Expression {
   Expression* operand() { return operand_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(AwaitExpression);
+  AwaitExpression() {}
+
   Child<Expression> operand_;
 };
 
@@ -1013,6 +1180,9 @@ class FunctionExpression : public Expression {
   FunctionNode* function() { return function_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(FunctionExpression);
+  FunctionExpression() {}
+
   Child<FunctionNode> function_;
 };
 
@@ -1028,6 +1198,9 @@ class Let : public Expression {
   Expression* body() { return body_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Let);
+  Let() {}
+
   Child<VariableDeclaration> variable_;
   Child<Expression> body_;
 };
@@ -1063,6 +1236,9 @@ class ExpressionStatement : public Statement {
   Expression* expression() { return expression_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ExpressionStatement);
+  ExpressionStatement() {}
+
   Child<Expression> expression_;
 };
 
@@ -1077,6 +1253,9 @@ class Block : public Statement {
   List<Statement>& statements() { return statements_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Block);
+  Block() {}
+
   List<Statement> statements_;
 };
 
@@ -1101,6 +1280,9 @@ class AssertStatement : public Statement {
   Expression* message() { return message_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(AssertStatement);
+  AssertStatement() {}
+
   Child<Expression> condition_;
   Child<Expression> message_;
 };
@@ -1116,6 +1298,9 @@ class LabeledStatement : public Statement {
   Statement* body() { return body_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(LabeledStatement);
+  LabeledStatement() {}
+
   Child<Statement> body_;
 };
 
@@ -1130,6 +1315,9 @@ class BreakStatement : public Statement {
   LabeledStatement* target() { return target_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(BreakStatement);
+  BreakStatement() {}
+
   Ref<LabeledStatement> target_;
 };
 
@@ -1145,6 +1333,9 @@ class WhileStatement : public Statement {
   Statement* body() { return body_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(WhileStatement);
+  WhileStatement() {}
+
   Child<Expression> condition_;
   Child<Statement> body_;
 };
@@ -1161,6 +1352,9 @@ class DoStatement : public Statement {
   Statement* body() { return body_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(DoStatement);
+  DoStatement() {}
+
   Child<Expression> condition_;
   Child<Statement> body_;
 };
@@ -1179,6 +1373,9 @@ class ForStatement : public Statement {
   Statement* body() { return body_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ForStatement);
+  ForStatement() {}
+
   List<VariableDeclaration> variables_;
   Child<Expression> condition_;
   List<Expression> updates_;
@@ -1199,6 +1396,9 @@ class ForInStatement : public Statement {
   bool is_async() { return is_async_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ForInStatement);
+  ForInStatement() {}
+
   Child<VariableDeclaration> variable_;
   Child<Expression> iterable_;
   Child<Statement> body_;
@@ -1217,25 +1417,35 @@ class SwitchStatement : public Statement {
   List<SwitchCase>& cases() { return cases_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(SwitchStatement);
+  SwitchStatement() {}
+
   Child<Expression> condition_;
   List<SwitchCase> cases_;
 };
 
-// TODO: SwitchCase : TreeNode
 class SwitchCase : public TreeNode {
  public:
+  SwitchCase* ReadFrom(Reader* reader);
+
   virtual ~SwitchCase();
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
 
   List<Expression>& expressions() { return expressions_; }
-  Statement* statement() { return statement_; }
   bool is_default() { return is_default_; }
+  Statement* body() { return body_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(SwitchCase);
+  SwitchCase() {}
+
+  template<typename T>
+  friend class List;
+
   List<Expression> expressions_;
-  Child<Statement> statement_;
   bool is_default_;
+  Child<Statement> body_;
 };
 
 class ContinueSwitchStatement : public Statement {
@@ -1249,6 +1459,9 @@ class ContinueSwitchStatement : public Statement {
   SwitchCase* target() { return target_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ContinueSwitchStatement);
+  ContinueSwitchStatement() {}
+
   Ref<SwitchCase> target_;
 };
 
@@ -1265,6 +1478,9 @@ class IfStatement : public Statement {
   Statement* otherwise() { return otherwise_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(IfStatement);
+  IfStatement() {}
+
   Child<Expression> condition_;
   Child<Statement> then_;
   Child<Statement> otherwise_;
@@ -1281,6 +1497,9 @@ class ReturnStatement : public Statement {
   Expression* expression() { return expression_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(ReturnStatement);
+  ReturnStatement() {}
+
   Child<Expression> expression_;
 };
 
@@ -1296,13 +1515,17 @@ class TryCatch : public Statement {
   List<Catch>& catches() { return catches_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(TryCatch);
+  TryCatch() {}
+
   Child<Statement> body_;
   List<Catch> catches_;
 };
 
-// TODO: Catch : TreeNode
 class Catch : public TreeNode {
  public:
+  static Catch* ReadFrom(Reader* reader);
+
   virtual ~Catch();
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
@@ -1313,6 +1536,12 @@ class Catch : public TreeNode {
   Statement* body() { return body_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Catch);
+  Catch() {}
+
+  template<typename T>
+  friend class List;
+
   Child<DartType> guard_;
   Child<VariableDeclaration> exception_;
   Child<VariableDeclaration> stack_trace_;
@@ -1331,6 +1560,9 @@ class TryFinally : public Statement {
   Statement* finalizer() { return finalizer_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(TryFinally);
+  TryFinally() {}
+
   Child<Statement> body_;
   Child<Statement> finalizer_;
 };
@@ -1343,30 +1575,40 @@ class YieldStatement : public Statement {
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
 
-  Expression* expression() { return expression_; }
   bool is_yield_start() { return is_yield_star_; }
+  Expression* expression() { return expression_; }
 
  private:
-  Child<Expression> expression_;
+  DISALLOW_COPY_AND_ASSIGN(YieldStatement);
+  YieldStatement() {}
+
   bool is_yield_star_;
+  Child<Expression> expression_;
 };
 
 class VariableDeclaration : public Statement {
  public:
   static VariableDeclaration* ReadFrom(Reader* reader);
+  static VariableDeclaration* ReadFromImpl(Reader* reader);
 
   virtual ~VariableDeclaration();
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
 
-  String* name() { return name_; }
   word flags() { return flags_; }
+  String* name() { return name_; }
   DartType* type() { return type_; }
   Expression* initializer() { return initializer_; }
 
  private:
-  Child<String> name_;
+  DISALLOW_COPY_AND_ASSIGN(VariableDeclaration);
+  VariableDeclaration() {}
+
+  template<typename T>
+  friend class List;
+
   word flags_;
+  Child<String> name_;
   Child<DartType> type_;
   Child<Expression> initializer_;
 };
@@ -1383,6 +1625,9 @@ class FunctionDeclaration : public Statement {
   FunctionNode* function() { return function_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(FunctionDeclaration);
+  FunctionDeclaration() {}
+
   Child<VariableDeclaration> variable_;
   Child<FunctionNode> function_;
 };
@@ -1458,6 +1703,9 @@ class InterfaceType : public DartType {
   List<DartType>& type_arguments() { return type_arguments_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(InterfaceType);
+  InterfaceType() {}
+
   Ref<Class> klass_;
   List<DartType> type_arguments_;
 };
@@ -1477,6 +1725,9 @@ class FunctionType : public DartType {
   DartType* return_type() { return return_type_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(FunctionType);
+  FunctionType() {}
+
   List<TypeParameter> type_parameters_;
   int required_parameter_count_;
   List<DartType> positional_parameters_;
@@ -1495,7 +1746,10 @@ class TypeParameterType : public DartType {
   TypeParameter* parameter() { return parameter_; }
 
  private:
-  Child<TypeParameter> parameter_;
+  DISALLOW_COPY_AND_ASSIGN(TypeParameterType);
+  TypeParameterType() {}
+
+  Ref<TypeParameter> parameter_;
 };
 
 class TypeParameter : public TreeNode {
@@ -1510,6 +1764,12 @@ class TypeParameter : public TreeNode {
   DartType* bound() { return bound_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(TypeParameter);
+  TypeParameter() {}
+
+  template<typename T>
+  friend class List;
+
   Child<String> name_;
   Child<DartType> bound_;
 };
@@ -1526,6 +1786,9 @@ class Program : public TreeNode {
   Procedure* main_method() { return main_method_; }
 
  private:
+  DISALLOW_COPY_AND_ASSIGN(Program);
+  Program() {}
+
   List<Library> libraries_;
   Ref<Procedure> main_method_;
 };
@@ -1707,18 +1970,20 @@ List<T>::~List() {
   for (int i = 0; i < length_; i++) {
     delete array_[i];
   }
-  delete array_;
+  delete[] array_;
 }
 
 template<typename T>
 void List<T>::EnsureInitialized(int length) {
   if (length < length_) return;
 
-  Child<T>* old_array = array_;
+  T** old_array = array_;
   int old_length = length_;
 
+  // TODO: Mabe we should use double-growth instead to avoid running into the
+  // quadratic case.
   length_ = length;
-  array_ = new Child<T>[length_];
+  array_ = new T*[length_];
 
   // Move old elements at the start (if necessary).
   int offset = 0;
@@ -1732,6 +1997,8 @@ void List<T>::EnsureInitialized(int length) {
   for (; offset < length_; offset++) {
     array_[offset] = NULL;
   }
+
+  delete[] old_array;
 }
 
 template<typename T>
