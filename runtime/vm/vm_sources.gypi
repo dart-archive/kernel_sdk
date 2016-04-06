@@ -334,6 +334,8 @@
     'port_test.cc',
     'precompiler.cc',
     'precompiler.h',
+    'dil.h',
+    'dil.cc',
     'proccpuinfo.cc',
     'proccpuinfo.h',
     'profiler_service.cc',
