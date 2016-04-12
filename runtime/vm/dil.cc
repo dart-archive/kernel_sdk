@@ -207,6 +207,11 @@ void StringLiteral::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
   visitor->VisitStringLiteral(this);
 }
 
+BigintLiteral::~BigintLiteral() {}
+void BigintLiteral::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
+  visitor->VisitBigintLiteral(this);
+}
+
 IntLiteral::~IntLiteral() {}
 void IntLiteral::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
   visitor->VisitIntLiteral(this);
