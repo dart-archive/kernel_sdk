@@ -392,7 +392,7 @@ class DowncastReader {
  public:
   static S* ReadFrom(Reader* reader) {
     TRACE_OFFSET();
-    return static_cast<S*>(B::ReadFrom(reader));
+    return S::Cast(B::ReadFrom(reader));
   }
 };
 
@@ -437,16 +437,14 @@ Class* Class::ReadFrom(Reader* reader) {
 NormalClass* NormalClass::ReadFrom(Reader* reader) {
   TRACE_OFFSET();
 
-  // Read base class fields.
-  static_cast<Class*>(this)->ReadFrom(reader);
+  Class::ReadFrom(reader);
 
   TypeParameterScope scope(reader->builder());
 
   type_parameters_.ReadFromStatic<TypeParameter>(reader);
   DartType* type = reader->ReadOptional<DartType>();
 
-  // TODO: Assert for downcasts.
-  super_class_ = static_cast<InterfaceType*>(type);
+  super_class_ = InterfaceType::Cast(type);
   implemented_classes_.ReadFromStatic<DowncastReader<DartType, InterfaceType> >(reader);
   fields_.ReadFrom<Field>(reader);
   constructors_.ReadFrom<Constructor>(reader);
@@ -461,8 +459,8 @@ MixinClass* MixinClass::ReadFrom(Reader* reader) {
   is_abstract_ = reader->ReadBool();
   name_ = String::ReadFrom(reader);
   type_parameters_.ReadFromStatic<TypeParameter>(reader);
-  first_ = static_cast<InterfaceType*>(DartType::ReadFrom(reader));
-  second_ = static_cast<InterfaceType*>(DartType::ReadFrom(reader));
+  first_ = InterfaceType::Cast(DartType::ReadFrom(reader));
+  second_ = InterfaceType::Cast(DartType::ReadFrom(reader));
   implemented_classes_.ReadFromStatic<InterfaceType>(reader);
   constructors_.ReadFrom<Constructor>(reader);
   return this;
@@ -595,7 +593,7 @@ InvalidInitializer* InvalidInitializer::ReadFrom(Reader* reader) {
 FieldInitializer* FieldInitializer::ReadFromImpl(Reader* reader) {
   TRACE_OFFSET();
   FieldInitializer* initializer = new FieldInitializer();
-  initializer->field_ = static_cast<Field*>(Member::ReadFrom(reader));
+  initializer->field_ = Field::Cast(Member::ReadFrom(reader));
   initializer->value_ = Expression::ReadFrom(reader);
   return initializer;
 }
@@ -603,7 +601,7 @@ FieldInitializer* FieldInitializer::ReadFromImpl(Reader* reader) {
 SuperInitializer* SuperInitializer::ReadFrom(Reader* reader) {
   TRACE_OFFSET();
   SuperInitializer* init = new SuperInitializer();
-  init->target_ = static_cast<Constructor*>(Member::ReadFrom(reader));
+  init->target_ = Constructor::Cast(Member::ReadFrom(reader));
   init->arguments_ = Arguments::ReadFrom(reader);
   return init;
 }
@@ -611,7 +609,7 @@ SuperInitializer* SuperInitializer::ReadFrom(Reader* reader) {
 RedirectingInitializer* RedirectingInitializer::ReadFrom(Reader* reader) {
   TRACE_OFFSET();
   RedirectingInitializer* init = new RedirectingInitializer();
-  init->target_ = static_cast<Constructor*>(Member::ReadFrom(reader));
+  init->target_ = Constructor::Cast(Member::ReadFrom(reader));
   init->arguments_ = Arguments::ReadFrom(reader);
   return init;
 }
@@ -793,7 +791,7 @@ MethodInvocation* MethodInvocation::ReadFrom(Reader* reader) {
 SuperMethodInvocation* SuperMethodInvocation::ReadFrom(Reader* reader) {
   TRACE_OFFSET();
   SuperMethodInvocation* invocation = new SuperMethodInvocation();
-  invocation->target_ = static_cast<Procedure*>(Member::ReadFrom(reader));
+  invocation->target_ = Procedure::Cast(Member::ReadFrom(reader));
   invocation->arguments_ = Arguments::ReadFrom(reader);
   return invocation;
 }
@@ -804,8 +802,7 @@ StaticInvocation* StaticInvocation::ReadFrom(Reader* reader) {
   Member* member = Member::ReadFrom(reader);
   Arguments* args = Arguments::ReadFrom(reader);
 
-  // TODO(kustermann): Introduce dynamic assertions for downcasts.
-  return new StaticInvocation(static_cast<Procedure*>(member), args);
+  return new StaticInvocation(Procedure::Cast(member), args);
 }
 
 FunctionInvocation* FunctionInvocation::ReadFrom(Reader* reader) {
@@ -820,7 +817,7 @@ ConstructorInvocation* ConstructorInvocation::ReadFrom(Reader* reader) {
   TRACE_OFFSET();
   ConstructorInvocation* invocation = new ConstructorInvocation();
   invocation->is_const_ = reader->ReadBool();
-  invocation->target_ = static_cast<Constructor*>(Member::ReadFrom(reader));
+  invocation->target_ = Constructor::Cast(Member::ReadFrom(reader));
   invocation->arguments_ = Arguments::ReadFrom(reader);
   return invocation;
 }

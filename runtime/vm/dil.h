@@ -247,12 +247,12 @@ DIL_VISITORS_DO(DO)
 #undef DO
 
 
-#define DEFINE_CASTING_OPERATIONS(klass)      \
-  virtual bool Is##klass() { return true; }   \
-                                              \
-  static klass* Cast(Node* node) {            \
-    ASSERT(node->Is##klass());                \
-    return static_cast<klass*>(node);         \
+#define DEFINE_CASTING_OPERATIONS(klass)        \
+  virtual bool Is##klass() { return true; }     \
+                                                \
+  static klass* Cast(Node* node) {              \
+    ASSERT(node == NULL || node->Is##klass());  \
+    return static_cast<klass*>(node);           \
   }
 
 #define DEFINE_IS_OPERATION(klass)            \
@@ -2294,7 +2294,7 @@ IT* List<T>::GetOrCreate(int index) {
   if (member == NULL) {
     member = array_[index] = new IT();
   }
-  return static_cast<IT*>(member);
+  return IT::Cast(member);
 }
 
 }  // namespace dil
