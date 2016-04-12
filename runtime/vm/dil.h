@@ -212,10 +212,6 @@ class Tuple {
   static Tuple<A, B>* ReadFrom(Reader* reader);
 
   Tuple(A* a, B* b) : first_(a), second_(b) {}
-  ~Tuple() {
-    delete first_;
-    delete second_;
-  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Tuple);
@@ -620,6 +616,13 @@ class RedirectingInitializer : public Initializer {
 
 class FunctionNode : public TreeNode {
  public:
+  enum AsyncMarker {
+    kSync = 0,
+    kSyncStar = 1,
+    kAsync = 2,
+    kAsyncStar = 3,
+  };
+
   static FunctionNode* ReadFrom(Reader* reader);
 
   virtual ~FunctionNode();
@@ -628,6 +631,7 @@ class FunctionNode : public TreeNode {
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
 
+  AsyncMarker async_marker() { return async_marker_; }
   List<TypeParameter>& type_parameters() { return type_parameters_; }
   int required_parameter_count() { return required_parameter_count_; }
   List<VariableDeclaration>& positional_parameters() { return positional_parameters_; }
@@ -639,6 +643,7 @@ class FunctionNode : public TreeNode {
   DISALLOW_COPY_AND_ASSIGN(FunctionNode);
   FunctionNode() {}
 
+  AsyncMarker async_marker_;
   List<TypeParameter> type_parameters_;
   int required_parameter_count_;
   List<VariableDeclaration> positional_parameters_;

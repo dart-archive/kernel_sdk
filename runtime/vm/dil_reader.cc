@@ -1318,12 +1318,15 @@ Program* Program::ReadFrom(Reader* reader) {
     program->libraries().GetOrCreate<Library>(i)->ReadFrom(reader);
   }
 
+  program->main_method_ = Procedure::Cast(Member::ReadFrom(reader));
+
   return program;
 }
 
 FunctionNode* FunctionNode::ReadFrom(Reader* reader) {
   TRACE_OFFSET();
   FunctionNode* function = new FunctionNode();
+  function->async_marker_ = static_cast<FunctionNode::AsyncMarker>(reader->ReadByte());
   function->type_parameters().ReadFromStatic<TypeParameter>(reader);
   function->required_parameter_count_ = reader->ReadUInt32();
   function->positional_parameters().ReadFromStatic<VariableDeclaration>(reader);
