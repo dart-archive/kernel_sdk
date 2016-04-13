@@ -15,7 +15,7 @@
 
 #include "platform/signal_blocker.h"
 
-#if 1
+#if 0
 #define TRACE_READ_OFFSET() reader->DumpOffset(__PRETTY_FUNCTION__);
 #define TRACE_WRITE_OFFSET() writer->DumpOffset(__PRETTY_FUNCTION__);
 #else
