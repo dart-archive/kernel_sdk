@@ -8,6 +8,8 @@
 #include "vm/block_scheduler.h"
 #include "vm/branch_optimizer.h"
 #include "vm/compiler.h"
+#include "vm/dil.h"
+#include "vm/dil_to_il.h"
 #include "vm/flags.h"
 #include "vm/flow_graph.h"
 #include "vm/flow_graph_builder.h"
@@ -749,15 +751,70 @@ class CallSiteInliner : public ValueObject {
         // Build the callee graph.
         InlineExitCollector* exit_collector =
             new(Z) InlineExitCollector(caller_graph_, call);
-        FlowGraphBuilder builder(*parsed_function,
-                                 *ic_data_array,
-                                 exit_collector,
-                                 Compiler::kNoOSRDeoptId);
-        builder.SetInitialBlockId(caller_graph_->max_block_id());
         FlowGraph* callee_graph;
         {
-          CSTAT_TIMER_SCOPE(thread(), graphinliner_build_timer);
-          callee_graph = builder.BuildGraph();
+          const Function& function = parsed_function->function();
+          switch (function.kind()) {
+            case RawFunction::kClosureFunction:
+            case RawFunction::kRegularFunction:
+            case RawFunction::kGetterFunction:
+            case RawFunction::kSetterFunction:
+            case RawFunction::kConstructor: {
+              if (function.IsImplicitClosureFunction()) goto fallback;
+              if (function.IsConstructorClosureFunction()) goto fallback;
+              const Script& script =
+                Script::Handle(parsed_function->function().script());
+              const String& url = String::Handle(script.url());
+              const char* url_string = url.ToCString();
+              size_t length = strlen(url_string);
+              if (strncmp(url_string, "file://", 7) != 0) goto fallback;
+              if (strncmp(url_string + length - 5, ".dart", 5) != 0) goto fallback;
+              length -= 7;
+              char* dill_name = reinterpret_cast<char*>(malloc(length + 1));
+              strncpy(dill_name, url_string + 7, length - 5);
+              strncpy(dill_name + length - 5, ".dill", 6);
+              dil::Program* program = GetPrecompiledDil(dill_name);
+              if (program == NULL) goto fallback;
+              const Library& library = Library::Handle(script.FindLibrary());
+              const String& library_name = String::Handle(library.name());
+              dil::List<dil::Library>& libraries = program->libraries();
+              int i = 0;
+              for (; i < libraries.length(); ++i) {
+                dil::String* name = libraries[i]->name();
+                const String& name_string =
+                  String::Handle(String::FromUTF8(name->buffer(), name->size()));
+                if (library_name.Equals(name_string)) break;
+              }
+              if (i == libraries.length()) goto fallback;
+              const String& function_name = String::Handle(function.name());
+              dil::List<dil::Procedure>& procedures = libraries[i]->procedures();
+              int j = 0;
+              for (; j < procedures.length(); ++j) {
+                dil::String* name = procedures[j]->name()->string();
+                const String& name_string =
+                  String::Handle(String::FromUTF8(name->buffer(), name->size()));
+                if (function_name.Equals(name_string)) break;
+              }
+              if (j == procedures.length()) goto fallback;
+              dil::FlowGraphBuilder builder(procedures[j],
+                                            *parsed_function,
+                                            program,
+                                            caller_graph_->max_block_id() + 1);
+              return false;
+            }
+            fallback:
+            default: {
+              FlowGraphBuilder builder(*parsed_function,
+                                       *ic_data_array,
+                                       exit_collector,
+                                       Compiler::kNoOSRDeoptId);
+              builder.SetInitialBlockId(caller_graph_->max_block_id());
+              {
+                CSTAT_TIMER_SCOPE(thread(), graphinliner_build_timer);
+                callee_graph = builder.BuildGraph();
+              }
+            }
+          }
         }
 
         // The parameter stubs are a copy of the actual arguments providing
