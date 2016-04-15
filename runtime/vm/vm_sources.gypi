@@ -336,7 +336,7 @@
     'precompiler.h',
     'dil.h',
     'dil.cc',
-    'dil_reader.cc',
+    'dil_binary.cc',
     'dil_to_il.cc',
     'dil_to_il.h',
     'proccpuinfo.cc',

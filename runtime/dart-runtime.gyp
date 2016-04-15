@@ -57,6 +57,19 @@
       },
     },
     {
+      'target_name': 'dil',
+      'type': 'executable',
+      'dependencies': [
+        'libdart',
+      ],
+      'include_dirs': [
+        '.',
+      ],
+      'sources': [
+        'vm/dil_main.cc',
+      ],
+    },
+    {
       'target_name': 'libdart_noopt',
       'type': 'static_library',
       'dependencies': [

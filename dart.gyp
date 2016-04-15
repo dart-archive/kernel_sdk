@@ -38,6 +38,13 @@
       ],
     },
     {
+      'target_name': 'dil',
+      'type': 'none',
+      'dependencies': [
+        'runtime/dart-runtime.gyp:dil',
+      ],
+    },
+    {
       'target_name': 'create_sdk',
       'type': 'none',
       'dependencies': [
