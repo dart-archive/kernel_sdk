@@ -110,7 +110,7 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
       char* dill_name = reinterpret_cast<char*>(malloc(length + 1));
       strncpy(dill_name, url_string + 7, length - 5);
       strncpy(dill_name + length - 5, ".dill", 6);
-      dil::Program* program = GetPrecompiledDil(dill_name);
+      dil::Program* program = ReadPrecompiledDil(dill_name);
       if (program == NULL) goto fallback;
       const Library& library = Library::Handle(script.FindLibrary());
       const String& library_name = String::Handle(library.name());

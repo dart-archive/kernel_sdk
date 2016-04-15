@@ -249,6 +249,9 @@ class String {
     delete[] buffer_;
   }
 
+  uint8_t* buffer() { return buffer_; }
+  int size() { return size_; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(String);
 

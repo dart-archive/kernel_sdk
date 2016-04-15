@@ -78,6 +78,7 @@ class FlowGraphBuilder : private TreeVisitor {
 
   const ParsedFunction& parsed_function_;
 
+  // TODO(kmillikin): We might not need this anymore.
   Program* program_;
 
   int next_block_id_;

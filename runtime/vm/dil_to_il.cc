@@ -110,7 +110,7 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   Fragment instructions = fragment_;
   USE(instructions);
   Name* target_name = node->procedure()->name();
-  Library* library = program_->libraries()[target_name->library_index()];
+  Library* library = target_name->library();
   printf("library name = %s\n",
       dart::String::Handle(dart::String::FromUTF8(library->name()->buffer(),
           library->name()->size())).ToCString());
