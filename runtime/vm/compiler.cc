@@ -100,7 +100,7 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
       if (function.IsImplicitClosureFunction()) goto fallback;
       if (function.IsConstructorClosureFunction()) goto fallback;
       const Script& script =
-        Script::Handle(parsed_function->function().script());
+          Script::Handle(parsed_function->function().script());
       const String& url = String::Handle(script.url());
       const char* url_string = url.ToCString();
       size_t length = strlen(url_string);

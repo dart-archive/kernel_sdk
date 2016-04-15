@@ -106,33 +106,49 @@ void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
 
 
 void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
-  VisitArguments(node->arguments());
+  ZoneGrowableArray<PushArgumentInstr*>* arguments =
+      TranslateArguments(node->arguments());
   Fragment instructions = fragment_;
-  USE(instructions);
+
   Name* target_name = node->procedure()->name();
-  Library* library = target_name->library();
-  printf("library name = %s\n",
-      dart::String::Handle(dart::String::FromUTF8(library->name()->buffer(),
-          library->name()->size())).ToCString());
-  printf("target name = %s\n",
-      dart::String::Handle(dart::String::FromUTF8(target_name->string()->buffer(),
-          target_name->string()->size())).ToCString());
-  UNIMPLEMENTED();
+  const dart::String& name_string = dart::String::Handle(
+      dart::String::FromUTF8(target_name->string()->buffer(),
+                             target_name->string()->size()));
+  const Script& script =
+      Script::Handle(parsed_function_.function().script());
+  const dart::Library& library = dart::Library::Handle(script.FindLibrary());
+  const Function& target = 
+      Function::ZoneHandle(Z, library.LookupFunctionAllowPrivate(name_string));
+  ZoneGrowableArray<const ICData*> ic_data_array(Z, 0);
+  StaticCallInstr* call =
+      new(Z) StaticCallInstr(TokenPosition::kNoSource,
+                             target,
+                             Object::null_array(),
+                             arguments,
+                             ic_data_array);
+  Push(call);
+  fragment_ = instructions << call;
 }
 
 
-void FlowGraphBuilder::VisitArguments(Arguments* node) {
+ZoneGrowableArray<PushArgumentInstr*>* FlowGraphBuilder::TranslateArguments(
+    Arguments* node) {
   if (node->types().length() != 0 || node->named().length() != 0) {
     UNIMPLEMENTED();
   }
   Fragment instructions;
-  List<Expression>& arguments = node->positional();
-  for (int i = 0; i < arguments.length(); ++i) {
-    instructions = instructions + VisitExpression(arguments[i]);
+  List<Expression>& positional = node->positional();
+  ZoneGrowableArray<PushArgumentInstr*>* arguments =
+    new(Z) ZoneGrowableArray<PushArgumentInstr*>(positional.length());
+  for (int i = 0; i < positional.length(); ++i) {
+    instructions = instructions + VisitExpression(positional[i]);
     Value* argument = Pop();
-    instructions = instructions << new(Z) PushArgumentInstr(argument);
+    PushArgumentInstr* push = new(Z) PushArgumentInstr(argument);
+    arguments->Add(push);
+    instructions = instructions << push;
   }
   fragment_ = instructions;
+  return arguments;
 }
 
 

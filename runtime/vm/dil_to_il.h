@@ -54,7 +54,7 @@ class FlowGraphBuilder : private TreeVisitor {
   void VisitStringLiteral(StringLiteral* node);
   void VisitStaticInvocation(StaticInvocation* node);
 
-  void VisitArguments(Arguments* node);
+  ZoneGrowableArray<PushArgumentInstr*>* TranslateArguments(Arguments* node);
 
   void VisitBlock(Block* node);
   void VisitReturnStatement(ReturnStatement* node);
