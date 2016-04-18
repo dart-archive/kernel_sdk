@@ -507,7 +507,7 @@ class Constructor : public Member {
 
   Constructor() {}
 
-  bool is_const_;
+  uint8_t flags_;
   Child<Name> name_;
   Child<FunctionNode> function_;
   List<Initializer> initializers_;

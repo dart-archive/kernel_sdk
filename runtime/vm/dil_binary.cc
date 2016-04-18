@@ -973,7 +973,7 @@ Constructor* Constructor::ReadFrom(Reader* reader) {
   ASSERT(tag == kConstructor);
 
   VariableScope<ReaderHelper> vars(reader->helper());
-  is_const_ = (reader->ReadFlags() & 1) == 1;
+  flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
   function_ = FunctionNode::ReadFrom(reader);
   initializers_.ReadFromStatic<Initializer>(reader);
@@ -985,7 +985,7 @@ void Constructor::WriteTo(Writer* writer) {
   writer->WriteTag(kConstructor);
 
   VariableScope<WriterHelper> vars(writer->helper());
-  writer->WriteBool(is_const_);
+  writer->WriteFlags(flags_);
   name_->WriteTo(writer);
   function_->WriteTo(writer);
   initializers_.WriteTo(writer);
