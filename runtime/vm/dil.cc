@@ -160,11 +160,6 @@ void StaticInvocation::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
   visitor->VisitStaticInvocation(this);
 }
 
-FunctionInvocation::~FunctionInvocation() {}
-void FunctionInvocation::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
-  visitor->VisitFunctionInvocation(this);
-}
-
 ConstructorInvocation::~ConstructorInvocation() {}
 void ConstructorInvocation::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
   visitor->VisitConstructorInvocation(this);

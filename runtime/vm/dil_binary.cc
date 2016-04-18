@@ -164,7 +164,7 @@ enum Tag {
   kMethodInvocation = 28,
   kSuperMethodInvocation = 29,
   kStaticInvocation = 30,
-  kFunctionInvocation = 31,
+  // kFunctionInvocation = 31, // No longer used.
   kConstructorInvocation = 32,
   kNot = 33,
   kLogicalExpression = 34,
@@ -1116,8 +1116,6 @@ Expression* Expression::ReadFrom(Reader* reader) {
       return SuperMethodInvocation::ReadFrom(reader);
     case kStaticInvocation:
       return StaticInvocation::ReadFrom(reader);
-    case kFunctionInvocation:
-      return FunctionInvocation::ReadFrom(reader);
     case kConstructorInvocation:
       return ConstructorInvocation::ReadFrom(reader);
     case kNot:
@@ -1370,21 +1368,6 @@ void StaticInvocation::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kStaticInvocation);
   Reference::WriteMemberTo(writer, procedure_);
-  arguments_->WriteTo(writer);
-}
-
-FunctionInvocation* FunctionInvocation::ReadFrom(Reader* reader) {
-  TRACE_READ_OFFSET();
-  FunctionInvocation* invocation = new FunctionInvocation();
-  invocation->function_ = Expression::ReadFrom(reader);
-  invocation->arguments_ = Arguments::ReadFrom(reader);
-  return invocation;
-}
-
-void FunctionInvocation::WriteTo(Writer* writer) {
-  TRACE_WRITE_OFFSET();
-  writer->WriteTag(kFunctionInvocation);
-  function_->WriteTo(writer);
   arguments_->WriteTo(writer);
 }
 

@@ -50,7 +50,6 @@
   M(MethodInvocation) \
   M(SuperMethodInvocation) \
   M(StaticInvocation) \
-  M(FunctionInvocation) \
   M(ConstructorInvocation) \
   M(Not) \
   M(LogicalExpression) \
@@ -996,28 +995,6 @@ class StaticInvocation : public Expression {
   StaticInvocation() {}
 
   Ref<Procedure> procedure_;
-  Child<Arguments> arguments_;
-};
-
-class FunctionInvocation : public Expression {
- public:
-  static FunctionInvocation* ReadFrom(Reader* reader);
-  virtual void WriteTo(Writer* writer);
-
-  virtual ~FunctionInvocation();
-
-  DEFINE_CASTING_OPERATIONS(StaticInvocation);
-
-  virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
-
-  Expression* function() { return function_; }
-  Arguments* arguments() { return arguments_; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(FunctionInvocation);
-  FunctionInvocation() {}
-
-  Child<Expression> function_;
   Child<Arguments> arguments_;
 };
 
@@ -2230,7 +2207,6 @@ class ExpressionVisitor {
   virtual void VisitMethodInvocation(MethodInvocation* node) { VisitDefaultExpression(node); }
   virtual void VisitSuperMethodInvocation(SuperMethodInvocation* node) { VisitDefaultExpression(node); }
   virtual void VisitStaticInvocation(StaticInvocation* node) { VisitDefaultExpression(node); }
-  virtual void VisitFunctionInvocation(FunctionInvocation* node) { VisitDefaultExpression(node); }
   virtual void VisitConstructorInvocation(ConstructorInvocation* node) { VisitDefaultExpression(node); }
   virtual void VisitNot(Not* node) { VisitDefaultExpression(node); }
   virtual void VisitLogicalExpression(LogicalExpression* node) { VisitDefaultExpression(node); }
