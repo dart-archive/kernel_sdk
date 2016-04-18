@@ -527,6 +527,7 @@ class WriterHelper {
 
   Program* program() { return program_; }
 
+  BlockMap<String>& strings() { return strings_; }
   BlockMap<Library>& libraries() { return libraries_; }
   BlockMap<Class>& classes() { return classes_; }
   BlockMap<Field>& fields() { return fields_; }
@@ -541,6 +542,7 @@ class WriterHelper {
  private:
   Program* program_;
 
+  BlockMap<String> strings_;
   BlockMap<Library> libraries_;
   BlockMap<Class> classes_;
   BlockMap<Field> fields_;
@@ -713,11 +715,38 @@ class DowncastReader {
   }
 };
 
+class StringImplReader {
+ public:
+  static String* ReadFrom(Reader* reader) {
+    TRACE_READ_OFFSET();
+    return String::ReadFromImpl(reader);
+  }
+};
+
 String* String::ReadFrom(Reader* reader) {
+  TRACE_READ_OFFSET();
+  return Reference::ReadStringFrom(reader);
+}
+
+String* String::ReadFromImpl(Reader* reader) {
   TRACE_READ_OFFSET();
   uint32_t bytes = reader->ReadUInt();
   String* string = new String(reader->Consume(bytes), bytes);
   return string;
+}
+
+void StringTable::ReadFrom(Reader* reader) {
+  strings_.ReadFromStatic<StringImplReader>(reader);
+}
+
+void StringTable::WriteTo(Writer* writer) {
+  strings_.WriteTo(writer);
+
+  // Build up the "String* -> index" table.
+  WriterHelper* helper = writer->helper();
+  for (int i = 0; i < strings_.length(); i++) {
+    helper->strings().Push(strings_[i]);
+  }
 }
 
 void String::WriteTo(Writer* writer) {
@@ -728,7 +757,7 @@ void String::WriteTo(Writer* writer) {
 
 Library* Library::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  name_ = String::ReadFrom(reader);
+  name_ = Reference::ReadStringFrom(reader);
 
   int num_classes = reader->ReadUInt();
   classes().EnsureInitialized(num_classes);
@@ -771,7 +800,7 @@ Class* Class::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
 
   is_abstract_ = reader->ReadBool();
-  name_ = String::ReadFrom(reader);
+  name_ = Reference::ReadStringFrom(reader);
 
   return this;
 }
@@ -818,7 +847,7 @@ MixinClass* MixinClass::ReadFrom(Reader* reader) {
   TypeParameterScope<ReaderHelper> scope(reader->helper());
 
   is_abstract_ = reader->ReadBool();
-  name_ = String::ReadFrom(reader);
+  name_ = Reference::ReadStringFrom(reader);
   type_parameters_.ReadFromStatic<TypeParameter>(reader);
   first_ = InterfaceType::Cast(DartType::ReadFrom(reader));
   second_ = InterfaceType::Cast(DartType::ReadFrom(reader));
@@ -954,6 +983,16 @@ void Reference::WriteClassTo(Writer* writer, Class* klass) {
 
   writer->WriteUInt(writer->helper()->libraries().Lookup(klass->parent()));
   writer->WriteUInt(writer->helper()->classes().Lookup(klass));
+}
+
+String* Reference::ReadStringFrom(Reader* reader) {
+  int index = reader->ReadUInt();
+  return reader->helper()->program()->string_table().strings()[index];
+}
+
+void Reference::WriteStringTo(Writer* writer, String* string) {
+  int index = writer->helper()->strings().Lookup(string);
+  writer->WriteUInt(index);
 }
 
 Field* Field::ReadFrom(Reader* reader) {
@@ -1323,7 +1362,7 @@ void Arguments::WriteTo(Writer* writer) {
 
 NamedExpression* NamedExpression::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  String* name = String::ReadFrom(reader);
+  String* name = Reference::ReadStringFrom(reader);
   Expression* expression = Expression::ReadFrom(reader);
   return new NamedExpression(name, expression);
 }
@@ -1491,7 +1530,7 @@ void AsExpression::WriteTo(Writer* writer) {
 
 StringLiteral* StringLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  return new StringLiteral(String::ReadFrom(reader));
+  return new StringLiteral(Reference::ReadStringFrom(reader));
 }
 
 void StringLiteral::WriteTo(Writer* writer) {
@@ -1502,7 +1541,7 @@ void StringLiteral::WriteTo(Writer* writer) {
 
 BigintLiteral* BigintLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  return new BigintLiteral(String::ReadFrom(reader));
+  return new BigintLiteral(Reference::ReadStringFrom(reader));
 }
 
 void BigintLiteral::WriteTo(Writer* writer) {
@@ -1529,7 +1568,7 @@ void IntLiteral::WriteTo(Writer* writer) {
 DoubleLiteral* DoubleLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   DoubleLiteral* literal = new DoubleLiteral();
-  literal->value_ = String::ReadFrom(reader);
+  literal->value_ = Reference::ReadStringFrom(reader);
   return literal;
 }
 
@@ -1565,7 +1604,7 @@ void NullLiteral::WriteTo(Writer* writer) {
 SymbolLiteral* SymbolLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   SymbolLiteral* lit = new SymbolLiteral();
-  lit->value_ = String::ReadFrom(reader);
+  lit->value_ = Reference::ReadStringFrom(reader);
   return lit;
 }
 
@@ -2094,7 +2133,7 @@ VariableDeclaration* VariableDeclaration::ReadFromImpl(Reader* reader) {
   VariableDeclaration* decl = new VariableDeclaration();
   reader->helper()->variables().Push(decl);
   decl->flags_ = reader->ReadFlags();
-  decl->name_ = String::ReadFrom(reader);
+  decl->name_ = Reference::ReadStringFrom(reader);
   decl->type_ = reader->ReadOptional<DartType>();
   decl->initializer_ = reader->ReadOptional<Expression>();
   return decl;
@@ -2131,7 +2170,7 @@ void FunctionDeclaration::WriteTo(Writer* writer) {
 }
 
 Name* Name::ReadFrom(Reader* reader) {
-  String* string = String::ReadFrom(reader);
+  String* string = Reference::ReadStringFrom(reader);
   int lib_index = reader->ReadUInt();
   Library* library = reader->helper()->program()->libraries().GetOrCreate<Library>(lib_index);
   return new Name(string, library);
@@ -2253,6 +2292,8 @@ Program* Program::ReadFrom(Reader* reader) {
   Program* program = new Program();
   reader->helper()->set_program(program);
 
+  program->string_table_.ReadFrom(reader);
+
   int libraries = reader->ReadUInt();
   program->libraries().EnsureInitialized(libraries);
   for (int i = 0; i < libraries; i++) {
@@ -2270,6 +2311,15 @@ void Program::WriteTo(Writer* writer) {
   writer->helper()->SetProgram(this);
 
   writer->WriteUInt32(kMagicProgramFile);
+
+  // TODO(kustermann): We should really change the format so we don't need to
+  // loop over the whole program to GC all strings and build the table. Let's
+  // just do the table at the end!
+  //
+  // NOTE: Currently we don't GC strings and we require that all referenced
+  // strings in nodes are present in [string_table_].
+  string_table_.WriteTo(writer);
+
   libraries_.WriteTo(writer);
   Reference::WriteMemberTo(writer, main_method_);
 }
@@ -2306,7 +2356,7 @@ TypeParameter* TypeParameter::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   TypeParameter* param = new TypeParameter();
   reader->helper()->type_parameters().Push(param);
-  param->name_ = String::ReadFrom(reader);
+  param->name_ = Reference::ReadStringFrom(reader);
   param->bound_ = DartType::ReadFrom(reader);
   return param;
 }

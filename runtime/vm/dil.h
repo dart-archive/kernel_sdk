@@ -167,6 +167,8 @@ class Ref {
   // Implicitly convert `Ref<T>` to `T*`.
   operator T*&() { return pointer_; }
 
+  T* operator->() { return pointer_; }
+
  private:
   T* pointer_;
 };
@@ -230,13 +232,14 @@ class Tuple {
   DISALLOW_COPY_AND_ASSIGN(Tuple);
   Tuple() {}
 
-  Child<A> first_;
+  Ref<A> first_;
   Child<B> second_;
 };
 
 class String {
  public:
   static String* ReadFrom(Reader* reader);
+  static String* ReadFromImpl(Reader* reader);
   void WriteTo(Writer* writer);
 
   String(uint8_t* utf8, int length) {
@@ -253,6 +256,22 @@ class String {
 
   uint8_t* buffer_;
   int size_;
+};
+
+class StringTable {
+ public:
+  void ReadFrom(Reader* reader);
+  void WriteTo(Writer* writer);
+
+  List<String>& strings() { return strings_; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(StringTable);
+  StringTable() {}
+
+  friend class Program;
+
+  List<String> strings_;
 };
 
 // Forward declare all classes.
@@ -322,7 +341,7 @@ class Library : public TreeNode {
   template<typename T>
   friend class List;
 
-  Child<String> name_;
+  Ref<String> name_;
   List<Class> classes_;
   List<Field> fields_;
   List<Procedure> procedures_;
@@ -360,7 +379,7 @@ class Class : public TreeNode {
   DISALLOW_COPY_AND_ASSIGN(Class);
 
   Ref<Library> parent_;
-  Child<String> name_;
+  Ref<String> name_;
   bool is_abstract_;
 };
 
@@ -424,7 +443,7 @@ class MixinClass : public Class {
   friend class List;
 
   bool is_abstract_;
-  Child<String> name_;
+  Ref<String> name_;
   List<TypeParameter> type_parameters_;
   Child<InterfaceType> first_;
   Child<InterfaceType> second_;
@@ -926,7 +945,7 @@ class NamedExpression : public TreeNode {
   DISALLOW_COPY_AND_ASSIGN(NamedExpression);
   NamedExpression() {}
 
-  Child<String> name_;
+  Ref<String> name_;
   Child<Expression> expression_;
 };
 
@@ -1178,7 +1197,7 @@ class StringLiteral : public BasicLiteral {
  protected:
   StringLiteral() {}
 
-  Child<String> value_;
+  Ref<String> value_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(StringLiteral);
@@ -1238,7 +1257,7 @@ class DoubleLiteral : public BasicLiteral {
   DISALLOW_COPY_AND_ASSIGN(DoubleLiteral);
   DoubleLiteral() {}
 
-  Child<String> value_;
+  Ref<String> value_;
 };
 
 class BoolLiteral : public BasicLiteral {
@@ -1290,7 +1309,7 @@ class SymbolLiteral : public Expression {
   DISALLOW_COPY_AND_ASSIGN(SymbolLiteral);
   SymbolLiteral() {}
 
-  Child<String> value_;
+  Ref<String> value_;
 };
 
 class TypeLiteral : public Expression {
@@ -1963,7 +1982,7 @@ class VariableDeclaration : public Statement {
   friend class List;
 
   word flags_;
-  Child<String> name_;
+  Ref<String> name_;
   Child<DartType> type_;
   Child<Expression> initializer_;
 };
@@ -2007,7 +2026,7 @@ class Name : public Node {
  private:
   Name(String* string, Library* library) : string_(string), library_(library) { }
 
-  Child<String> string_;
+  Ref<String> string_;
   Ref<Library> library_;
 };
 
@@ -2154,7 +2173,7 @@ class TypeParameter : public TreeNode {
   template<typename T>
   friend class List;
 
-  Child<String> name_;
+  Ref<String> name_;
   Child<DartType> bound_;
 };
 
@@ -2169,6 +2188,7 @@ class Program : public TreeNode {
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
 
+  StringTable& string_table() { return string_table_; }
   List<Library>& libraries() { return libraries_; }
   Procedure* main_method() { return main_method_; }
 
@@ -2178,6 +2198,7 @@ class Program : public TreeNode {
 
   List<Library> libraries_;
   Ref<Procedure> main_method_;
+  StringTable string_table_;
 };
 
 class Reference {
@@ -2187,6 +2208,9 @@ class Reference {
 
   static Class* ReadClassFrom(Reader* reader);
   static void WriteClassTo(Writer* writer, Class* klass);
+
+  static String* ReadStringFrom(Reader* reader);
+  static void WriteStringTo(Writer* writer, String* string);
 };
 
 class ExpressionVisitor {
