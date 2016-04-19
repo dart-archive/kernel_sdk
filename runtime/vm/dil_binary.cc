@@ -164,7 +164,7 @@ enum Tag {
   kMethodInvocation = 28,
   kSuperMethodInvocation = 29,
   kStaticInvocation = 30,
-  kFunctionInvocation = 31,
+  // kFunctionInvocation = 31, // No longer used.
   kConstructorInvocation = 32,
   kNot = 33,
   kLogicalExpression = 34,
@@ -403,28 +403,36 @@ class Reader {
     return value;
   }
 
-  uint32_t ReadUInt31() {
+  uint32_t ReadUInt() {
     ASSERT(offset_ + 1 <= size_);
-
     uint8_t byte0 = buffer_[offset_];
     if ((byte0 & 0x80) == 0) {
+      // 0...
       offset_++;
       return byte0;
+    } else if ((byte0 & 0xc0) == 0x80) {
+      // 10...
+      ASSERT(offset_ + 2 <= size_);
+      uint32_t value =
+          ((byte0 & ~0x80) << 8) |
+          (buffer_[offset_ + 1]);
+      offset_ += 2;
+      return value;
+    } else {
+      // 11...
+      ASSERT(offset_ + 4 <= size_);
+      uint32_t value =
+          ((byte0 & ~0xc0) << 24) |
+          (buffer_[offset_ + 1] << 16) |
+          (buffer_[offset_ + 2] << 8) |
+          (buffer_[offset_ + 3] << 0);
+      offset_ += 4;
+      return value;
     }
-
-    ASSERT(offset_ + 4 <= size_);
-
-    uint32_t value =
-        ((byte0 & ~0x80) << 24) |
-        (buffer_[offset_ + 1] << 16) |
-        (buffer_[offset_ + 2] << 8) |
-        (buffer_[offset_ + 3] << 0);
-    offset_ += 4;
-    return value;
   }
 
   intptr_t ReadListLength() {
-    return ReadUInt31();
+    return ReadUInt();
   }
 
   uint8_t ReadByte() {
@@ -519,6 +527,7 @@ class WriterHelper {
 
   Program* program() { return program_; }
 
+  BlockMap<String>& strings() { return strings_; }
   BlockMap<Library>& libraries() { return libraries_; }
   BlockMap<Class>& classes() { return classes_; }
   BlockMap<Field>& fields() { return fields_; }
@@ -533,6 +542,7 @@ class WriterHelper {
  private:
   Program* program_;
 
+  BlockMap<String> strings_;
   BlockMap<Library> libraries_;
   BlockMap<Class> classes_;
   BlockMap<Field> fields_;
@@ -559,13 +569,16 @@ class Writer {
     WriteBytes(buffer, 4);
   }
 
-  void WriteUInt31(uint32_t value) {
+  void WriteUInt(uint32_t value) {
     if (value < 0x80) {
       WriteByte(static_cast<uint8_t>(value));
+    } else if (value < 0x4000) {
+      WriteByte(static_cast<uint8_t>(((value >> 8) & 0x3f) | 0x80));
+      WriteByte(static_cast<uint8_t>(value & 0xff));
     } else {
-      // Ensure the highest bit is not used for anything (we use it to for
+      // Ensure the highest 2 bits is not used for anything (we use it to for
       // encoding).
-      ASSERT(static_cast<uint8_t>((value >> 24) & 0x80) == 0);
+      ASSERT(static_cast<uint8_t>((value >> 24) & 0xc0) == 0);
       uint8_t buffer[4] = {
         static_cast<uint8_t>(((value >> 24) & 0x7f) | 0x80),
         static_cast<uint8_t>((value >> 16) & 0xff),
@@ -577,7 +590,7 @@ class Writer {
   }
 
   void WriteListLength(intptr_t value) {
-    return WriteUInt31(value);
+    return WriteUInt(value);
   }
 
   void WriteByte(uint8_t value) {
@@ -702,24 +715,51 @@ class DowncastReader {
   }
 };
 
+class StringImplReader {
+ public:
+  static String* ReadFrom(Reader* reader) {
+    TRACE_READ_OFFSET();
+    return String::ReadFromImpl(reader);
+  }
+};
+
 String* String::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  uint32_t bytes = reader->ReadUInt31();
+  return Reference::ReadStringFrom(reader);
+}
+
+String* String::ReadFromImpl(Reader* reader) {
+  TRACE_READ_OFFSET();
+  uint32_t bytes = reader->ReadUInt();
   String* string = new String(reader->Consume(bytes), bytes);
   return string;
 }
 
+void StringTable::ReadFrom(Reader* reader) {
+  strings_.ReadFromStatic<StringImplReader>(reader);
+}
+
+void StringTable::WriteTo(Writer* writer) {
+  strings_.WriteTo(writer);
+
+  // Build up the "String* -> index" table.
+  WriterHelper* helper = writer->helper();
+  for (int i = 0; i < strings_.length(); i++) {
+    helper->strings().Push(strings_[i]);
+  }
+}
+
 void String::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteUInt31(size_);
+  writer->WriteUInt(size_);
   writer->WriteBytes(buffer_, size_);
 }
 
 Library* Library::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  name_ = String::ReadFrom(reader);
+  name_ = Reference::ReadStringFrom(reader);
 
-  int num_classes = reader->ReadUInt31();
+  int num_classes = reader->ReadUInt();
   classes().EnsureInitialized(num_classes);
   for (int i = 0; i < num_classes; i++) {
     Tag tag = reader->ReadTag();
@@ -741,7 +781,7 @@ Library* Library::ReadFrom(Reader* reader) {
 void Library::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   name_->WriteTo(writer);
-  writer->WriteUInt31(classes_.length());
+  writer->WriteUInt(classes_.length());
   for (int i = 0; i < classes_.length(); i++) {
     Class* klass = classes_[i];
     if (klass->IsNormalClass()) {
@@ -760,7 +800,7 @@ Class* Class::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
 
   is_abstract_ = reader->ReadBool();
-  name_ = String::ReadFrom(reader);
+  name_ = Reference::ReadStringFrom(reader);
 
   return this;
 }
@@ -807,7 +847,7 @@ MixinClass* MixinClass::ReadFrom(Reader* reader) {
   TypeParameterScope<ReaderHelper> scope(reader->helper());
 
   is_abstract_ = reader->ReadBool();
-  name_ = String::ReadFrom(reader);
+  name_ = Reference::ReadStringFrom(reader);
   type_parameters_.ReadFromStatic<TypeParameter>(reader);
   first_ = InterfaceType::Cast(DartType::ReadFrom(reader));
   second_ = InterfaceType::Cast(DartType::ReadFrom(reader));
@@ -836,14 +876,14 @@ Member* Reference::ReadMemberFrom(Reader* reader) {
   Tag tag = reader->ReadTag();
   switch (tag) {
     case kLibraryFieldReference: {
-      int library_idx = reader->ReadUInt31();
-      int field_idx = reader->ReadUInt31();
+      int library_idx = reader->ReadUInt();
+      int field_idx = reader->ReadUInt();
       Library* library = program->libraries().GetOrCreate<Library>(library_idx);
       return library->fields().GetOrCreate<Field>(field_idx, library);
     }
     case kLibraryProcedureReference: {
-      int library_idx = reader->ReadUInt31();
-      int procedure_idx = reader->ReadUInt31();
+      int library_idx = reader->ReadUInt();
+      int procedure_idx = reader->ReadUInt();
       Library* library = program->libraries().GetOrCreate<Library>(library_idx);
       return library->procedures().GetOrCreate<Procedure>(procedure_idx, library);
     }
@@ -852,14 +892,14 @@ Member* Reference::ReadMemberFrom(Reader* reader) {
     case kClassProcedureReference: {
       Class* klass = Reference::ReadClassFrom(reader);
       if (tag == kClassFieldReference) {
-        int field_idx = reader->ReadUInt31();
+        int field_idx = reader->ReadUInt();
         return klass->fields().GetOrCreate<Field>(field_idx, klass);
       } else if (tag == kClassConstructorReference) {
-        int constructor_idx = reader->ReadUInt31();
+        int constructor_idx = reader->ReadUInt();
         return klass->constructors().GetOrCreate<Constructor>(constructor_idx, klass);
       } else {
         ASSERT(tag == kClassProcedureReference);
-        int procedure_idx = reader->ReadUInt31();
+        int procedure_idx = reader->ReadUInt();
         return klass->procedures().GetOrCreate<Procedure>(procedure_idx, klass);
       }
     }
@@ -883,13 +923,13 @@ void Reference::WriteMemberTo(Writer* writer, Member* member) {
     if (member->IsField()) {
       Field* field = Field::Cast(member);
       writer->WriteTag(kLibraryFieldReference);
-      writer->WriteUInt31(helper->libraries().Lookup(library));
-      writer->WriteUInt31(helper->fields().Lookup(field));
+      writer->WriteUInt(helper->libraries().Lookup(library));
+      writer->WriteUInt(helper->fields().Lookup(field));
     } else {
       Procedure* procedure = Procedure::Cast(member);
       writer->WriteTag(kLibraryProcedureReference);
-      writer->WriteUInt31(helper->libraries().Lookup(library));
-      writer->WriteUInt31(helper->procedures().Lookup(procedure));
+      writer->WriteUInt(helper->libraries().Lookup(library));
+      writer->WriteUInt(helper->procedures().Lookup(procedure));
     }
   } else {
     Class* klass = Class::Cast(node);
@@ -898,17 +938,17 @@ void Reference::WriteMemberTo(Writer* writer, Member* member) {
       Field* field = Field::Cast(member);
       writer->WriteTag(kClassFieldReference);
       Reference::WriteClassTo(writer, klass);
-      writer->WriteUInt31(helper->fields().Lookup(field));
+      writer->WriteUInt(helper->fields().Lookup(field));
     } else if (member->IsConstructor()) {
       Constructor* constructor = Constructor::Cast(member);
       writer->WriteTag(kClassConstructorReference);
       Reference::WriteClassTo(writer, klass);
-      writer->WriteUInt31(helper->constructors().Lookup(constructor));
+      writer->WriteUInt(helper->constructors().Lookup(constructor));
     } else {
       Procedure* procedure = Procedure::Cast(member);
       writer->WriteTag(kClassProcedureReference);
       Reference::WriteClassTo(writer, klass);
-      writer->WriteUInt31(helper->procedures().Lookup(procedure));
+      writer->WriteUInt(helper->procedures().Lookup(procedure));
     }
   }
 }
@@ -918,8 +958,8 @@ Class* Reference::ReadClassFrom(Reader* reader) {
   Program* program = reader->helper()->program();
 
   Tag klass_member_tag = reader->ReadTag();
-  int library_idx = reader->ReadUInt31();
-  int class_idx = reader->ReadUInt31();
+  int library_idx = reader->ReadUInt();
+  int class_idx = reader->ReadUInt();
 
   Library* library = program->libraries().GetOrCreate<Library>(library_idx);
   Class* klass;
@@ -941,8 +981,18 @@ void Reference::WriteClassTo(Writer* writer, Class* klass) {
     writer->WriteTag(kMixinClassReference);
   }
 
-  writer->WriteUInt31(writer->helper()->libraries().Lookup(klass->parent()));
-  writer->WriteUInt31(writer->helper()->classes().Lookup(klass));
+  writer->WriteUInt(writer->helper()->libraries().Lookup(klass->parent()));
+  writer->WriteUInt(writer->helper()->classes().Lookup(klass));
+}
+
+String* Reference::ReadStringFrom(Reader* reader) {
+  int index = reader->ReadUInt();
+  return reader->helper()->program()->string_table().strings()[index];
+}
+
+void Reference::WriteStringTo(Writer* writer, String* string) {
+  int index = writer->helper()->strings().Lookup(string);
+  writer->WriteUInt(index);
 }
 
 Field* Field::ReadFrom(Reader* reader) {
@@ -973,7 +1023,7 @@ Constructor* Constructor::ReadFrom(Reader* reader) {
   ASSERT(tag == kConstructor);
 
   VariableScope<ReaderHelper> vars(reader->helper());
-  is_const_ = (reader->ReadFlags() & 1) == 1;
+  flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
   function_ = FunctionNode::ReadFrom(reader);
   initializers_.ReadFromStatic<Initializer>(reader);
@@ -985,7 +1035,7 @@ void Constructor::WriteTo(Writer* writer) {
   writer->WriteTag(kConstructor);
 
   VariableScope<WriterHelper> vars(writer->helper());
-  writer->WriteBool(is_const_);
+  writer->WriteFlags(flags_);
   name_->WriteTo(writer);
   function_->WriteTo(writer);
   initializers_.WriteTo(writer);
@@ -1116,8 +1166,6 @@ Expression* Expression::ReadFrom(Reader* reader) {
       return SuperMethodInvocation::ReadFrom(reader);
     case kStaticInvocation:
       return StaticInvocation::ReadFrom(reader);
-    case kFunctionInvocation:
-      return FunctionInvocation::ReadFrom(reader);
     case kConstructorInvocation:
       return ConstructorInvocation::ReadFrom(reader);
     case kNot:
@@ -1183,20 +1231,20 @@ void InvalidExpression::WriteTo(Writer* writer) {
 VariableGet* VariableGet::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   VariableGet* get = new VariableGet();
-  get->variable_ = reader->helper()->variables().Lookup(reader->ReadUInt31());
+  get->variable_ = reader->helper()->variables().Lookup(reader->ReadUInt());
   return get;
 }
 
 void VariableGet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kVariableGet);
-  writer->WriteUInt31(writer->helper()->variables().Lookup(variable_));
+  writer->WriteUInt(writer->helper()->variables().Lookup(variable_));
 }
 
 VariableSet* VariableSet::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   VariableSet* set = new VariableSet();
-  set->variable_ = reader->helper()->variables().Lookup(reader->ReadUInt31());
+  set->variable_ = reader->helper()->variables().Lookup(reader->ReadUInt());
   set->expression_ = Expression::ReadFrom(reader);
   return set;
 }
@@ -1204,7 +1252,7 @@ VariableSet* VariableSet::ReadFrom(Reader* reader) {
 void VariableSet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kVariableSet);
-  writer->WriteUInt31(writer->helper()->variables().Lookup(variable_));
+  writer->WriteUInt(writer->helper()->variables().Lookup(variable_));
   expression_->WriteTo(writer); 
 }
 
@@ -1314,7 +1362,7 @@ void Arguments::WriteTo(Writer* writer) {
 
 NamedExpression* NamedExpression::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  String* name = String::ReadFrom(reader);
+  String* name = Reference::ReadStringFrom(reader);
   Expression* expression = Expression::ReadFrom(reader);
   return new NamedExpression(name, expression);
 }
@@ -1370,21 +1418,6 @@ void StaticInvocation::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kStaticInvocation);
   Reference::WriteMemberTo(writer, procedure_);
-  arguments_->WriteTo(writer);
-}
-
-FunctionInvocation* FunctionInvocation::ReadFrom(Reader* reader) {
-  TRACE_READ_OFFSET();
-  FunctionInvocation* invocation = new FunctionInvocation();
-  invocation->function_ = Expression::ReadFrom(reader);
-  invocation->arguments_ = Arguments::ReadFrom(reader);
-  return invocation;
-}
-
-void FunctionInvocation::WriteTo(Writer* writer) {
-  TRACE_WRITE_OFFSET();
-  writer->WriteTag(kFunctionInvocation);
-  function_->WriteTo(writer);
   arguments_->WriteTo(writer);
 }
 
@@ -1497,7 +1530,7 @@ void AsExpression::WriteTo(Writer* writer) {
 
 StringLiteral* StringLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  return new StringLiteral(String::ReadFrom(reader));
+  return new StringLiteral(Reference::ReadStringFrom(reader));
 }
 
 void StringLiteral::WriteTo(Writer* writer) {
@@ -1508,7 +1541,7 @@ void StringLiteral::WriteTo(Writer* writer) {
 
 BigintLiteral* BigintLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  return new BigintLiteral(String::ReadFrom(reader));
+  return new BigintLiteral(Reference::ReadStringFrom(reader));
 }
 
 void BigintLiteral::WriteTo(Writer* writer) {
@@ -1521,7 +1554,7 @@ IntLiteral* IntLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   IntLiteral* literal = new IntLiteral();
   bool negative = reader->ReadBool();
-  literal->value_ = negative ? -static_cast<int64_t>(reader->ReadUInt31()) : reader->ReadUInt31();
+  literal->value_ = negative ? -static_cast<int64_t>(reader->ReadUInt()) : reader->ReadUInt();
   return literal;
 }
 
@@ -1529,13 +1562,13 @@ void IntLiteral::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kIntLiteral);
   writer->WriteBool(value_ < 0);
-  writer->WriteUInt31(static_cast<uint32_t>(value_ < 0 ? -value_ : value_));
+  writer->WriteUInt(static_cast<uint32_t>(value_ < 0 ? -value_ : value_));
 }
 
 DoubleLiteral* DoubleLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   DoubleLiteral* literal = new DoubleLiteral();
-  literal->value_ = String::ReadFrom(reader);
+  literal->value_ = Reference::ReadStringFrom(reader);
   return literal;
 }
 
@@ -1571,7 +1604,7 @@ void NullLiteral::WriteTo(Writer* writer) {
 SymbolLiteral* SymbolLiteral::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   SymbolLiteral* lit = new SymbolLiteral();
-  lit->value_ = String::ReadFrom(reader);
+  lit->value_ = Reference::ReadStringFrom(reader);
   return lit;
 }
 
@@ -1850,14 +1883,14 @@ void LabeledStatement::WriteTo(Writer* writer) {
 BreakStatement* BreakStatement::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   BreakStatement* stmt = new BreakStatement();
-  stmt->target_ = reader->helper()->lables().Lookup(reader->ReadUInt31());
+  stmt->target_ = reader->helper()->lables().Lookup(reader->ReadUInt());
   return stmt;
 }
 
 void BreakStatement::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kBreakStatement);
-  writer->WriteUInt31(writer->helper()->lables().Lookup(target_));
+  writer->WriteUInt(writer->helper()->lables().Lookup(target_));
 }
 
 WhileStatement* WhileStatement::ReadFrom(Reader* reader) {
@@ -1940,7 +1973,7 @@ SwitchStatement* SwitchStatement::ReadFrom(Reader* reader) {
   // We need to explicitly create empty [SwitchCase]s first in order to add them
   // to the [SwitchCaseScope]. This is necessary since a [Statement] in a switch
   // case can refer to one defined later on.
-  int count = reader->ReadUInt31();
+  int count = reader->ReadUInt();
   for (int i = 0; i < count; i++) {
     SwitchCase* sc = stmt->cases_.GetOrCreate<SwitchCase>(i);
     reader->helper()->switch_cases().Push(sc);
@@ -1981,14 +2014,14 @@ void SwitchCase::WriteTo(Writer* writer) {
 ContinueSwitchStatement* ContinueSwitchStatement::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   ContinueSwitchStatement* stmt =  new ContinueSwitchStatement();
-  stmt->target_ = reader->helper()->switch_cases().Lookup(reader->ReadUInt31());
+  stmt->target_ = reader->helper()->switch_cases().Lookup(reader->ReadUInt());
   return stmt;
 }
 
 void ContinueSwitchStatement::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kContinueSwitchStatement);
-  writer->WriteUInt31(writer->helper()->switch_cases().Lookup(target_));
+  writer->WriteUInt(writer->helper()->switch_cases().Lookup(target_));
 }
 
 IfStatement* IfStatement::ReadFrom(Reader* reader) {
@@ -2100,7 +2133,7 @@ VariableDeclaration* VariableDeclaration::ReadFromImpl(Reader* reader) {
   VariableDeclaration* decl = new VariableDeclaration();
   reader->helper()->variables().Push(decl);
   decl->flags_ = reader->ReadFlags();
-  decl->name_ = String::ReadFrom(reader);
+  decl->name_ = Reference::ReadStringFrom(reader);
   decl->type_ = reader->ReadOptional<DartType>();
   decl->initializer_ = reader->ReadOptional<Expression>();
   return decl;
@@ -2137,8 +2170,8 @@ void FunctionDeclaration::WriteTo(Writer* writer) {
 }
 
 Name* Name::ReadFrom(Reader* reader) {
-  String* string = String::ReadFrom(reader);
-  int lib_index = reader->ReadUInt31();
+  String* string = Reference::ReadStringFrom(reader);
+  int lib_index = reader->ReadUInt();
   Library* library = reader->helper()->program()->libraries().GetOrCreate<Library>(lib_index);
   return new Name(string, library);
 }
@@ -2146,7 +2179,7 @@ Name* Name::ReadFrom(Reader* reader) {
 void Name::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   string_->WriteTo(writer);
-  writer->WriteUInt31(writer->helper()->libraries().Lookup(library_));
+  writer->WriteUInt(writer->helper()->libraries().Lookup(library_));
 }
 
 DartType* DartType::ReadFrom(Reader* reader) {
@@ -2221,7 +2254,7 @@ FunctionType* FunctionType::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   FunctionType* type = new FunctionType();
   type->type_parameters().ReadFromStatic<TypeParameter>(reader);
-  type->required_parameter_count_ = reader->ReadUInt31();
+  type->required_parameter_count_ = reader->ReadUInt();
   type->positional_parameters().ReadFromStatic<DartType>(reader);
   type->named_parameters().ReadFromStatic<Tuple<String, DartType> >(reader);
   type->return_type_ = DartType::ReadFrom(reader);
@@ -2232,7 +2265,7 @@ void FunctionType::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kFunctionType);
   type_parameters_.WriteTo(writer);
-  writer->WriteUInt31(required_parameter_count_);
+  writer->WriteUInt(required_parameter_count_);
   positional_parameters_.WriteTo(writer);
   named_parameters_.WriteTo(writer);
   return_type_->WriteTo(writer);
@@ -2241,14 +2274,14 @@ void FunctionType::WriteTo(Writer* writer) {
 TypeParameterType* TypeParameterType::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   TypeParameterType* type = new TypeParameterType();
-  type->parameter_ = reader->helper()->type_parameters().Lookup(reader->ReadUInt31());
+  type->parameter_ = reader->helper()->type_parameters().Lookup(reader->ReadUInt());
   return type;
 }
 
 void TypeParameterType::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kTypeParameterType);
-  writer->WriteUInt31(writer->helper()->type_parameters().Lookup(parameter_));
+  writer->WriteUInt(writer->helper()->type_parameters().Lookup(parameter_));
 }
 
 Program* Program::ReadFrom(Reader* reader) {
@@ -2259,7 +2292,9 @@ Program* Program::ReadFrom(Reader* reader) {
   Program* program = new Program();
   reader->helper()->set_program(program);
 
-  int libraries = reader->ReadUInt31();
+  program->string_table_.ReadFrom(reader);
+
+  int libraries = reader->ReadUInt();
   program->libraries().EnsureInitialized(libraries);
   for (int i = 0; i < libraries; i++) {
     program->libraries().GetOrCreate<Library>(i)->ReadFrom(reader);
@@ -2276,6 +2311,15 @@ void Program::WriteTo(Writer* writer) {
   writer->helper()->SetProgram(this);
 
   writer->WriteUInt32(kMagicProgramFile);
+
+  // TODO(kustermann): We should really change the format so we don't need to
+  // loop over the whole program to GC all strings and build the table. Let's
+  // just do the table at the end!
+  //
+  // NOTE: Currently we don't GC strings and we require that all referenced
+  // strings in nodes are present in [string_table_].
+  string_table_.WriteTo(writer);
+
   libraries_.WriteTo(writer);
   Reference::WriteMemberTo(writer, main_method_);
 }
@@ -2285,7 +2329,7 @@ FunctionNode* FunctionNode::ReadFrom(Reader* reader) {
   FunctionNode* function = new FunctionNode();
   function->async_marker_ = static_cast<FunctionNode::AsyncMarker>(reader->ReadByte());
   function->type_parameters().ReadFromStatic<TypeParameter>(reader);
-  function->required_parameter_count_ = reader->ReadUInt31();
+  function->required_parameter_count_ = reader->ReadUInt();
   function->positional_parameters().ReadFromStatic<VariableDeclaration>(reader);
   function->named_parameters().ReadFromStatic<VariableDeclaration>(reader);
   function->return_type_ = reader->ReadOptional<DartType>();
@@ -2299,7 +2343,7 @@ void FunctionNode::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteByte(static_cast<uint8_t>(async_marker_));
   type_parameters().WriteTo(writer);
-  writer->WriteUInt31(required_parameter_count());
+  writer->WriteUInt(required_parameter_count());
   positional_parameters().WriteTo(writer);
   named_parameters().WriteTo(writer);
   writer->WriteOptional<DartType>(return_type_);
@@ -2312,7 +2356,7 @@ TypeParameter* TypeParameter::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   TypeParameter* param = new TypeParameter();
   reader->helper()->type_parameters().Push(param);
-  param->name_ = String::ReadFrom(reader);
+  param->name_ = Reference::ReadStringFrom(reader);
   param->bound_ = DartType::ReadFrom(reader);
   return param;
 }
