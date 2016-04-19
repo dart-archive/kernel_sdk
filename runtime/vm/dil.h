@@ -1272,7 +1272,7 @@ class DoubleLiteral : public BasicLiteral {
 
 class BoolLiteral : public BasicLiteral {
  public:
-  static BoolLiteral* ReadFrom(Reader* reader);
+  static BoolLiteral* ReadFrom(Reader* reader, bool value);
   virtual void WriteTo(Writer* writer);
 
   virtual ~BoolLiteral();

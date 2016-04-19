@@ -173,9 +173,9 @@ enum Tag {
   kIsExpression = 37,
   kAsExpression = 38,
   kStringLiteral = 39,
-  // kIntLiteral = 40, // no longer used
-  kDoubleLiteral = 41,
-  kBoolLiteral = 42,
+  kDoubleLiteral = 40,
+  kTrueLiteral = 41,
+  kFalseLiteral = 42,
   kNullLiteral = 43,
   kSymbolLiteral = 44,
   kTypeLiteral = 45,
@@ -1273,8 +1273,10 @@ Expression* Expression::ReadFrom(Reader* reader) {
       return IntLiteral::ReadFrom(reader, false);
     case kDoubleLiteral:
       return DoubleLiteral::ReadFrom(reader);
-    case kBoolLiteral:
-      return BoolLiteral::ReadFrom(reader);
+    case kTrueLiteral:
+      return BoolLiteral::ReadFrom(reader, true);
+    case kFalseLiteral:
+      return BoolLiteral::ReadFrom(reader, false);
     case kNullLiteral:
       return NullLiteral::ReadFrom(reader);
     default:
@@ -1677,17 +1679,16 @@ void DoubleLiteral::WriteTo(Writer* writer) {
   value_->WriteTo(writer);
 }
 
-BoolLiteral* BoolLiteral::ReadFrom(Reader* reader) {
+BoolLiteral* BoolLiteral::ReadFrom(Reader* reader, bool value) {
   TRACE_READ_OFFSET();
   BoolLiteral* lit = new BoolLiteral();
-  lit->value_ = reader->ReadBool();
+  lit->value_ = value;
   return lit;
 }
 
 void BoolLiteral::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kBoolLiteral);
-  writer->WriteBool(value_);
+  writer->WriteTag(value_ ? kTrueLiteral : kFalseLiteral);
 }
 
 NullLiteral* NullLiteral::ReadFrom(Reader* reader) {
