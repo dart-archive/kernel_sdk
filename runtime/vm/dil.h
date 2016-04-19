@@ -1734,7 +1734,7 @@ class ForStatement : public Statement {
 
 class ForInStatement : public Statement {
  public:
-  static ForInStatement* ReadFrom(Reader* reader);
+  static ForInStatement* ReadFrom(Reader* reader, bool is_async);
   virtual void WriteTo(Writer* writer);
 
   virtual ~ForInStatement();

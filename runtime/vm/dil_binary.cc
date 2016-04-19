@@ -214,6 +214,7 @@ enum Tag {
   kYieldStatement = 77,
   kVariableDeclaration = 78,
   kFunctionDeclaration = 79,
+  kAsyncForInStatement = 80,
 
   kInvalidType = 90,
   kDynamicType = 91,
@@ -1881,7 +1882,9 @@ Statement* Statement::ReadFrom(Reader* reader) {
     case kForStatement:
       return ForStatement::ReadFrom(reader);
     case kForInStatement:
-      return ForInStatement::ReadFrom(reader);
+      return ForInStatement::ReadFrom(reader, false);
+    case kAsyncForInStatement:
+      return ForInStatement::ReadFrom(reader, true);
     case kSwitchStatement:
       return SwitchStatement::ReadFrom(reader);
     case kContinueSwitchStatement:
@@ -2048,11 +2051,11 @@ void ForStatement::WriteTo(Writer* writer) {
   body_->WriteTo(writer);
 }
 
-ForInStatement* ForInStatement::ReadFrom(Reader* reader) {
+ForInStatement* ForInStatement::ReadFrom(Reader* reader, bool is_async) {
   TRACE_READ_OFFSET();
   VariableScope<ReaderHelper> vars(reader->helper());
   ForInStatement* forinstmt = new ForInStatement();
-  forinstmt->is_async_ = reader->ReadBool();
+  forinstmt->is_async_ = is_async;
   forinstmt->variable_ = VariableDeclaration::ReadFrom(reader);
   forinstmt->iterable_ = Expression::ReadFrom(reader);
   forinstmt->body_ = Statement::ReadFrom(reader);
@@ -2061,9 +2064,8 @@ ForInStatement* ForInStatement::ReadFrom(Reader* reader) {
 
 void ForInStatement::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kForInStatement);
+  writer->WriteTag(is_async_ ? kAsyncForInStatement : kForInStatement);
   VariableScope<WriterHelper> vars(writer->helper());
-  writer->WriteBool(is_async_);
   variable_->WriteTo(writer);
   iterable_->WriteTo(writer);
   body_->WriteTo(writer);
