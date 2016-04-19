@@ -222,6 +222,7 @@ enum Tag {
   kInterfaceType = 93,
   kFunctionType = 94,
   kTypeParameterType = 95,
+  kSimpleInterfaceType = 96,
 
   kNormalClassReference = 100,
   kMixinClassReference = 101,
@@ -2329,6 +2330,8 @@ DartType* DartType::ReadFrom(Reader* reader) {
       return VoidType::ReadFrom(reader);
     case kInterfaceType:
       return InterfaceType::ReadFrom(reader);
+    case kSimpleInterfaceType:
+      return InterfaceType::ReadFrom(reader, true);
     case kFunctionType:
       return FunctionType::ReadFrom(reader);
     case kTypeParameterType:
@@ -2378,11 +2381,24 @@ InterfaceType* InterfaceType::ReadFrom(Reader* reader) {
   return type;
 }
 
+InterfaceType* InterfaceType::ReadFrom(Reader* reader, bool _without_type_arguments_) {
+  TRACE_READ_OFFSET();
+  Class* klass = Reference::ReadClassFrom(reader);
+  InterfaceType* type = new InterfaceType(klass);
+  ASSERT(_without_type_arguments_);
+  return type;
+}
+
 void InterfaceType::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kInterfaceType);
-  Reference::WriteClassTo(writer, klass_);
-  type_arguments_.WriteTo(writer);
+  if (type_arguments_.length() == 0) {
+    writer->WriteTag(kSimpleInterfaceType);
+    Reference::WriteClassTo(writer, klass_);
+  } else {
+    writer->WriteTag(kInterfaceType);
+    Reference::WriteClassTo(writer, klass_);
+    type_arguments_.WriteTo(writer);
+  }
 }
 
 FunctionType* FunctionType::ReadFrom(Reader* reader) {

@@ -176,7 +176,7 @@ class Ref {
 template<typename T>
 class List {
  public:
-  List() : array_(NULL), length_(-1) { }
+  List() : array_(NULL), length_(0) { }
   ~List();
 
   template<typename IT>
@@ -2094,6 +2094,7 @@ class VoidType : public DartType {
 class InterfaceType : public DartType {
  public:
   static InterfaceType* ReadFrom(Reader* reader);
+  static InterfaceType* ReadFrom(Reader* reader, bool _without_type_arguments_);
   void WriteTo(Writer* writer);
 
   InterfaceType(Class* klass) : klass_(klass) {}
