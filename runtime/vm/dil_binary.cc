@@ -2308,15 +2308,23 @@ void FunctionDeclaration::WriteTo(Writer* writer) {
 
 Name* Name::ReadFrom(Reader* reader) {
   String* string = Reference::ReadStringFrom(reader);
-  int lib_index = reader->ReadUInt();
-  Library* library = reader->helper()->program()->libraries().GetOrCreate<Library>(lib_index);
-  return new Name(string, library);
+  if (string->size() >= 1 && string->buffer()[0] == '_') {
+    int lib_index = reader->ReadUInt();
+    Library* library = reader->helper()->program()->libraries().GetOrCreate<Library>(lib_index);
+    return new Name(string, library);
+  } else {
+    return new Name(string, NULL);
+  }
 }
 
 void Name::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   string_->WriteTo(writer);
-  writer->WriteUInt(writer->helper()->libraries().Lookup(library_));
+  Library* library = library_;
+  bool is_private = library != NULL;
+  if (is_private) {
+    writer->WriteUInt(writer->helper()->libraries().Lookup(library_));
+  }
 }
 
 DartType* DartType::ReadFrom(Reader* reader) {
@@ -2335,7 +2343,7 @@ DartType* DartType::ReadFrom(Reader* reader) {
       return InterfaceType::ReadFrom(reader, true);
     case kFunctionType:
       return FunctionType::ReadFrom(reader);
-		case kSimpleFunctionType:
+    case kSimpleFunctionType:
       return FunctionType::ReadFrom(reader, true);
     case kTypeParameterType:
       return TypeParameterType::ReadFrom(reader);
