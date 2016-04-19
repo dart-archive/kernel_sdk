@@ -99,6 +99,7 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
                            ic_data_array,
                            NULL,  // NULL = not inlining.
                            osr_id);
+
   return builder.BuildGraph();
 }
 

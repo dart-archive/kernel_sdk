@@ -756,12 +756,12 @@ class CallSiteInliner : public ValueObject {
         // Build the callee graph.
         InlineExitCollector* exit_collector =
             new(Z) InlineExitCollector(caller_graph_, call);
-        FlowGraph* callee_graph;
         FlowGraphBuilder builder(*parsed_function,
                                  *ic_data_array,
                                  exit_collector,
                                  Compiler::kNoOSRDeoptId);
         builder.SetInitialBlockId(caller_graph_->max_block_id());
+        FlowGraph* callee_graph;
         {
           CSTAT_TIMER_SCOPE(thread(), graphinliner_build_timer);
           callee_graph = builder.BuildGraph();
