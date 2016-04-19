@@ -493,15 +493,18 @@ class Reader {
     fprintf(stderr, "@%ld %s\n", offset_, str);
   }
 
-  template<typename T>
+  template<typename T, typename RT>
   T* ReadOptional() {
     Tag tag = ReadTag();
     if (tag == kNothing) {
       return NULL;
     }
     ASSERT(tag == kSomething);
-    return T::ReadFrom(this);
+    return RT::ReadFrom(this);
   }
+
+  template<typename T>
+  T* ReadOptional() { return ReadOptional<T, T>(); }
 
   ReaderHelper* helper() { return &builder_; }
 
@@ -658,6 +661,19 @@ class Writer {
     }
   }
 
+  template<typename T, typename WT>
+  void WriteOptionalStatic(T* object) {
+    if (object == NULL) {
+      WriteTag(kNothing);
+    } else {
+      WriteTag(kSomething);
+      WT::WriteTo(this, object);
+    }
+  }
+
+  template<typename T>
+  void WriteOptionalStatic(T* object) { return WriteOptionalStatic<T, T>(object); }
+
   void DumpOffset(const char* str) {
     fprintf(stderr, "@%ld %s\n", offset_, str);
   }
@@ -772,6 +788,19 @@ class StringImpl {
   static void WriteTo(Writer* writer, String* string) {
     TRACE_READ_OFFSET();
     string->WriteToImpl(writer);
+  }
+};
+
+class VariableDeclarationImpl {
+ public:
+  static VariableDeclaration* ReadFrom(Reader* reader) {
+    TRACE_READ_OFFSET();
+    return VariableDeclaration::ReadFromImpl(reader);
+  }
+
+  static void WriteTo(Writer* writer, VariableDeclaration* d) {
+    TRACE_READ_OFFSET();
+    d->WriteToImpl(writer);
   }
 };
 
@@ -1844,7 +1873,7 @@ Let* Let::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   VariableScope<ReaderHelper> vars(reader->helper());
   Let* let = new Let();
-  let->variable_ = VariableDeclaration::ReadFrom(reader);
+  let->variable_ = VariableDeclaration::ReadFromImpl(reader);
   let->body_ = Expression::ReadFrom(reader);
   return let;
 }
@@ -1853,7 +1882,7 @@ void Let::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   VariableScope<WriterHelper> vars(writer->helper());
   writer->WriteTag(kLet);
-  variable_->WriteTo(writer);
+  variable_->WriteToImpl(writer);
   body_->WriteTo(writer);
 }
 
@@ -2034,7 +2063,7 @@ ForStatement* ForStatement::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   VariableScope<ReaderHelper> vars(reader->helper());
   ForStatement* forstmt = new ForStatement();
-  forstmt->variables_.ReadFromStatic<VariableDeclaration>(reader);
+  forstmt->variables_.ReadFromStatic<VariableDeclarationImpl>(reader);
   forstmt->condition_ = reader->ReadOptional<Expression>();
   forstmt->updates_.ReadFromStatic<Expression>(reader);
   forstmt->body_ = Statement::ReadFrom(reader);
@@ -2045,7 +2074,7 @@ void ForStatement::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kForStatement);
   VariableScope<WriterHelper> vars(writer->helper());
-  variables_.WriteTo(writer);
+  variables_.WriteToStatic<VariableDeclarationImpl>(writer);
   writer->WriteOptional<Expression>(condition_);
   updates_.WriteTo(writer);
   body_->WriteTo(writer);
@@ -2056,7 +2085,7 @@ ForInStatement* ForInStatement::ReadFrom(Reader* reader, bool is_async) {
   VariableScope<ReaderHelper> vars(reader->helper());
   ForInStatement* forinstmt = new ForInStatement();
   forinstmt->is_async_ = is_async;
-  forinstmt->variable_ = VariableDeclaration::ReadFrom(reader);
+  forinstmt->variable_ = VariableDeclaration::ReadFromImpl(reader);
   forinstmt->iterable_ = Expression::ReadFrom(reader);
   forinstmt->body_ = Statement::ReadFrom(reader);
   return forinstmt;
@@ -2066,7 +2095,7 @@ void ForInStatement::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(is_async_ ? kAsyncForInStatement : kForInStatement);
   VariableScope<WriterHelper> vars(writer->helper());
-  variable_->WriteTo(writer);
+  variable_->WriteToImpl(writer);
   iterable_->WriteTo(writer);
   body_->WriteTo(writer);
 }
@@ -2182,8 +2211,8 @@ Catch* Catch::ReadFrom(Reader* reader) {
   VariableScope<ReaderHelper> vars(reader->helper());
   Catch* c = new Catch();
   c->guard_ = reader->ReadOptional<DartType>();
-  c->exception_ = reader->ReadOptional<VariableDeclaration>();
-  c->stack_trace_ = reader->ReadOptional<VariableDeclaration>();
+  c->exception_ = reader->ReadOptional<VariableDeclaration, VariableDeclarationImpl>();
+  c->stack_trace_ = reader->ReadOptional<VariableDeclaration, VariableDeclarationImpl>();
   c->body_ = Statement::ReadFrom(reader);
   return c;
 }
@@ -2192,8 +2221,8 @@ void Catch::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   VariableScope<WriterHelper> vars(writer->helper());
   writer->WriteOptional<DartType>(guard_);
-  writer->WriteOptional<VariableDeclaration>(exception_);
-  writer->WriteOptional<VariableDeclaration>(stack_trace_);
+  writer->WriteOptionalStatic<VariableDeclaration, VariableDeclarationImpl>(exception_);
+  writer->WriteOptionalStatic<VariableDeclaration, VariableDeclarationImpl>(stack_trace_);
   body_->WriteTo(writer);
 }
 
@@ -2263,7 +2292,7 @@ void VariableDeclaration::WriteToImpl(Writer* writer) {
 FunctionDeclaration* FunctionDeclaration::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   FunctionDeclaration* decl = new FunctionDeclaration();
-  decl->variable_ = VariableDeclaration::ReadFrom(reader);
+  decl->variable_ = VariableDeclaration::ReadFromImpl(reader);
   decl->function_ = FunctionNode::ReadFrom(reader);
   return decl;
 }
@@ -2271,7 +2300,7 @@ FunctionDeclaration* FunctionDeclaration::ReadFrom(Reader* reader) {
 void FunctionDeclaration::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kFunctionDeclaration);
-  variable_->WriteTo(writer);
+  variable_->WriteToImpl(writer);
   function_->WriteTo(writer);
 }
 
@@ -2436,8 +2465,8 @@ FunctionNode* FunctionNode::ReadFrom(Reader* reader) {
   function->async_marker_ = static_cast<FunctionNode::AsyncMarker>(reader->ReadByte());
   function->type_parameters().ReadFromStatic<TypeParameter>(reader);
   function->required_parameter_count_ = reader->ReadUInt();
-  function->positional_parameters().ReadFromStatic<VariableDeclaration>(reader);
-  function->named_parameters().ReadFromStatic<VariableDeclaration>(reader);
+  function->positional_parameters().ReadFromStatic<VariableDeclarationImpl>(reader);
+  function->named_parameters().ReadFromStatic<VariableDeclarationImpl>(reader);
   function->return_type_ = reader->ReadOptional<DartType>();
 
   VariableScope<ReaderHelper> vars(reader->helper());
@@ -2450,8 +2479,8 @@ void FunctionNode::WriteTo(Writer* writer) {
   writer->WriteByte(static_cast<uint8_t>(async_marker_));
   type_parameters().WriteTo(writer);
   writer->WriteUInt(required_parameter_count());
-  positional_parameters().WriteTo(writer);
-  named_parameters().WriteTo(writer);
+  positional_parameters().WriteToStatic<VariableDeclarationImpl>(writer);
+  named_parameters().WriteToStatic<VariableDeclarationImpl>(writer);
   writer->WriteOptional<DartType>(return_type_);
 
   VariableScope<WriterHelper> vars(writer->helper());
