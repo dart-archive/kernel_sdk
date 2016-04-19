@@ -740,6 +740,7 @@ class InvalidExpression : public Expression {
 class VariableGet : public Expression {
  public:
   static VariableGet* ReadFrom(Reader* reader);
+  static VariableGet* ReadFrom(Reader* reader, uint8_t payload);
   virtual void WriteTo(Writer* writer);
 
   virtual ~VariableGet();
@@ -760,6 +761,7 @@ class VariableGet : public Expression {
 class VariableSet : public Expression {
  public:
   static VariableSet* ReadFrom(Reader* reader);
+  static VariableSet* ReadFrom(Reader* reader, uint8_t payload);
   virtual void WriteTo(Writer* writer);
 
   virtual ~VariableSet();

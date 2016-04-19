@@ -224,7 +224,14 @@ enum Tag {
   kClassFieldReference = 103,
   kClassConstructorReference = 104,
   kLibraryProcedureReference = 105,
-  kClassProcedureReference = 106
+  kClassProcedureReference = 106,
+
+  kSpecializedTagHighBit = 0x80, // 10000000
+  kSpecializedTagMask = 0xF8,    // 11111000
+  kSpecializedPayloadMask = 0x7, // 00000111
+
+  kSpecializedVariableGet = 128,
+  kSpecializedVariableSet = 136
 };
 
 template<typename T>
@@ -447,8 +454,17 @@ class Reader {
     return ReadByte();
   }
 
-  Tag ReadTag() {
-    return static_cast<Tag>(ReadByte());
+  Tag ReadTag(uint8_t* payload = NULL) {
+    uint8_t byte = ReadByte();
+    bool has_payload = (byte & kSpecializedTagHighBit) != 0;
+    if (has_payload) {
+      if (payload != NULL) {
+        *payload = byte & kSpecializedPayloadMask;
+      }
+      return static_cast<Tag>(byte & kSpecializedTagMask);
+    } else {
+      return static_cast<Tag>(byte);
+    }
   }
 
   uint8_t* Consume(int count) {
@@ -571,11 +587,14 @@ class Writer {
 
   void WriteUInt(uint32_t value) {
     if (value < 0x80) {
+      // 0...
       WriteByte(static_cast<uint8_t>(value));
     } else if (value < 0x4000) {
+      // 10...
       WriteByte(static_cast<uint8_t>(((value >> 8) & 0x3f) | 0x80));
       WriteByte(static_cast<uint8_t>(value & 0xff));
     } else {
+      // 11...
       // Ensure the highest 2 bits is not used for anything (we use it to for
       // encoding).
       ASSERT(static_cast<uint8_t>((value >> 24) & 0xc0) == 0);
@@ -608,6 +627,10 @@ class Writer {
 
   void WriteTag(Tag tag) {
     WriteByte(static_cast<uint8_t>(tag));
+  }
+
+  void WriteTag(Tag tag, uint8_t payload) {
+    WriteByte(kSpecializedTagHighBit | static_cast<uint8_t>(tag) | payload);
   }
 
   void WriteBytes(uint8_t* bytes, int length) {
@@ -1164,14 +1187,19 @@ void RedirectingInitializer::WriteTo(Writer* writer) {
 
 Expression* Expression::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  Tag tag = reader->ReadTag();
+  uint8_t payload = 0;
+  Tag tag = reader->ReadTag(&payload);
   switch (tag) {
     case kInvalidExpression:
       return InvalidExpression::ReadFrom(reader);
     case kVariableGet:
       return VariableGet::ReadFrom(reader);
+    case kSpecializedVariableGet:
+      return VariableGet::ReadFrom(reader, payload);
     case kVariableSet:
       return VariableSet::ReadFrom(reader);
+    case kSpecializedVariableSet:
+      return VariableSet::ReadFrom(reader, payload);
     case kPropertyGet:
       return PropertyGet::ReadFrom(reader);
     case kPropertySet:
@@ -1259,10 +1287,22 @@ VariableGet* VariableGet::ReadFrom(Reader* reader) {
   return get;
 }
 
+VariableGet* VariableGet::ReadFrom(Reader* reader, uint8_t payload) {
+  TRACE_READ_OFFSET();
+  VariableGet* get = new VariableGet();
+  get->variable_ = reader->helper()->variables().Lookup(payload);
+  return get;
+}
+
 void VariableGet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kVariableGet);
-  writer->WriteUInt(writer->helper()->variables().Lookup(variable_));
+  int index = writer->helper()->variables().Lookup(variable_);
+  if ((index & kSpecializedPayloadMask) == index) {
+    writer->WriteTag(kSpecializedVariableGet, static_cast<uint8_t>(index));
+  } else {
+    writer->WriteTag(kVariableGet);
+    writer->WriteUInt(index);
+  }
 }
 
 VariableSet* VariableSet::ReadFrom(Reader* reader) {
@@ -1273,10 +1313,23 @@ VariableSet* VariableSet::ReadFrom(Reader* reader) {
   return set;
 }
 
+VariableSet* VariableSet::ReadFrom(Reader* reader, uint8_t payload) {
+  TRACE_READ_OFFSET();
+  VariableSet* set = new VariableSet();
+  set->variable_ = reader->helper()->variables().Lookup(payload);
+  set->expression_ = Expression::ReadFrom(reader);
+  return set;
+}
+
 void VariableSet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kVariableSet);
-  writer->WriteUInt(writer->helper()->variables().Lookup(variable_));
+  int index = writer->helper()->variables().Lookup(variable_);
+  if ((index & kSpecializedPayloadMask) == index) {
+    writer->WriteTag(kSpecializedVariableSet, static_cast<uint8_t>(index));
+  } else {
+    writer->WriteTag(kVariableSet);
+    writer->WriteUInt(index);
+  }
   expression_->WriteTo(writer); 
 }
 
