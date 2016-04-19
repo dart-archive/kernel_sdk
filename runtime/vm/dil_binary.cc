@@ -191,6 +191,8 @@ enum Tag {
   kPositiveIntLiteral = 55,
   kNegativeIntLiteral = 56,
   kBigIntLiteral = 57,
+  kConstListLiteral = 58,
+  kConstMapLiteral = 59,
 
   kInvalidStatement = 60,
   kExpressionStatement = 61,
@@ -1252,9 +1254,13 @@ Expression* Expression::ReadFrom(Reader* reader) {
     case kThrow:
       return Throw::ReadFrom(reader);
     case kListLiteral:
-      return ListLiteral::ReadFrom(reader);
+      return ListLiteral::ReadFrom(reader, false);
+    case kConstListLiteral:
+      return ListLiteral::ReadFrom(reader, true);
     case kMapLiteral:
-      return MapLiteral::ReadFrom(reader);
+      return MapLiteral::ReadFrom(reader, false);
+    case kConstMapLiteral:
+      return MapLiteral::ReadFrom(reader, true);
     case kAwaitExpression:
       return AwaitExpression::ReadFrom(reader);
     case kFunctionExpression:
@@ -1760,10 +1766,10 @@ void Throw::WriteTo(Writer* writer) {
   expression_->WriteTo(writer);
 }
 
-ListLiteral* ListLiteral::ReadFrom(Reader* reader) {
+ListLiteral* ListLiteral::ReadFrom(Reader* reader, bool is_const) {
   TRACE_READ_OFFSET();
   ListLiteral* literal = new ListLiteral();
-  literal->is_const_ = reader->ReadBool();
+  literal->is_const_ = is_const;
   literal->type_ = DartType::ReadFrom(reader);
   literal->expressions_.ReadFromStatic<Expression>(reader);
   return literal;
@@ -1771,16 +1777,15 @@ ListLiteral* ListLiteral::ReadFrom(Reader* reader) {
 
 void ListLiteral::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kListLiteral);
-  writer->WriteBool(is_const_);
+  writer->WriteTag(is_const_ ? kConstListLiteral : kListLiteral);
   type_->WriteTo(writer);
   expressions_.WriteTo(writer);
 }
 
-MapLiteral* MapLiteral::ReadFrom(Reader* reader) {
+MapLiteral* MapLiteral::ReadFrom(Reader* reader, bool is_const) {
   TRACE_READ_OFFSET();
   MapLiteral* literal = new MapLiteral();
-  literal->is_const_ = reader->ReadBool();
+  literal->is_const_ = is_const;
   literal->key_type_ = DartType::ReadFrom(reader);
   literal->value_type_ = DartType::ReadFrom(reader);
   literal->entries_.ReadFromStatic<MapEntry>(reader);
@@ -1789,8 +1794,7 @@ MapLiteral* MapLiteral::ReadFrom(Reader* reader) {
 
 void MapLiteral::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kMapLiteral);
-  writer->WriteBool(is_const_);
+  writer->WriteTag(is_const_ ? kConstMapLiteral : kMapLiteral);
   key_type_->WriteTo(writer);
   value_type_->WriteTo(writer);
   entries_.WriteTo(writer);

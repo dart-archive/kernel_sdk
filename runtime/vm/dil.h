@@ -1387,7 +1387,7 @@ class Throw : public Expression {
 
 class ListLiteral : public Expression {
  public:
-  static ListLiteral* ReadFrom(Reader* reader);
+  static ListLiteral* ReadFrom(Reader* reader, bool is_const);
   virtual void WriteTo(Writer* writer);
 
   virtual ~ListLiteral();
@@ -1411,7 +1411,7 @@ class ListLiteral : public Expression {
 
 class MapLiteral : public Expression {
  public:
-  static MapLiteral* ReadFrom(Reader* reader);
+  static MapLiteral* ReadFrom(Reader* reader, bool is_const);
   virtual void WriteTo(Writer* writer);
 
   virtual ~MapLiteral();
