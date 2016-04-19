@@ -223,6 +223,7 @@ enum Tag {
   kFunctionType = 94,
   kTypeParameterType = 95,
   kSimpleInterfaceType = 96,
+  kSimpleFunctionType = 97,
 
   kNormalClassReference = 100,
   kMixinClassReference = 101,
@@ -2334,6 +2335,8 @@ DartType* DartType::ReadFrom(Reader* reader) {
       return InterfaceType::ReadFrom(reader, true);
     case kFunctionType:
       return FunctionType::ReadFrom(reader);
+		case kSimpleFunctionType:
+      return FunctionType::ReadFrom(reader, true);
     case kTypeParameterType:
       return TypeParameterType::ReadFrom(reader);
     default:
@@ -2412,14 +2415,34 @@ FunctionType* FunctionType::ReadFrom(Reader* reader) {
   return type;
 }
 
+FunctionType* FunctionType::ReadFrom(Reader* reader, bool _is_simple_) {
+  TRACE_READ_OFFSET();
+  FunctionType* type = new FunctionType();
+  ASSERT(_is_simple_);
+  type->positional_parameters().ReadFromStatic<DartType>(reader);
+  type->required_parameter_count_ = type->positional_parameters().length();
+  type->return_type_ = DartType::ReadFrom(reader);
+  return type;
+}
+
 void FunctionType::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kFunctionType);
-  type_parameters_.WriteTo(writer);
-  writer->WriteUInt(required_parameter_count_);
-  positional_parameters_.WriteTo(writer);
-  named_parameters_.WriteTo(writer);
-  return_type_->WriteTo(writer);
+
+  bool is_simple = positional_parameters_.length() == required_parameter_count_ &&
+                   type_parameters_.length() == 0 &&
+                   named_parameters_.length() == 0;
+  if (is_simple) {
+    writer->WriteTag(kSimpleFunctionType);
+    positional_parameters_.WriteTo(writer);
+    return_type_->WriteTo(writer);
+  } else {
+    writer->WriteTag(kFunctionType);
+    type_parameters_.WriteTo(writer);
+    writer->WriteUInt(required_parameter_count_);
+    positional_parameters_.WriteTo(writer);
+    named_parameters_.WriteTo(writer);
+    return_type_->WriteTo(writer);
+  }
 }
 
 TypeParameterType* TypeParameterType::ReadFrom(Reader* reader) {
@@ -2525,7 +2548,7 @@ dil::Program* ReadPrecompiledDil(const char* filename) {
   if (filename != NULL) {
     InputFile file(filename);
     if (file.ReadAll()) {
-      dil::Reader reader(file.buffer(), file.size());
+			dil::Reader reader(file.buffer(), file.size());
       return dil::Program::ReadFrom(&reader);
     }
   }

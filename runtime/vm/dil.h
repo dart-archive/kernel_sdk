@@ -2118,6 +2118,7 @@ class InterfaceType : public DartType {
 class FunctionType : public DartType {
  public:
   static FunctionType* ReadFrom(Reader* reader);
+  static FunctionType* ReadFrom(Reader* reader, bool _without_type_arguments_);
   void WriteTo(Writer* writer);
 
   virtual ~FunctionType();
