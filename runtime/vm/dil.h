@@ -1028,7 +1028,7 @@ class StaticInvocation : public Expression {
 
 class ConstructorInvocation : public Expression {
  public:
-  static ConstructorInvocation* ReadFrom(Reader* reader);
+  static ConstructorInvocation* ReadFrom(Reader* reader, bool is_const);
   virtual void WriteTo(Writer* writer);
 
   virtual ~ConstructorInvocation();

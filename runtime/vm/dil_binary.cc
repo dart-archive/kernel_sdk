@@ -164,8 +164,8 @@ enum Tag {
   kMethodInvocation = 28,
   kSuperMethodInvocation = 29,
   kStaticInvocation = 30,
-  // kFunctionInvocation = 31, // No longer used.
-  kConstructorInvocation = 32,
+  kConstructorInvocation = 31,
+  kConstConstructorInvocation = 32,
   kNot = 33,
   kLogicalExpression = 34,
   kConditionalExpression = 35,
@@ -1219,7 +1219,9 @@ Expression* Expression::ReadFrom(Reader* reader) {
     case kStaticInvocation:
       return StaticInvocation::ReadFrom(reader);
     case kConstructorInvocation:
-      return ConstructorInvocation::ReadFrom(reader);
+      return ConstructorInvocation::ReadFrom(reader, false);
+    case kConstConstructorInvocation:
+      return ConstructorInvocation::ReadFrom(reader, true);
     case kNot:
       return Not::ReadFrom(reader);
     case kLogicalExpression:
@@ -1498,10 +1500,10 @@ void StaticInvocation::WriteTo(Writer* writer) {
   arguments_->WriteTo(writer);
 }
 
-ConstructorInvocation* ConstructorInvocation::ReadFrom(Reader* reader) {
+ConstructorInvocation* ConstructorInvocation::ReadFrom(Reader* reader, bool is_const) {
   TRACE_READ_OFFSET();
   ConstructorInvocation* invocation = new ConstructorInvocation();
-  invocation->is_const_ = reader->ReadBool();
+  invocation->is_const_ = is_const;
   invocation->target_ = Constructor::Cast(Reference::ReadMemberFrom(reader));
   invocation->arguments_ = Arguments::ReadFrom(reader);
   return invocation;
@@ -1509,8 +1511,7 @@ ConstructorInvocation* ConstructorInvocation::ReadFrom(Reader* reader) {
 
 void ConstructorInvocation::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kConstructorInvocation);
-  writer->WriteBool(is_const_);
+  writer->WriteTag(is_const_ ? kConstConstructorInvocation : kConstructorInvocation);
   Reference::WriteMemberTo(writer, target_);
   arguments_->WriteTo(writer);
 }
