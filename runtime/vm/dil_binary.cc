@@ -173,7 +173,7 @@ enum Tag {
   kIsExpression = 37,
   kAsExpression = 38,
   kStringLiteral = 39,
-  kIntLiteral = 40,
+  // kIntLiteral = 40, // no longer used
   kDoubleLiteral = 41,
   kBoolLiteral = 42,
   kNullLiteral = 43,
@@ -187,7 +187,10 @@ enum Tag {
   kAwaitExpression = 51,
   kFunctionExpression = 52,
   kLet = 53,
-  kBigIntLiteral = 54,
+
+  kPositiveIntLiteral = 55,
+  kNegativeIntLiteral = 56,
+  kBigIntLiteral = 57,
 
   kInvalidStatement = 60,
   kExpressionStatement = 61,
@@ -231,8 +234,11 @@ enum Tag {
   kSpecializedPayloadMask = 0x7, // 00000111
 
   kSpecializedVariableGet = 128,
-  kSpecializedVariableSet = 136
+  kSpecializedVariableSet = 136,
+  kSpecialIntLiteral = 144,
 };
+
+static const int SpecializedIntLiteralBias = 3;
 
 template<typename T>
 class BlockStack {
@@ -630,6 +636,7 @@ class Writer {
   }
 
   void WriteTag(Tag tag, uint8_t payload) {
+    ASSERT((payload & ~kSpecializedPayloadMask) == 0);
     WriteByte(kSpecializedTagHighBit | static_cast<uint8_t>(tag) | payload);
   }
 
@@ -1258,8 +1265,12 @@ Expression* Expression::ReadFrom(Reader* reader) {
       return BigintLiteral::ReadFrom(reader);
     case kStringLiteral:
       return StringLiteral::ReadFrom(reader);
-    case kIntLiteral:
-      return IntLiteral::ReadFrom(reader);
+    case kSpecialIntLiteral:
+      return IntLiteral::ReadFrom(reader, payload);
+    case kNegativeIntLiteral:
+      return IntLiteral::ReadFrom(reader, true);
+    case kPositiveIntLiteral:
+      return IntLiteral::ReadFrom(reader, false);
     case kDoubleLiteral:
       return DoubleLiteral::ReadFrom(reader);
     case kBoolLiteral:
@@ -1628,19 +1639,29 @@ void BigintLiteral::WriteTo(Writer* writer) {
   value_->WriteTo(writer);
 }
 
-IntLiteral* IntLiteral::ReadFrom(Reader* reader) {
+IntLiteral* IntLiteral::ReadFrom(Reader* reader, bool is_negative) {
   TRACE_READ_OFFSET();
   IntLiteral* literal = new IntLiteral();
-  bool negative = reader->ReadBool();
-  literal->value_ = negative ? -static_cast<int64_t>(reader->ReadUInt()) : reader->ReadUInt();
+  literal->value_ = is_negative ? -static_cast<int64_t>(reader->ReadUInt()) : reader->ReadUInt();
+  return literal;
+}
+
+IntLiteral* IntLiteral::ReadFrom(Reader* reader, uint8_t payload) {
+  TRACE_READ_OFFSET();
+  IntLiteral* literal = new IntLiteral();
+  literal->value_ = static_cast<int32_t>(payload) - SpecializedIntLiteralBias;
   return literal;
 }
 
 void IntLiteral::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kIntLiteral);
-  writer->WriteBool(value_ < 0);
-  writer->WriteUInt(static_cast<uint32_t>(value_ < 0 ? -value_ : value_));
+  int64_t payload = value_ + SpecializedIntLiteralBias;
+  if ((payload & kSpecializedPayloadMask) == payload) {
+    writer->WriteTag(kSpecialIntLiteral, static_cast<uint8_t>(payload));
+  } else {
+    writer->WriteTag(value_ < 0 ? kNegativeIntLiteral : kPositiveIntLiteral);
+    writer->WriteUInt(static_cast<uint32_t>(value_ < 0 ? -value_ : value_));
+  }
 }
 
 DoubleLiteral* DoubleLiteral::ReadFrom(Reader* reader) {

@@ -1231,7 +1231,8 @@ class BigintLiteral : public StringLiteral {
 
 class IntLiteral : public BasicLiteral {
  public:
-  static IntLiteral* ReadFrom(Reader* reader);
+  static IntLiteral* ReadFrom(Reader* reader, bool is_negative);
+  static IntLiteral* ReadFrom(Reader* reader, uint8_t payload);
   virtual void WriteTo(Writer* writer);
 
   virtual ~IntLiteral();
