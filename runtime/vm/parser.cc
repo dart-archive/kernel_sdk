@@ -155,6 +155,8 @@ static RawTypeArguments* NewTypeArguments(
 
 
 dil::Procedure* ParsedFunction::GetBinaryIR() {
+  // Functions that have a binary IR will cache it, those that don't will
+  // repeatedly search for it.  This should be improved.
   if (ir_procedure_ != NULL) return ir_procedure_;
 
   switch (function().kind()) {
@@ -202,6 +204,15 @@ dil::Procedure* ParsedFunction::GetBinaryIR() {
       }
       if (i == procedures.length()) return NULL;
 
+      // The IR builder will create its own local variables and scopes, and it
+      // will not need an AST.  The code generator will assume that there is a
+      // local variable stack slot allocated for the current context and (I
+      // think) that the runtime will expect it to be at a fixed offset which
+      // requires allocating an unused expression temporary variable.
+      LocalScope* scope = new LocalScope(NULL, 0, 0);
+      scope->AddVariable(EnsureExpressionTemp());
+      scope->AddVariable(current_context_var());
+      node_sequence_ = new SequenceNode(TokenPosition::kNoSource, scope);
       return ir_procedure_ = procedures[i];
     }
     default:

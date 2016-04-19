@@ -1260,7 +1260,7 @@ class DoubleLiteral : public BasicLiteral {
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
 
-  double value() { return 42.0; }
+  String* value() { return value_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DoubleLiteral);

@@ -80,8 +80,10 @@ DECLARE_FLAG(bool, trace_irregexp);
 #ifndef DART_PRECOMPILED_RUNTIME
 
 void DartCompilationPipeline::ParseFunction(ParsedFunction* parsed_function) {
-  Parser::ParseFunction(parsed_function);
-  parsed_function->AllocateVariables();
+  if (parsed_function->GetBinaryIR() == NULL) {
+    Parser::ParseFunction(parsed_function);
+    parsed_function->AllocateVariables();
+  }
 }
 
 
@@ -93,7 +95,9 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
   dil::Procedure* procedure = parsed_function->GetBinaryIR();
   if (procedure != NULL) {
     dil::FlowGraphBuilder builder(procedure, *parsed_function);
-    return builder.BuildGraph();
+    FlowGraph* graph = builder.BuildGraph();
+    parsed_function->AllocateVariables();
+    return graph;
   }
   FlowGraphBuilder builder(*parsed_function,
                            ic_data_array,

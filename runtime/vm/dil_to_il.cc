@@ -9,7 +9,7 @@
 namespace dart {
 namespace dil {
 
-#define Z (zone())
+#define Z (zone_)
 
 Fragment operator+(const Fragment& first, const Fragment& second) {
   if (first.entry == NULL) return second;
@@ -39,6 +39,12 @@ Fragment operator!(const Fragment& fragment) {
   return Fragment(fragment.entry, NULL);
 }
 
+
+void FlowGraphBuilder::AddVariable(VariableDeclaration* declaration,
+				   LocalVariable* variable) {
+  parsed_function_.node_sequence()->scope()->AddVariable(variable);
+  variables_[declaration] = variable;
+}
 
 void FlowGraphBuilder::Push(Definition* definition) {
   Value* value = new(Z) Value(definition);
@@ -74,7 +80,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
   Fragment body =
     normal_entry >>
     (new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource, 0) >>
-     VisitStatement(procedure()->function()->body()));
+     VisitStatement(procedure_->function()->body()));
 
   ConstantInstr* null =
       new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
@@ -86,22 +92,49 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
 }
 
 
+void FlowGraphBuilder::BuildConstant(const Object& value) {
+  ConstantInstr* constant = new(Z) ConstantInstr(value);
+  Push(constant);
+  fragment_ = constant;
+}
+
+
 void FlowGraphBuilder::VisitNullLiteral(NullLiteral* node) {
-  ConstantInstr* null =
-      new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
-  Push(null);
-  fragment_ = null;
+  BuildConstant(Instance::ZoneHandle(Z, Instance::null()));
+}
+
+
+void FlowGraphBuilder::VisitBoolLiteral(BoolLiteral* node) {
+  BuildConstant(Bool::Get(node->value()));
+}
+
+
+void FlowGraphBuilder::VisitIntLiteral(IntLiteral* node) {
+  BuildConstant(
+      Integer::ZoneHandle(Z, Integer::New(node->value(), Heap::kOld)));
+}
+
+
+void FlowGraphBuilder::VisitBigintLiteral(BigintLiteral* node) {
+  const dart::String& value = dart::String::Handle(
+      dart::String::FromUTF8(node->value()->buffer(), node->value()->size()));
+  BuildConstant(
+      Integer::ZoneHandle(Z, Integer::New(value, Heap::kOld)));
+}
+
+
+void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
+  const dart::String& value = dart::String::Handle(
+      dart::String::FromUTF8(node->value()->buffer(), node->value()->size()));
+  BuildConstant(
+      Double::ZoneHandle(Z, Double::New(value, Heap::kOld)));
 }
 
 
 void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
-  ConstantInstr* string =
-      new(Z) ConstantInstr(dart::String::ZoneHandle(Z,
-          dart::String::FromUTF8(node->value()->buffer(),
-                                 node->value()->size(),
-                                 Heap::kOld)));
-  Push(string);
-  fragment_ = string;
+  BuildConstant(dart::String::ZoneHandle(Z,
+      dart::String::FromUTF8(node->value()->buffer(), node->value()->size(),
+	                     Heap::kOld)));
 }
 
 
@@ -128,6 +161,15 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
                              ic_data_array);
   Push(call);
   fragment_ = instructions << call;
+}
+
+
+void FlowGraphBuilder::VisitVariableGet(VariableGet* node) {
+  LocalVariable* local = variables_[node->variable()];
+  LoadLocalInstr* load =
+      new(Z) LoadLocalInstr(*local, TokenPosition::kNoSource);
+  Push(load);
+  fragment_ = load;
 }
 
 
@@ -185,6 +227,24 @@ void FlowGraphBuilder::VisitExpressionStatement(ExpressionStatement* node) {
   Fragment instructions = VisitExpression(node->expression());
   Drop();
   fragment_ = instructions;  // Unnecessary.
+}
+
+
+void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
+  const dart::String& name =
+    dart::String::Handle(dart::String::FromUTF8(node->name()->buffer(),
+						node->name()->size()));
+  const dart::String& symbol = dart::String::ZoneHandle(Z, Symbols::New(name));
+  LocalVariable* local =
+    new LocalVariable(TokenPosition::kNoSource, symbol,
+		      Type::ZoneHandle(Z, Type::DynamicType()));
+
+  AddVariable(node, local);
+
+  Fragment instructions = VisitExpression(node->initializer());
+  Value* value = Pop();
+  fragment_ = instructions <<
+      new(Z) StoreLocalInstr(*local, value, TokenPosition::kNoSource);
 }
 
 

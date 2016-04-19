@@ -5,6 +5,8 @@
 #ifndef VM_DIL_TO_IL_H_
 #define VM_DIL_TO_IL_H_
 
+#include <map>
+
 #include "vm/dil.h"
 #include "vm/flow_graph.h"
 #include "vm/intermediate_language.h"
@@ -49,14 +51,20 @@ class FlowGraphBuilder : private TreeVisitor {
   void VisitDefaultTreeNode(TreeNode* node) { UNREACHABLE(); }
 
   void VisitNullLiteral(NullLiteral* node);
+  void VisitBoolLiteral(BoolLiteral* node);
+  void VisitIntLiteral(IntLiteral* node);
+  void VisitBigintLiteral(BigintLiteral* node);
+  void VisitDoubleLiteral(DoubleLiteral* node);
   void VisitStringLiteral(StringLiteral* node);
   void VisitStaticInvocation(StaticInvocation* node);
+  void VisitVariableGet(VariableGet* node);
 
   ZoneGrowableArray<PushArgumentInstr*>* TranslateArguments(Arguments* node);
 
   void VisitBlock(Block* node);
   void VisitReturnStatement(ReturnStatement* node);
   void VisitExpressionStatement(ExpressionStatement* node);
+  void VisitVariableDeclaration(VariableDeclaration* node);
 
   Fragment VisitStatement(Statement* statement) {
     statement->AcceptStatementVisitor(this);
@@ -68,22 +76,28 @@ class FlowGraphBuilder : private TreeVisitor {
     return fragment_;
   }
 
+  void BuildConstant(const Object& value);
+
+  void AddVariable(VariableDeclaration* declaration,
+		   LocalVariable* variable);
+
+  void Push(Definition* definition);
+  Value* Pop();
+  void Drop();
+
   Zone* zone_;
-  Zone* zone() { return zone_; }
 
   Procedure* procedure_;
-  Procedure* procedure() { return procedure_; }
 
   const ParsedFunction& parsed_function_;
 
   int next_block_id_;
   int AllocateBlockId() { return next_block_id_++; }
 
+  std::map<dil::VariableDeclaration*, LocalVariable*> variables_;
+
   Fragment fragment_;
   Value* stack_;
-  void Push(Definition* definition);
-  Value* Pop();
-  void Drop();
 };
 
 }  // namespace dil
