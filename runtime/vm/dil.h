@@ -190,6 +190,9 @@ class List {
 
   void WriteTo(Writer* writer);
 
+  template<typename IT>
+  void WriteToStatic(Writer* writer);
+
   // Extends the array to at least be able to hold [length] elements.
   //
   // Free places will be filled with `NULL` values.
@@ -241,6 +244,7 @@ class String {
   static String* ReadFrom(Reader* reader);
   static String* ReadFromImpl(Reader* reader);
   void WriteTo(Writer* writer);
+  void WriteToImpl(Writer* writer);
 
   String(uint8_t* utf8, int length) {
     buffer_ = new uint8_t[length];

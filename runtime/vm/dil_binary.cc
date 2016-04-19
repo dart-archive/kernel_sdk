@@ -580,7 +580,7 @@ class Writer {
       // encoding).
       ASSERT(static_cast<uint8_t>((value >> 24) & 0xc0) == 0);
       uint8_t buffer[4] = {
-        static_cast<uint8_t>(((value >> 24) & 0x7f) | 0x80),
+        static_cast<uint8_t>(((value >> 24) & 0x7f) | 0xc0),
         static_cast<uint8_t>((value >> 16) & 0xff),
         static_cast<uint8_t>((value >> 8) & 0xff),
         static_cast<uint8_t>((value >> 0) & 0xff),
@@ -691,6 +691,20 @@ void List<T>::WriteTo(Writer* writer) {
   }
 }
 
+template<typename T>
+template<typename IT>
+void List<T>::WriteToStatic(Writer* writer) {
+  TRACE_WRITE_OFFSET();
+
+  // NOTE: We only support dense lists.
+  writer->WriteListLength(length_);
+  for (int i = 0; i < length_; i++) {
+    T* object = array_[i];
+    ASSERT(object != NULL);
+    IT::WriteTo(writer, object);
+  }
+}
+
 template<typename A, typename B>
 Tuple<A, B>* Tuple<A, B>::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
@@ -715,11 +729,16 @@ class DowncastReader {
   }
 };
 
-class StringImplReader {
+class StringImpl {
  public:
   static String* ReadFrom(Reader* reader) {
     TRACE_READ_OFFSET();
     return String::ReadFromImpl(reader);
+  }
+
+  static void WriteTo(Writer* writer, String* string) {
+    TRACE_READ_OFFSET();
+    string->WriteToImpl(writer);
   }
 };
 
@@ -735,24 +754,29 @@ String* String::ReadFromImpl(Reader* reader) {
   return string;
 }
 
+void String::WriteTo(Writer* writer) {
+  TRACE_WRITE_OFFSET();
+  Reference::WriteStringTo(writer, this);
+}
+
+void String::WriteToImpl(Writer* writer) {
+  TRACE_WRITE_OFFSET();
+  writer->WriteUInt(size_);
+  writer->WriteBytes(buffer_, size_);
+}
+
 void StringTable::ReadFrom(Reader* reader) {
-  strings_.ReadFromStatic<StringImplReader>(reader);
+  strings_.ReadFromStatic<StringImpl>(reader);
 }
 
 void StringTable::WriteTo(Writer* writer) {
-  strings_.WriteTo(writer);
+  strings_.WriteToStatic<StringImpl>(writer);
 
   // Build up the "String* -> index" table.
   WriterHelper* helper = writer->helper();
   for (int i = 0; i < strings_.length(); i++) {
     helper->strings().Push(strings_[i]);
   }
-}
-
-void String::WriteTo(Writer* writer) {
-  TRACE_WRITE_OFFSET();
-  writer->WriteUInt(size_);
-  writer->WriteBytes(buffer_, size_);
 }
 
 Library* Library::ReadFrom(Reader* reader) {
