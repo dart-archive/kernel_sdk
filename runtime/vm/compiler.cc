@@ -90,60 +90,16 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
     ParsedFunction* parsed_function,
     const ZoneGrowableArray<const ICData*>& ic_data_array,
     intptr_t osr_id) {
-  const Function& function = parsed_function->function();
-  switch (function.kind()) {
-    case RawFunction::kClosureFunction:
-    case RawFunction::kRegularFunction:
-    case RawFunction::kGetterFunction:
-    case RawFunction::kSetterFunction:
-    case RawFunction::kConstructor: {
-      if (function.IsImplicitClosureFunction()) goto fallback;
-      if (function.IsConstructorClosureFunction()) goto fallback;
-      const Script& script =
-          Script::Handle(parsed_function->function().script());
-      const String& url = String::Handle(script.url());
-      const char* url_string = url.ToCString();
-      size_t length = strlen(url_string);
-      if (strncmp(url_string, "file://", 7) != 0) goto fallback;
-      if (strncmp(url_string + length - 5, ".dart", 5) != 0) goto fallback;
-      length -= 7;
-      char* dill_name = reinterpret_cast<char*>(malloc(length + 1));
-      strncpy(dill_name, url_string + 7, length - 5);
-      strncpy(dill_name + length - 5, ".dill", 6);
-      dil::Program* program = ReadPrecompiledDil(dill_name);
-      if (program == NULL) goto fallback;
-      const Library& library = Library::Handle(script.FindLibrary());
-      const String& library_name = String::Handle(library.name());
-      dil::List<dil::Library>& libraries = program->libraries();
-      int i = 0;
-      for (; i < libraries.length(); ++i) {
-        dil::String* name = libraries[i]->name();
-        const String& name_string =
-          String::Handle(String::FromUTF8(name->buffer(), name->size()));
-        if (library_name.Equals(name_string)) break;
-      }
-      if (i == libraries.length()) goto fallback;
-      const String& function_name = String::Handle(function.name());
-      dil::List<dil::Procedure>& procedures = libraries[i]->procedures();
-      int j = 0;
-      for (; j < procedures.length(); ++j) {
-        dil::String* name = procedures[j]->name()->string();
-        const String& name_string =
-          String::Handle(String::FromUTF8(name->buffer(), name->size()));
-        if (function_name.Equals(name_string)) break;
-      }
-      if (j == procedures.length()) goto fallback;
-      dil::FlowGraphBuilder builder(procedures[j], *parsed_function, program);
-      return builder.BuildGraph();
-    }
-    fallback:
-    default:
-      FlowGraphBuilder builder(*parsed_function,
-                               ic_data_array,
-                               NULL,  // NULL = not inlining.
-                               osr_id);
-      return builder.BuildGraph();
+  dil::Procedure* procedure = parsed_function->GetBinaryIR();
+  if (procedure != NULL) {
+    dil::FlowGraphBuilder builder(procedure, *parsed_function);
+    return builder.BuildGraph();
   }
+  FlowGraphBuilder builder(*parsed_function,
+                           ic_data_array,
+                           NULL,  // NULL = not inlining.
+                           osr_id);
+  return builder.BuildGraph();
 }
 
 

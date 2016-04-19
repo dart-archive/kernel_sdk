@@ -154,6 +154,62 @@ static RawTypeArguments* NewTypeArguments(
 }
 
 
+dil::Procedure* ParsedFunction::GetBinaryIR() {
+  if (ir_procedure_ != NULL) return ir_procedure_;
+
+  switch (function().kind()) {
+    case RawFunction::kClosureFunction:
+    case RawFunction::kRegularFunction:
+    case RawFunction::kGetterFunction:
+    case RawFunction::kSetterFunction:
+    case RawFunction::kConstructor: {
+      if (function().IsImplicitClosureFunction()) return NULL;
+      if (function().IsConstructorClosureFunction()) return NULL;
+      const Script& script = Script::Handle(function().script());
+      const String& url = String::Handle(script.url());
+
+      // If it is a .dart file:// URL, map it to the filename of an IL binary
+      // file in the same location.
+      const char* url_string = url.ToCString();
+      size_t length = strlen(url_string);
+      if (strncmp(url_string, "file://", 7) != 0) return NULL;
+      if (strncmp(url_string + length - 5, ".dart", 5) != 0) return NULL;
+      length -= 7;
+      char* dill_name = reinterpret_cast<char*>(malloc(length + 1));
+      strncpy(dill_name, url_string + 7, length - 5);
+      strncpy(dill_name + length - 5, ".dill", 6);
+
+      // Read the binary, check that the first library matches the expected
+      // name and look for a function with the given name.
+      dil::Program* program = ReadPrecompiledDil(dill_name);
+      if (program == NULL) return NULL;
+      const Library& library = Library::Handle(script.FindLibrary());
+      const String& library_name = String::Handle(library.name());
+      dil::String* name = program->libraries()[0]->name();
+      const String& name_string =
+          String::Handle(String::FromUTF8(name->buffer(), name->size()));
+      if (!library_name.Equals(name_string)) return NULL;
+
+      const String& function_name = String::Handle(function().name());
+      dil::List<dil::Procedure>& procedures =
+          program->libraries()[0]->procedures();
+      int i = 0;
+      for (; i < procedures.length(); ++i) {
+        dil::String* name = procedures[i]->name()->string();
+        const String& name_string =
+            String::Handle(String::FromUTF8(name->buffer(), name->size()));
+        if (function_name.Equals(name_string)) break;
+      }
+      if (i == procedures.length()) return NULL;
+
+      return ir_procedure_ = procedures[i];
+    }
+    default:
+      return NULL;
+  }
+}
+
+
 void ParsedFunction::AddToGuardedFields(const Field* field) const {
   if ((field->guarded_cid() == kDynamicCid) ||
       (field->guarded_cid() == kIllegalCid)) {
@@ -14400,6 +14456,12 @@ void Parser::SkipQualIdent() {
 
 
 namespace dart {
+
+dil::Procedure* ParsedFunction::GetBinaryIR() {
+  UNREACHABLE();
+  return NULL;
+}
+
 
 void ParsedFunction::AddToGuardedFields(const Field* field) const {
   UNREACHABLE();

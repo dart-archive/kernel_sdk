@@ -35,12 +35,10 @@ class FlowGraphBuilder : private TreeVisitor {
  public:
   FlowGraphBuilder(Procedure* procedure,
                    const ParsedFunction& parsed_function,
-                   Program* program,
                    int first_block_id = 1)
     : zone_(Thread::Current()->zone()),
       procedure_(procedure),
       parsed_function_(parsed_function),
-      program_(program),
       next_block_id_(first_block_id),
       stack_(NULL) {
   }
@@ -77,9 +75,6 @@ class FlowGraphBuilder : private TreeVisitor {
   Procedure* procedure() { return procedure_; }
 
   const ParsedFunction& parsed_function_;
-
-  // TODO(kmillikin): We might not need this anymore.
-  Program* program_;
 
   int next_block_id_;
   int AllocateBlockId() { return next_block_id_++; }

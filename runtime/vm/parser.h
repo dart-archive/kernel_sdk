@@ -14,6 +14,7 @@
 #include "vm/ast.h"
 #include "vm/class_finalizer.h"
 #include "vm/compiler_stats.h"
+#include "vm/dil.h"
 #include "vm/object.h"
 #include "vm/raw_object.h"
 #include "vm/token.h"
@@ -58,7 +59,8 @@ class ParsedFunction : public ZoneAllocated {
         first_stack_local_index_(0),
         num_copied_params_(0),
         num_stack_locals_(0),
-        have_seen_await_expr_(false) {
+        have_seen_await_expr_(false),
+        ir_procedure_(NULL) {
     ASSERT(function.IsZoneHandle());
     // Every function has a local variable for the current context.
     LocalVariable* temp = new(zone()) LocalVariable(
@@ -68,6 +70,8 @@ class ParsedFunction : public ZoneAllocated {
     ASSERT(temp != NULL);
     current_context_var_ = temp;
   }
+
+  dil::Procedure* GetBinaryIR();
 
   const Function& function() const { return function_; }
   const Code& code() const { return code_; }
@@ -189,6 +193,8 @@ class ParsedFunction : public ZoneAllocated {
   int num_copied_params_;
   int num_stack_locals_;
   bool have_seen_await_expr_;
+
+  dil::Procedure* ir_procedure_;
 
   friend class Parser;
   DISALLOW_COPY_AND_ASSIGN(ParsedFunction);
