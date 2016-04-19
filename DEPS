@@ -46,6 +46,7 @@ vars = {
   "dart_services_rev" : "@7aea2574e6f3924bf409a80afb8ad52aa2be4f97",
   "dart_style_tag": "@0.2.4",
   "dev_compiler_rev": "@0c5dd2d1e999c421d978a478e267aac6279e087a",
+  "dynamo_rev": "@96ec0ac47f9ffe0d37e491e05cb73ea5ad6880fd",
   "glob_rev": "@704cf75e4f26b417505c5c611bdaacd8808467dd",
   "html_tag" : "@0.12.1+1",
   "http_tag" : "@0.11.3+3",
@@ -174,6 +175,8 @@ deps = {
       (Var("github_mirror") % "dart2js_info") + Var("dart2js_info_rev"),
   Var("dart_root") + "/third_party/pkg/dartdoc":
       (Var("github_mirror") % "dartdoc") + Var("dartdoc_tag"),
+  Var("dart_root") + "/third_party/dynamo":
+      ("https://github.com/asgerf/dynamo.git") + Var("dynamo_rev"),
   Var("dart_root") + "/third_party/pkg/dev_compiler":
       (Var("github_mirror") % "dev_compiler") + Var("dev_compiler_rev"),
   Var("dart_root") + "/third_party/pkg/glob":
