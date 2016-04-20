@@ -42,7 +42,8 @@ class FlowGraphBuilder : private TreeVisitor {
       procedure_(procedure),
       parsed_function_(parsed_function),
       next_block_id_(first_block_id),
-      stack_(NULL) {
+      stack_(NULL),
+      pending_argument_count_(0) {
   }
 
   FlowGraph* BuildGraph();
@@ -56,8 +57,13 @@ class FlowGraphBuilder : private TreeVisitor {
   void VisitBigintLiteral(BigintLiteral* node);
   void VisitDoubleLiteral(DoubleLiteral* node);
   void VisitStringLiteral(StringLiteral* node);
-  void VisitStaticInvocation(StaticInvocation* node);
   void VisitVariableGet(VariableGet* node);
+  void VisitVariableSet(VariableSet* node);
+  void VisitStaticGet(StaticGet* node);
+  void VisitStaticSet(StaticSet* node);
+  void VisitPropertyGet(PropertyGet* node);
+  void VisitPropertySet(PropertySet* node);
+  void VisitStaticInvocation(StaticInvocation* node);
 
   ZoneGrowableArray<PushArgumentInstr*>* TranslateArguments(Arguments* node);
 
@@ -98,6 +104,7 @@ class FlowGraphBuilder : private TreeVisitor {
 
   Fragment fragment_;
   Value* stack_;
+  int pending_argument_count_;
 };
 
 }  // namespace dil
