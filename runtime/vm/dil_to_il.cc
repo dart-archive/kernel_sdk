@@ -12,32 +12,103 @@ namespace dil {
 
 #define Z (zone_)
 
+Fragment& Fragment::operator+=(const Fragment& other) {
+  if (entry == NULL) {
+    entry = other.entry;
+    current = other.current;
+  } else if (current != NULL && other.entry != NULL) {
+    current->LinkTo(other.entry);
+    current = other.current;
+  }
+  return *this;
+}
+
+
+Fragment& Fragment::operator<<=(Instruction* next) {
+  if (entry == NULL) {
+    entry = current = next;
+  } else if (current != NULL) {
+    current->LinkTo(next);
+    current = next;
+  }
+  return *this;
+}
+
+
+Fragment Fragment::closed() {
+  ASSERT(entry != NULL);
+  return Fragment(entry, NULL);
+}
+
+
 Fragment operator+(const Fragment& first, const Fragment& second) {
-  if (first.entry == NULL) return second;
-  if (first.current == NULL || second.entry == NULL) return first;
-  first.current->LinkTo(second.entry);
-  return Fragment(first.entry, second.current);
+  Fragment result = first;
+  result += second;
+  return result;
 }
 
 
 Fragment operator<<(const Fragment& fragment, Instruction* next) {
-  if (fragment.entry == NULL) return Fragment(next, next);
-  if (fragment.current == NULL) return fragment;
-  fragment.current->LinkTo(next);
-  return Fragment(fragment.entry, next);
+  Fragment result = fragment;
+  result <<= next;
+  return result;
 }
 
 
-Fragment operator>>(Instruction* entry, const Fragment& fragment) {
-  if (fragment.entry == NULL) return Fragment(entry, entry);
-  entry->LinkTo(fragment.entry);
-  return Fragment(entry, fragment.current);
+FlowGraphBuilder::FlowGraphBuilder(Procedure* procedure,
+                                   const ParsedFunction& parsed_function,
+                                   int first_block_id)
+  : zone_(Thread::Current()->zone()),
+    procedure_(procedure),
+    parsed_function_(parsed_function),
+    library_(dart::Library::ZoneHandle(Z,
+	dart::Class::Handle(parsed_function.function().Owner()).library())),
+    ic_data_array_(Z, 0),
+    next_block_id_(first_block_id),
+    stack_(NULL),
+    pending_argument_count_(0) {
+}
+
+dart::String& FlowGraphBuilder::DartString(String* string,
+                                           Heap::Space space) {
+  return dart::String::ZoneHandle(Z,
+    dart::String::FromUTF8(string->buffer(), string->size(), space));
 }
 
 
-Fragment operator!(const Fragment& fragment) {
-  ASSERT(fragment.entry != NULL);
-  return Fragment(fragment.entry, NULL);
+PushArgumentInstr* FlowGraphBuilder::MakeArgument(){
+  ++pending_argument_count_;
+  return new(Z) PushArgumentInstr(Pop());
+}
+
+
+Fragment FlowGraphBuilder::MakeTemporary(LocalVariable** variable) {
+  Value* initial_value = Pop();
+  PushTempInstr* temp = new(Z) PushTempInstr(initial_value);
+  Push(temp);
+
+  char name[64];
+  intptr_t index = temp->temp_index();
+  OS::SNPrint(name, 64, ":temp%" Pd, index);
+  *variable =
+      new(Z) LocalVariable(TokenPosition::kNoSource,
+	                   dart::String::ZoneHandle(Z, Symbols::New(name)),
+	                   *initial_value->Type()->ToAbstractType());
+  // 2 = expression temporary and current context variables.
+  (*variable)->set_index(
+      kFirstLocalSlotFromFp - 2 - pending_argument_count_ - index);
+  return temp;
+}
+
+
+Fragment FlowGraphBuilder::DropTemporaries(intptr_t count) {
+  DropTempsInstr* drop = new(Z) DropTempsInstr(count, Pop());
+  while (count-- > 0) {
+    ASSERT(stack_->definition()->IsPushTemp());
+    Drop();
+  }
+  Push(drop);
+  return drop;
 }
 
 
@@ -47,11 +118,16 @@ void FlowGraphBuilder::AddVariable(VariableDeclaration* declaration,
   variables_[declaration] = variable;
 }
 
-void FlowGraphBuilder::Push(Definition* definition) {
-  Value* value = new(Z) Value(definition);
+
+void FlowGraphBuilder::SetTempIndex(Definition* definition) {
   definition->set_temp_index(
       stack_ == NULL ? 0 : stack_->definition()->temp_index() + 1);
-  Value::AddToList(value, &stack_);
+}
+
+
+void FlowGraphBuilder::Push(Definition* definition) {
+  SetTempIndex(definition);
+  Value::AddToList(new(Z) Value(definition), &stack_);
 }
 
 
@@ -78,64 +154,124 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       new(Z) GraphEntryInstr(parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
 
-  Fragment body =
-    normal_entry >>
-    (new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource, 0) >>
-     VisitStatement(procedure_->function()->body()));
+  Fragment body = normal_entry;
+  body <<= new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource, 0);
+  body += VisitStatement(procedure_->function()->body());
 
-  ConstantInstr* null =
-      new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
-  null->set_temp_index(0);
-  body = body << null <<
-      new(Z) ReturnInstr(TokenPosition::kNoSource, new Value(null));
+  if (body.is_open()) {
+    ASSERT(stack_ == NULL);
+    ConstantInstr* null =
+	new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
+    null->set_temp_index(0);
+    body <<= null;
+    body <<= new(Z) ReturnInstr(TokenPosition::kNoSource, new Value(null));
+  }
 
   return new(Z) FlowGraph(parsed_function_, graph_entry, next_block_id_ - 1);
 }
 
 
-void FlowGraphBuilder::BuildConstant(const Object& value) {
+Fragment FlowGraphBuilder::EmitConstant(const Object& value) {
   ConstantInstr* constant = new(Z) ConstantInstr(value);
   Push(constant);
-  fragment_ = constant;
+  return constant;
+}
+
+
+Fragment FlowGraphBuilder::EmitStaticCall(const Function& target,
+    ZoneGrowableArray<PushArgumentInstr*>* arguments) {
+  pending_argument_count_ -= arguments->length();
+  ASSERT(pending_argument_count_ >= 0);
+  StaticCallInstr* call =
+      new(Z) StaticCallInstr(TokenPosition::kNoSource,
+	                     target,
+	                     Object::null_array(),
+                	     arguments,
+  	                     ic_data_array_);
+  Push(call);
+  return call;
+}
+
+
+Fragment FlowGraphBuilder::EmitStaticCall(const Function& target) {
+  ZoneGrowableArray<PushArgumentInstr*>* arguments =
+      new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
+  return EmitStaticCall(target, arguments);
+}
+
+
+Fragment FlowGraphBuilder::EmitInstanceCall(const dart::String& name,
+    Token::Kind kind,
+    ZoneGrowableArray<PushArgumentInstr*>* arguments) {
+  pending_argument_count_ -= arguments->length();
+  ASSERT(pending_argument_count_ >= 0);
+  InstanceCallInstr* call =
+      new(Z) InstanceCallInstr(TokenPosition::kNoSource,
+	  name,
+	  kind,
+	  arguments,
+	  Object::null_array(),
+	  1,
+	  ic_data_array_);
+  Push(call);
+  return call;
+}
+
+
+Fragment FlowGraphBuilder::EmitInstanceCall(const dart::String& name,
+    Token::Kind kind,
+    PushArgumentInstr* argument) {
+  ZoneGrowableArray<PushArgumentInstr*>* arguments =
+      new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 1);
+  arguments->Add(argument);
+  return EmitInstanceCall(name, kind, arguments);
+}
+
+
+Fragment FlowGraphBuilder::EmitInstanceCall(const dart::String& name,
+    Token::Kind kind,
+    PushArgumentInstr* argument0,
+    PushArgumentInstr* argument1) {
+  ZoneGrowableArray<PushArgumentInstr*>* arguments =
+      new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 1);
+  arguments->Add(argument0);
+  arguments->Add(argument1);
+  return EmitInstanceCall(name, kind, arguments);
 }
 
 
 void FlowGraphBuilder::VisitNullLiteral(NullLiteral* node) {
-  BuildConstant(Instance::ZoneHandle(Z, Instance::null()));
+  fragment_ = EmitConstant(Instance::ZoneHandle(Z, Instance::null()));
 }
 
 
 void FlowGraphBuilder::VisitBoolLiteral(BoolLiteral* node) {
-  BuildConstant(Bool::Get(node->value()));
+  fragment_ = EmitConstant(Bool::Get(node->value()));
 }
 
 
 void FlowGraphBuilder::VisitIntLiteral(IntLiteral* node) {
-  BuildConstant(
+  fragment_ = EmitConstant(
       Integer::ZoneHandle(Z, Integer::New(node->value(), Heap::kOld)));
 }
 
 
 void FlowGraphBuilder::VisitBigintLiteral(BigintLiteral* node) {
-  const dart::String& value = dart::String::Handle(
-      dart::String::FromUTF8(node->value()->buffer(), node->value()->size()));
-  BuildConstant(
+  const dart::String& value = DartString(node->value());
+  fragment_ = EmitConstant(
       Integer::ZoneHandle(Z, Integer::New(value, Heap::kOld)));
 }
 
 
 void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
-  const dart::String& value = dart::String::Handle(
-      dart::String::FromUTF8(node->value()->buffer(), node->value()->size()));
-  BuildConstant(
+  const dart::String& value = DartString(node->value());
+  fragment_ = EmitConstant(
       Double::ZoneHandle(Z, Double::New(value, Heap::kOld)));
 }
 
 
 void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
-  BuildConstant(dart::String::ZoneHandle(Z,
-      dart::String::FromUTF8(node->value()->buffer(), node->value()->size(),
-	                     Heap::kOld)));
+  fragment_ = EmitConstant(DartString(node->value(), Heap::kOld));
 }
 
 
@@ -161,95 +297,59 @@ void FlowGraphBuilder::VisitVariableSet(VariableSet* node) {
 
 void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
   Member* target = node->target();
-  const dart::String& name_string = dart::String::Handle(
-      dart::String::FromUTF8(target->name()->string()->buffer(),
-	                     target->name()->string()->size()));
-  const Script& script =
-      Script::Handle(parsed_function_.function().script());
-  const dart::Library& library = dart::Library::Handle(script.FindLibrary());
+  const dart::String& target_name = DartString(target->name()->string());
   if (target->IsField()) {
-    const dart::Field& field =
-	dart::Field::ZoneHandle(Z, library.LookupFieldAllowPrivate(name_string));
+    const dart::Field& field = dart::Field::ZoneHandle(Z,
+	library_.LookupFieldAllowPrivate(target_name));
     const dart::Class& owner = dart::Class::Handle(field.Owner());
     const dart::String& getter_name =
-	dart::String::Handle(dart::Field::GetterSymbol(name_string));
+	dart::String::Handle(dart::Field::GetterSymbol(target_name));
     const Function& getter =
 	Function::ZoneHandle(Z, owner.LookupStaticFunction(getter_name));
     if (getter.IsNull() || field.is_const()) {
       ConstantInstr* constant = new(Z) ConstantInstr(field);
-      constant->set_temp_index(
-	  stack_ == NULL ? 0 : stack_->definition()->temp_index() + 1);
+      SetTempIndex(constant);
       Fragment instructions = constant;
       LoadStaticFieldInstr* load =
 	  new(Z) LoadStaticFieldInstr(new Value(constant),
 	                              TokenPosition::kNoSource);
       Push(load);
       fragment_ = instructions << load;
-      return;
+    } else {
+      fragment_ = EmitStaticCall(getter);
     }
-    ZoneGrowableArray<PushArgumentInstr*>* arguments =
-	new(Z) ZoneGrowableArray<PushArgumentInstr*>(0);
-    ZoneGrowableArray<const ICData*> ic_data_array(Z, 0);
-    StaticCallInstr* call =
-	new(Z) StaticCallInstr(TokenPosition::kNoSource,
-	                       getter,
-             	               Object::null_array(),
-	                       arguments,
-	                       ic_data_array);
-    Push(call);
-    fragment_ = call;
-    return;
+  } else {
+    ASSERT(target->IsProcedure());
+    UNREACHABLE();
   }
-  ASSERT(target->IsProcedure());
-  UNREACHABLE();
 }
 
 
 void FlowGraphBuilder::VisitStaticSet(StaticSet* node) {
   Member* target = node->target();
-  const dart::String& name_string = dart::String::Handle(
-      dart::String::FromUTF8(target->name()->string()->buffer(),
-	                     target->name()->string()->size()));
-  const Script& script =
-      Script::Handle(parsed_function_.function().script());
-  const dart::Library& library = dart::Library::Handle(script.FindLibrary());
+  const dart::String& target_name = DartString(target->name()->string());
   if (target->IsField()) {
-    const dart::Field& field =
-	dart::Field::ZoneHandle(Z, library.LookupFieldAllowPrivate(name_string));
+    const dart::Field& field = dart::Field::ZoneHandle(Z,
+	library_.LookupFieldAllowPrivate(target_name));
 
     Fragment instructions = VisitExpression(node->expression());
-    Value* value = Pop();
-    PushTempInstr* temp = new(Z) PushTempInstr(value);
-    instructions = instructions << temp;
-    Push(temp);
-    
-    char name[64];
-    int index = value->definition()->temp_index();
-    OS::SNPrint(name, 64, ":temp%d", index);
-    LocalVariable* variable =
-	new(Z) LocalVariable(TokenPosition::kNoSource,
-	                     dart::String::ZoneHandle(Z, Symbols::New(name)),
-	                     *value->Type()->ToAbstractType());
-    variable->set_index(
-	kFirstLocalSlotFromFp - index - 2 - pending_argument_count_);
+    LocalVariable* variable;
+    instructions += MakeTemporary(&variable);
 
     LoadLocalInstr* load =
 	new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
-    instructions = instructions << load;
+    instructions <<= load;
     Push(load);
 
     StoreStaticFieldInstr* store =
 	new(Z) StoreStaticFieldInstr(field, Pop(), TokenPosition::kNoSource);
-    instructions = instructions << store;
+    instructions <<= store;
 
     load = new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
-    instructions = instructions << load;
+    instructions <<= load;
     Push(load);
 
-    DropTempsInstr* drop = new(Z) DropTempsInstr(1, Pop());
-    Drop();  // PushTemp.
-    Push(drop);
-    fragment_ = instructions << drop;
+    fragment_ = instructions + DropTemporaries(1);
   } else {
     ASSERT(target->IsProcedure());
     UNREACHABLE();
@@ -259,30 +359,14 @@ void FlowGraphBuilder::VisitStaticSet(StaticSet* node) {
 
 void FlowGraphBuilder::VisitPropertyGet(PropertyGet* node) {
   Fragment instructions = VisitExpression(node->receiver());
-  Value* receiver = Pop();
-  PushArgumentInstr* receiver_argument = new(Z) PushArgumentInstr(receiver);
-  instructions = instructions << receiver_argument;
+  PushArgumentInstr* receiver_argument = MakeArgument();
+  instructions <<= receiver_argument;
 
-  // The pending argument is consumed immediately.
-  String* name = node->name()->string();
-  const dart::String& name_string = dart::String::Handle(
-      dart::String::FromUTF8(name->buffer(), name->size()));
+  const dart::String& name = DartString(node->name()->string());
   const dart::String& getter_name = dart::String::ZoneHandle(Z,
-    Symbols::New(dart::String::Handle(dart::Field::GetterSymbol(name_string))));
-  ZoneGrowableArray<PushArgumentInstr*>* arguments =
-      new(Z) ZoneGrowableArray<PushArgumentInstr*>(1);
-  arguments->Add(receiver_argument);
-  ZoneGrowableArray<const ICData*> ic_data_array(Z, 0);
-  InstanceCallInstr* get =
-      new(Z) InstanceCallInstr(TokenPosition::kNoSource,
-	                       getter_name,
-	                       Token::kGET,
-          	               arguments,
-	                       Object::null_array(),
-	                       1,
-	                       ic_data_array);
-  Push(get);
-  fragment_ = instructions << get;
+      Symbols::New(dart::String::Handle(dart::Field::GetterSymbol(name))));
+  fragment_ = instructions + EmitInstanceCall(getter_name, Token::kGET,
+                                              receiver_argument);
 }
 
 
@@ -291,118 +375,85 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
       new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
   Fragment instructions = null;
   Push(null);
-  PushTempInstr* temp = new(Z) PushTempInstr(Pop());
-  instructions = instructions << temp;
-  Push(temp);
+  LocalVariable* variable;
+  instructions += MakeTemporary(&variable);
 
-  char variable_name[64];
-  int index = null->temp_index();
-  OS::SNPrint(variable_name, 64, ":temp%d", index);
-  LocalVariable* variable =
-      new(Z) LocalVariable(TokenPosition::kNoSource,
-          dart::String::ZoneHandle(Z, Symbols::New(variable_name)),
-	*null->Type()->ToAbstractType());
-  variable->set_index(
-      kFirstLocalSlotFromFp - index - 2 - pending_argument_count_);
-
-  instructions = instructions + VisitExpression(node->receiver());
-  Value* receiver = Pop();
-  PushArgumentInstr* receiver_argument = new(Z) PushArgumentInstr(receiver);
-  instructions = instructions << receiver_argument;
-  ++pending_argument_count_;
+  instructions += VisitExpression(node->receiver());
+  PushArgumentInstr* receiver_argument = MakeArgument();
+  instructions <<= receiver_argument;
   
-  instructions = instructions + VisitExpression(node->value());
+  instructions += VisitExpression(node->value());
   Value* value = Pop();
   StoreLocalInstr* store =
       new(Z) StoreLocalInstr(*variable, value, TokenPosition::kNoSource);
-  instructions = instructions << store;
+  instructions <<= store;
   Push(store);
 
-  PushArgumentInstr* value_argument = new(Z) PushArgumentInstr(Pop());
-  instructions = instructions << value_argument;
-  // The pending argument is consumed immediately.
+  PushArgumentInstr* value_argument = MakeArgument();
+  instructions <<= value_argument;
 
-  String* name = node->name()->string();
-  const dart::String& name_string = dart::String::Handle(
-      dart::String::FromUTF8(name->buffer(), name->size()));
+  const dart::String& name = DartString(node->name()->string());
   const dart::String& setter_name = dart::String::ZoneHandle(Z,
-    Symbols::New(dart::String::Handle(dart::Field::SetterSymbol(name_string))));
-  ZoneGrowableArray<PushArgumentInstr*>* arguments =
-      new(Z) ZoneGrowableArray<PushArgumentInstr*>(2);
-  arguments->Add(receiver_argument);
-  arguments->Add(value_argument);
-  ZoneGrowableArray<const ICData*> ic_data_array(Z, 0);
-  InstanceCallInstr* set =
-      new(Z) InstanceCallInstr(TokenPosition::kNoSource,
-	                       setter_name,
-	                       Token::kSET,
-          	               arguments,
-	                       Object::null_array(),
-	                       1,
-	                       ic_data_array);
-  --pending_argument_count_;
-  ASSERT(pending_argument_count_ >= 0);
-  instructions = instructions << set;
+      Symbols::New(dart::String::Handle(dart::Field::SetterSymbol(name))));
+
+  instructions += EmitInstanceCall(setter_name, Token::kSET,
+                                   receiver_argument, value_argument);
+  Drop();
 
   LoadLocalInstr* load =
       new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
-  instructions = instructions << load;
+  instructions <<= load;
   Push(load);
 
-  DropTempsInstr* drop = new(Z) DropTempsInstr(1, Pop());
-  Drop();  // PushTemp.
-  Push(drop);
-  fragment_ = instructions << drop;
+  fragment_ = instructions + DropTemporaries(1);
 }
 
 
 void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
-  ZoneGrowableArray<PushArgumentInstr*>* arguments =
-      TranslateArguments(node->arguments());
-  Fragment instructions = fragment_;
-
-  Name* target_name = node->procedure()->name();
-  const dart::String& name_string = dart::String::Handle(
-      dart::String::FromUTF8(target_name->string()->buffer(),
-                             target_name->string()->size()));
-  const Script& script =
-      Script::Handle(parsed_function_.function().script());
-  const dart::Library& library = dart::Library::Handle(script.FindLibrary());
+  ZoneGrowableArray<PushArgumentInstr*>* arguments = NULL;
+  Fragment instructions = TranslateArguments(node->arguments(), &arguments);
+  const dart::String& name = DartString(node->procedure()->name()->string());
   const Function& target = 
-      Function::ZoneHandle(Z, library.LookupFunctionAllowPrivate(name_string));
-  ZoneGrowableArray<const ICData*> ic_data_array(Z, 0);
-  StaticCallInstr* call =
-      new(Z) StaticCallInstr(TokenPosition::kNoSource,
-                             target,
-                             Object::null_array(),
-                             arguments,
-                             ic_data_array);
-  pending_argument_count_ -= node->arguments()->positional().length();
-  ASSERT(pending_argument_count_ >= 0);
-  Push(call);
-  fragment_ = instructions << call;
+      Function::ZoneHandle(Z, library_.LookupFunctionAllowPrivate(name));
+  fragment_ = instructions + EmitStaticCall(target, arguments);
 }
 
 
-ZoneGrowableArray<PushArgumentInstr*>* FlowGraphBuilder::TranslateArguments(
-    Arguments* node) {
+void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
+  intptr_t length = node->arguments()->positional().length() + 1;
+  ZoneGrowableArray<PushArgumentInstr*>* arguments =
+      new(Z) ZoneGrowableArray<PushArgumentInstr*>(length);
+  Fragment instructions = VisitExpression(node->receiver());
+  PushArgumentInstr* receiver_argument = MakeArgument();
+  instructions <<= receiver_argument;
+  arguments->Add(receiver_argument);
+  instructions += TranslateArguments(node->arguments(), &arguments);
+
+  const dart::String& name = dart::String::ZoneHandle(Z,
+      Symbols::New(DartString(node->name()->string())));
+  fragment_ =
+      instructions + EmitInstanceCall(name, Token::kILLEGAL, arguments);
+}
+
+
+Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
+    ZoneGrowableArray<PushArgumentInstr*>** arguments) {
   if (node->types().length() != 0 || node->named().length() != 0) {
     UNIMPLEMENTED();
   }
   Fragment instructions;
   List<Expression>& positional = node->positional();
-  ZoneGrowableArray<PushArgumentInstr*>* arguments =
-      new(Z) ZoneGrowableArray<PushArgumentInstr*>(positional.length());
-  for (int i = 0; i < positional.length(); ++i) {
-    instructions = instructions + VisitExpression(positional[i]);
-    Value* argument = Pop();
-    PushArgumentInstr* push = new(Z) PushArgumentInstr(argument);
-    arguments->Add(push);
-    instructions = instructions << push;
-    ++pending_argument_count_;
+  if (*arguments == NULL) {
+    *arguments =
+	new(Z) ZoneGrowableArray<PushArgumentInstr*>(positional.length());
   }
-  fragment_ = instructions;
-  return arguments;
+  for (int i = 0; i < positional.length(); ++i) {
+    instructions += VisitExpression(positional[i]);
+    PushArgumentInstr* push = MakeArgument();
+    (*arguments)->Add(push);
+    instructions <<= push;
+  }
+  return instructions;
 }
 
 
@@ -410,7 +461,7 @@ void FlowGraphBuilder::VisitBlock(Block* node) {
   Fragment instructions;
   List<Statement>& statements = node->statements();
   for (int i = 0; i < statements.length(); ++i) {
-    instructions = instructions + VisitStatement(statements[i]);
+    instructions += VisitStatement(statements[i]);
   }
   fragment_ = instructions;
 }
@@ -420,6 +471,7 @@ void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
   Fragment instructions;
   Value* result;
   if (node->expression() == NULL) {
+    ASSERT(stack_ == NULL);  // True for all statements.
     ConstantInstr* null =
         new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
     null->set_temp_index(0);
@@ -429,9 +481,8 @@ void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
     instructions = VisitExpression(node->expression());
     result = Pop();
   }
-  instructions = instructions <<
-      new(Z) ReturnInstr(TokenPosition::kNoSource, result);
-  fragment_ = !instructions;
+  instructions <<= new(Z) ReturnInstr(TokenPosition::kNoSource, result);
+  fragment_ = instructions.closed();
 }
 
 
@@ -443,9 +494,7 @@ void FlowGraphBuilder::VisitExpressionStatement(ExpressionStatement* node) {
 
 
 void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
-  const dart::String& name =
-    dart::String::Handle(dart::String::FromUTF8(node->name()->buffer(),
-						node->name()->size()));
+  const dart::String& name = DartString(node->name());
   const dart::String& symbol = dart::String::ZoneHandle(Z, Symbols::New(name));
   LocalVariable* local =
     new LocalVariable(TokenPosition::kNoSource, symbol,
@@ -456,10 +505,10 @@ void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
   Fragment instructions;
   Value* value;
   if (node->initializer() == NULL) {
+    ASSERT(stack_ == NULL);
     ConstantInstr* null =
 	new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
-    null->set_temp_index(
-	stack_ == NULL ? 0 : stack_->definition()->temp_index() + 1);
+    null->set_temp_index(0);
     instructions = null;
     value = new Value(null);
   } else {

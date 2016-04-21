@@ -26,25 +26,24 @@ class Fragment {
 
   Fragment(Instruction* entry, Instruction* current)
     : entry(entry), current(current) {}
+
+  bool is_open() { return entry == NULL || current != NULL; }
+  bool is_closed() { return !is_open(); }
+
+  Fragment& operator+=(const Fragment& other);
+  Fragment& operator<<=(Instruction* next);
+
+  Fragment closed();
 };
 
 Fragment operator+(const Fragment& first, const Fragment& second);
 Fragment operator<<(const Fragment& fragment, Instruction* next);
-Fragment operator>>(Instruction* entry, const Fragment& fragment);
-Fragment operator!(const Fragment& fragment);
 
 class FlowGraphBuilder : private TreeVisitor {
  public:
   FlowGraphBuilder(Procedure* procedure,
                    const ParsedFunction& parsed_function,
-                   int first_block_id = 1)
-    : zone_(Thread::Current()->zone()),
-      procedure_(procedure),
-      parsed_function_(parsed_function),
-      next_block_id_(first_block_id),
-      stack_(NULL),
-      pending_argument_count_(0) {
-  }
+                   int first_block_id = 1);
 
   FlowGraph* BuildGraph();
 
@@ -64,8 +63,10 @@ class FlowGraphBuilder : private TreeVisitor {
   void VisitPropertyGet(PropertyGet* node);
   void VisitPropertySet(PropertySet* node);
   void VisitStaticInvocation(StaticInvocation* node);
+  void VisitMethodInvocation(MethodInvocation* node);
 
-  ZoneGrowableArray<PushArgumentInstr*>* TranslateArguments(Arguments* node);
+  Fragment TranslateArguments(Arguments* node,
+			      ZoneGrowableArray<PushArgumentInstr*>** arguments);
 
   void VisitBlock(Block* node);
   void VisitReturnStatement(ReturnStatement* node);
@@ -82,10 +83,34 @@ class FlowGraphBuilder : private TreeVisitor {
     return fragment_;
   }
 
-  void BuildConstant(const Object& value);
+  Fragment EmitConstant(const Object& value);
+
+  Fragment EmitStaticCall(const Function& target,
+			  ZoneGrowableArray<PushArgumentInstr*>* arguments);
+  Fragment EmitStaticCall(const Function& target);
+
+  Fragment EmitInstanceCall(const dart::String& name,
+			    Token::Kind kind,
+			    ZoneGrowableArray<PushArgumentInstr*>* arguments);
+  Fragment EmitInstanceCall(const dart::String& name,
+			    Token::Kind kind,
+			    PushArgumentInstr* argument);
+  Fragment EmitInstanceCall(const dart::String& name,
+			    Token::Kind kind,
+			    PushArgumentInstr* argument0,
+			    PushArgumentInstr* argument1);
+
+  dart::String& DartString(String* string, Heap::Space space = Heap::kNew);
+
+  PushArgumentInstr* MakeArgument();
+
+  Fragment MakeTemporary(LocalVariable** variable);
+  Fragment DropTemporaries(intptr_t count);
 
   void AddVariable(VariableDeclaration* declaration,
 		   LocalVariable* variable);
+
+  void SetTempIndex(Definition* definition);
 
   void Push(Definition* definition);
   Value* Pop();
@@ -96,6 +121,8 @@ class FlowGraphBuilder : private TreeVisitor {
   Procedure* procedure_;
 
   const ParsedFunction& parsed_function_;
+  const dart::Library& library_;
+  const ZoneGrowableArray<const ICData*> ic_data_array_;
 
   int next_block_id_;
   int AllocateBlockId() { return next_block_id_++; }
