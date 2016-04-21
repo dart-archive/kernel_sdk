@@ -69,10 +69,11 @@ FlowGraphBuilder::FlowGraphBuilder(Procedure* procedure,
     pending_argument_count_(0) {
 }
 
+
 dart::String& FlowGraphBuilder::DartString(String* string,
                                            Heap::Space space) {
   return dart::String::ZoneHandle(Z,
-    dart::String::FromUTF8(string->buffer(), string->size(), space));
+      dart::String::FromUTF8(string->buffer(), string->size(), space));
 }
 
 
@@ -95,8 +96,9 @@ Fragment FlowGraphBuilder::MakeTemporary(LocalVariable** variable) {
 	                   dart::String::ZoneHandle(Z, Symbols::New(name)),
 	                   *initial_value->Type()->ToAbstractType());
   // 2 = expression temporary and current context variables.
-  (*variable)->set_index(
-      kFirstLocalSlotFromFp - 2 - pending_argument_count_ - index);
+  (*variable)->set_index(kFirstLocalSlotFromFp - 2 - variables_.size() -
+      pending_argument_count_ -
+      index);
   return temp;
 }
 
@@ -422,7 +424,7 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
 void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   intptr_t length = node->arguments()->positional().length() + 1;
   ZoneGrowableArray<PushArgumentInstr*>* arguments =
-      new(Z) ZoneGrowableArray<PushArgumentInstr*>(length);
+      new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, length);
   Fragment instructions = VisitExpression(node->receiver());
   PushArgumentInstr* receiver_argument = MakeArgument();
   instructions <<= receiver_argument;
@@ -436,6 +438,52 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
 }
 
 
+void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
+  const dart::String& class_name =
+      DartString(Class::Cast(node->target()->parent())->name());
+  const dart::Class& owner = dart::Class::ZoneHandle(Z,
+      library_.LookupClassAllowPrivate(class_name));
+  ZoneGrowableArray<PushArgumentInstr*>* arguments =
+      new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
+  AllocateObjectInstr* alloc =
+      new(Z) AllocateObjectInstr(TokenPosition::kNoSource,
+	                         owner,
+	                         arguments);
+  Fragment instructions = alloc;
+  Push(alloc);
+  LocalVariable* variable;
+  instructions += MakeTemporary(&variable);
+
+  intptr_t length = node->arguments()->positional().length() + 1;
+  arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, length);
+  LoadLocalInstr* load =
+      new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
+  instructions <<= load;
+  Push(load);
+  PushArgumentInstr* object_argument = MakeArgument();
+  instructions <<= object_argument;
+  arguments->Add(object_argument);
+  instructions += TranslateArguments(node->arguments(), &arguments);
+
+  const dart::String& constructor_name =
+      DartString(node->target()->name()->string());
+  const dart::String& dot = dart::String::Handle(dart::String::New("."));
+  const dart::String& name =
+      dart::String::Handle(dart::String::Concat(
+        dart::String::Handle(dart::String::Concat(class_name, dot)),
+	constructor_name));
+  const Function& target = Function::ZoneHandle(Z,
+      owner.LookupConstructorAllowPrivate(name));
+  instructions += EmitStaticCall(target, arguments);
+  Drop();
+
+  load = new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
+  instructions <<= load;
+  Push(load);
+
+  fragment_ = instructions + DropTemporaries(1);
+}
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
     ZoneGrowableArray<PushArgumentInstr*>** arguments) {
   if (node->types().length() != 0 || node->named().length() != 0) {
@@ -445,7 +493,7 @@ Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
   List<Expression>& positional = node->positional();
   if (*arguments == NULL) {
     *arguments =
-	new(Z) ZoneGrowableArray<PushArgumentInstr*>(positional.length());
+	new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, positional.length());
   }
   for (int i = 0; i < positional.length(); ++i) {
     instructions += VisitExpression(positional[i]);

@@ -64,6 +64,7 @@ class FlowGraphBuilder : private TreeVisitor {
   void VisitPropertySet(PropertySet* node);
   void VisitStaticInvocation(StaticInvocation* node);
   void VisitMethodInvocation(MethodInvocation* node);
+  void VisitConstructorInvocation(ConstructorInvocation* node);
 
   Fragment TranslateArguments(Arguments* node,
 			      ZoneGrowableArray<PushArgumentInstr*>** arguments);
