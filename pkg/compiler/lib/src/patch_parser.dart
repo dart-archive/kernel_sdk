@@ -142,7 +142,50 @@ import 'parser/partial_parser.dart' show PartialParser;
 import 'parser/parser.dart' show Parser;
 import 'scanner/scanner.dart' show Scanner;
 import 'script.dart';
-import 'tokens/token.dart' show StringToken, Token;
+import 'tokens/token.dart' show SymbolToken, StringToken, Token;
+
+import 'tokens/token_constants.dart' show EOF_TOKEN;
+
+import 'tokens/precedence_constants.dart' show AT_INFO;
+
+class PartialPatchParser extends PartialParser {
+  PartialPatchParser(Listener listener, ParserOptions options)
+      : super(listener, options);
+
+  Token parseMetadataStar(Token token, {bool forParameter: false}) {
+    listener.beginMetadataStar(token);
+    int count = 0;
+    while (token.kind != EOF_TOKEN) {
+      if (optional('@', token)) {
+        token = parseMetadata(token);
+        count++;
+      } else if (optional('patch', token)) {
+        token = parsePatchKeyword(token);
+      } else {
+        break;
+      }
+    }
+    listener.endMetadataStar(count, forParameter);
+    return token;
+  }
+
+  Token parsePatchKeyword(Token token) {
+    listener.beginMetadata(token);
+    Token start = new SymbolToken(AT_INFO, token.charOffset)..next = token;
+    assert(optional('patch', token));
+    token = parseIdentifier(token);
+    token = parseQualifiedRestOpt(token);
+    token = parseTypeArgumentsOpt(token);
+    Token period = null;
+    if (optional('.', token)) {
+      period = token;
+      token = parseIdentifier(token.next);
+    }
+    token = parseArgumentsOpt(token);
+    listener.endMetadata(start, period, token);
+    return token;
+  }
+}
 
 class PatchParserTask extends CompilerTask {
   final String name = "Patching Parser";
@@ -180,7 +223,7 @@ class PatchParserTask extends CompilerTask {
       Listener patchListener =
           new PatchElementListener(compiler, compilationUnit, compiler);
       try {
-        new PartialParser(patchListener, parserOptions).parseUnit(tokens);
+        new PartialPatchParser(patchListener, parserOptions).parseUnit(tokens);
       } on ParserError catch (e) {
         // No need to recover from a parser error in platform libraries, user
         // will never see this if the libraries are tested correctly.
@@ -234,7 +277,7 @@ class PatchMemberListener extends MemberListener {
         // Skip this element.
       }
     } else {
-      if (Name.isPublicName(patch.name)) {
+      if (false && Name.isPublicName(patch.name)) {
         reporter.reportErrorMessage(patch, MessageKind.INJECTED_PUBLIC_MEMBER);
       }
       enclosingClass.addMember(patch, reporter);
@@ -281,7 +324,7 @@ class PatchElementListener extends ElementListener implements Listener {
         // Skip this element.
       }
     } else {
-      if (Name.isPublicName(patch.name)) {
+      if (false && Name.isPublicName(patch.name)) {
         reporter.reportErrorMessage(patch, MessageKind.INJECTED_PUBLIC_MEMBER);
       }
       compilationUnitElement.addMember(patch, reporter);

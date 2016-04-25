@@ -1124,6 +1124,17 @@ class Parser {
   ///     ['(', '*', 'operator']
   ///
   Link<Token> findMemberName(Token token) {
+    Link<Token> discardNative(Link<Token> tokens) {
+      if (!tokens.isEmpty && !tokens.tail.isEmpty &&
+          tokens.tail.head.kind == STRING_TOKEN &&
+          !tokens.tail.tail.isEmpty &&
+          optional('native', tokens.tail.tail.head)) {
+        return tokens.tail.tail.tail.prepend(tokens.head);
+      } else {
+        return tokens;
+      }
+    }
+
     Link<Token> identifiers = const Link<Token>();
 
     // `true` if 'get' has been seen.
@@ -1147,11 +1158,11 @@ class Parser {
       } else if (value == '(' || value == '{' || value == '=>') {
         // A method.
         identifiers = identifiers.prepend(token);
-        return identifiers;
+        return discardNative(identifiers);
       } else if (value == '=' || value == ';' || value == ',') {
         // A field or abstract getter.
         identifiers = identifiers.prepend(token);
-        return identifiers;
+        return discardNative(identifiers);
       } else if (isGetter) {
         hasName = true;
       }
