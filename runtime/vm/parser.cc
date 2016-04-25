@@ -155,7 +155,7 @@ static RawTypeArguments* NewTypeArguments(
 
 
 dil::Procedure* ParsedFunction::GetBinaryIR() {
-  // Functions that have a binary IR will cache it, those that don't will
+  // If a function has a binary IR we will cache it, if it doesn't we will
   // repeatedly search for it.  This should be improved.
   if (ir_procedure_ != NULL) return ir_procedure_;
 

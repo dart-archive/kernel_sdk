@@ -39,7 +39,9 @@ class Fragment {
 Fragment operator+(const Fragment& first, const Fragment& second);
 Fragment operator<<(const Fragment& fragment, Instruction* next);
 
-class FlowGraphBuilder : private TreeVisitor {
+typedef ZoneGrowableArray<PushArgumentInstr*>* ArgumentArray;
+
+class FlowGraphBuilder : public TreeVisitor {
  public:
   FlowGraphBuilder(Procedure* procedure,
                    const ParsedFunction& parsed_function,
@@ -47,7 +49,6 @@ class FlowGraphBuilder : private TreeVisitor {
 
   FlowGraph* BuildGraph();
 
- private:
   void VisitDefaultTreeNode(TreeNode* node) { UNREACHABLE(); }
 
   void VisitNullLiteral(NullLiteral* node);
@@ -56,6 +57,7 @@ class FlowGraphBuilder : private TreeVisitor {
   void VisitBigintLiteral(BigintLiteral* node);
   void VisitDoubleLiteral(DoubleLiteral* node);
   void VisitStringLiteral(StringLiteral* node);
+  void VisitTypeLiteral(TypeLiteral* node);
   void VisitVariableGet(VariableGet* node);
   void VisitVariableSet(VariableSet* node);
   void VisitStaticGet(StaticGet* node);
@@ -65,14 +67,16 @@ class FlowGraphBuilder : private TreeVisitor {
   void VisitStaticInvocation(StaticInvocation* node);
   void VisitMethodInvocation(MethodInvocation* node);
   void VisitConstructorInvocation(ConstructorInvocation* node);
-
-  Fragment TranslateArguments(Arguments* node,
-			      ZoneGrowableArray<PushArgumentInstr*>** arguments);
+  void VisitIsExpression(IsExpression* node);
+  void VisitAsExpression(AsExpression* node);
 
   void VisitBlock(Block* node);
   void VisitReturnStatement(ReturnStatement* node);
   void VisitExpressionStatement(ExpressionStatement* node);
   void VisitVariableDeclaration(VariableDeclaration* node);
+
+ private:
+  Fragment TranslateArguments(Arguments* node, ArgumentArray* arguments);
 
   Fragment VisitStatement(Statement* statement) {
     statement->AcceptStatementVisitor(this);
@@ -86,13 +90,12 @@ class FlowGraphBuilder : private TreeVisitor {
 
   Fragment EmitConstant(const Object& value);
 
-  Fragment EmitStaticCall(const Function& target,
-			  ZoneGrowableArray<PushArgumentInstr*>* arguments);
+  Fragment EmitStaticCall(const Function& target, ArgumentArray arguments);
   Fragment EmitStaticCall(const Function& target);
 
   Fragment EmitInstanceCall(const dart::String& name,
 			    Token::Kind kind,
-			    ZoneGrowableArray<PushArgumentInstr*>* arguments);
+			    ArgumentArray arguments);
   Fragment EmitInstanceCall(const dart::String& name,
 			    Token::Kind kind,
 			    PushArgumentInstr* argument);
@@ -100,10 +103,28 @@ class FlowGraphBuilder : private TreeVisitor {
 			    Token::Kind kind,
 			    PushArgumentInstr* argument0,
 			    PushArgumentInstr* argument1);
+  Fragment EmitInstanceCall(const dart::String& name,
+			    Token::Kind kind,
+			    PushArgumentInstr* argument0,
+			    PushArgumentInstr* argument1,
+			    PushArgumentInstr* argument2);
+  Fragment EmitInstanceCall(const dart::String& name,
+			    Token::Kind kind,
+			    PushArgumentInstr* argument0,
+			    PushArgumentInstr* argument1,
+			    PushArgumentInstr* argument2,
+			    PushArgumentInstr* argument3);
 
-  dart::String& DartString(String* string, Heap::Space space = Heap::kNew);
+  dart::RawString* DartString(String* string, Heap::Space space = Heap::kNew);
+  dart::RawClass* LookupClassByName(const dart::String& name);
+  dart::RawClass* LookupClassByName(String* name);
+  dart::RawField* LookupFieldByName(const dart::String& name);
+  dart::RawField* LookupFieldByName(String* name);
+  dart::RawFunction* LookupStaticMethodByName(const dart::String& name);
+  dart::RawFunction* LookupStaticMethodByName(String* name);
 
   PushArgumentInstr* MakeArgument();
+  Fragment AddArgumentToList(ZoneGrowableArray<PushArgumentInstr*>* arguments);
 
   Fragment MakeTemporary(LocalVariable** variable);
   Fragment DropTemporaries(intptr_t count);
@@ -133,6 +154,8 @@ class FlowGraphBuilder : private TreeVisitor {
   Fragment fragment_;
   Value* stack_;
   int pending_argument_count_;
+
+  friend class DartTypeTranslator;
 };
 
 }  // namespace dil
