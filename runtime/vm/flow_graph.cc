@@ -1162,7 +1162,7 @@ void FlowGraph::RenameRecursive(BlockEntryInstr* block_entry,
         } else if (push != NULL) {
           result = push->value()->definition();
           env->Add(result);
-          it.RemoveCurrentFromGraph();
+	  if (!definition->HasTemp()) it.RemoveCurrentFromGraph();
           continue;
         } else if (drop != NULL) {
           // Drop temps from the environment.

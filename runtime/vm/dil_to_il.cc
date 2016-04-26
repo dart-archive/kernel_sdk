@@ -445,11 +445,7 @@ void FlowGraphBuilder::VisitStaticSet(StaticSet* node) {
 	new(Z) StoreStaticFieldInstr(field, Pop(), TokenPosition::kNoSource);
     instructions <<= store;
 
-    load = new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
-    instructions <<= load;
-    Push(load);
-
-    fragment_ = instructions + DropTemporaries(1);
+    fragment_ = instructions + DropTemporaries(0);
   } else {
     ASSERT(target->IsProcedure());
     UNREACHABLE();
@@ -502,12 +498,7 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
                                    receiver_argument, value_argument);
   Drop();
 
-  LoadLocalInstr* load =
-      new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
-  instructions <<= load;
-  Push(load);
-
-  fragment_ = instructions + DropTemporaries(1);
+  fragment_ = instructions + DropTemporaries(0);
 }
 
 
@@ -569,11 +560,7 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
   instructions += EmitStaticCall(target, arguments);
   Drop();
 
-  load = new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
-  instructions <<= load;
-  Push(load);
-
-  fragment_ = instructions + DropTemporaries(1);
+  fragment_ = instructions + DropTemporaries(0);
 }
 
 
