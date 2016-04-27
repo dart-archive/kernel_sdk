@@ -846,6 +846,7 @@ void StringTable::WriteTo(Writer* writer) {
 Library* Library::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   name_ = Reference::ReadStringFrom(reader);
+  import_uri_ = Reference::ReadStringFrom(reader);
 
   int num_classes = reader->ReadUInt();
   classes().EnsureInitialized(num_classes);
@@ -869,6 +870,7 @@ Library* Library::ReadFrom(Reader* reader) {
 void Library::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   name_->WriteTo(writer);
+  import_uri_->WriteTo(writer);
   writer->WriteUInt(classes_.length());
   for (int i = 0; i < classes_.length(); i++) {
     Class* klass = classes_[i];

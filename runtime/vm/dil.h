@@ -336,6 +336,7 @@ class Library : public TreeNode {
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
 
+  String* import_uri() { return import_uri_; }
   String* name() { return name_; }
   List<Class>& classes() { return classes_; }
   List<Field>& fields() { return fields_; }
@@ -349,6 +350,7 @@ class Library : public TreeNode {
   friend class List;
 
   Ref<String> name_;
+  Ref<String> import_uri_;
   List<Class> classes_;
   List<Field> fields_;
   List<Procedure> procedures_;
