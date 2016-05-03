@@ -116,7 +116,7 @@ PushArgumentInstr* FlowGraphBuilder::MakeArgument() {
 Fragment FlowGraphBuilder::AddArgumentToList(ArgumentArray arguments) {
   PushArgumentInstr* argument = MakeArgument();
   arguments->Add(argument);
-  return argument;
+  return Fragment(argument);
 }
 
 
@@ -136,7 +136,7 @@ Fragment FlowGraphBuilder::MakeTemporary(LocalVariable** variable) {
   // will be adjusted to be relative to the frame pointer.
   (*variable)->set_index(-(index + pending_argument_count_));
   temporaries_.push_back(*variable);
-  return temp;
+  return Fragment(temp);
 }
 
 
@@ -147,7 +147,7 @@ Fragment FlowGraphBuilder::DropTemporaries(intptr_t count) {
     Drop();
   }
   Push(drop);
-  return drop;
+  return Fragment(drop);
 }
 
 
@@ -193,7 +193,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       new(Z) GraphEntryInstr(parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
 
-  Fragment body = normal_entry;
+  Fragment body(normal_entry);
   body <<= new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource, 0);
   body += VisitStatement(procedure_->function()->body());
 
@@ -222,7 +222,7 @@ void FlowGraphBuilder::AdjustTemporaries(int base) {
 Fragment FlowGraphBuilder::EmitConstant(const Object& value) {
   ConstantInstr* constant = new(Z) ConstantInstr(value);
   Push(constant);
-  return constant;
+  return Fragment(constant);
 }
 
 
@@ -237,7 +237,7 @@ Fragment FlowGraphBuilder::EmitStaticCall(const Function& target,
                              arguments,
                              ic_data_array_);
   Push(call);
-  return call;
+  return Fragment(call);
 }
 
 
@@ -261,7 +261,7 @@ Fragment FlowGraphBuilder::EmitInstanceCall(const dart::String& name,
           1,
           ic_data_array_);
   Push(call);
-  return call;
+  return Fragment(call);
 }
 
 
@@ -389,7 +389,7 @@ void FlowGraphBuilder::VisitVariableGet(VariableGet* node) {
   LoadLocalInstr* load =
       new(Z) LoadLocalInstr(*local, TokenPosition::kNoSource);
   Push(load);
-  fragment_ = load;
+  fragment_ = Fragment(load);
 }
 
 
@@ -419,7 +419,7 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
     if (getter.IsNull() || field.is_const()) {
       ConstantInstr* constant = new(Z) ConstantInstr(field);
       SetTempIndex(constant);
-      Fragment instructions = constant;
+      Fragment instructions(constant);
       LoadStaticFieldInstr* load =
           new(Z) LoadStaticFieldInstr(new Value(constant),
                                       TokenPosition::kNoSource);
@@ -479,7 +479,7 @@ void FlowGraphBuilder::VisitPropertyGet(PropertyGet* node) {
 void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
   ConstantInstr* null =
       new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
-  Fragment instructions = null;
+  Fragment instructions(null);
   Push(null);
   LocalVariable* variable;
   instructions += MakeTemporary(&variable);
@@ -545,7 +545,7 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
       new(Z) AllocateObjectInstr(TokenPosition::kNoSource,
                                  owner,
                                  arguments);
-  Fragment instructions = alloc;
+  Fragment instructions(alloc);
   Push(alloc);
   LocalVariable* variable;
   instructions += MakeTemporary(&variable);
@@ -676,7 +676,7 @@ void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
     ConstantInstr* null =
         new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
     null->set_temp_index(0);
-    instructions = null;
+    instructions = Fragment(null);
     result = new Value(null);
   } else {
     instructions = VisitExpression(node->expression());
@@ -710,7 +710,7 @@ void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
     ConstantInstr* null =
         new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
     null->set_temp_index(0);
-    instructions = null;
+    instructions = Fragment(null);
     value = new Value(null);
   } else {
     instructions = VisitExpression(node->initializer());
