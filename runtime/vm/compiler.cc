@@ -98,7 +98,7 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
     FlowGraph* graph = builder.BuildGraph();
     parsed_function->AllocateVariables();
     builder.AdjustTemporaries(
-	kFirstLocalSlotFromFp - parsed_function->num_stack_locals());
+        kFirstLocalSlotFromFp - parsed_function->num_stack_locals());
     return graph;
   }
   FlowGraphBuilder builder(*parsed_function,

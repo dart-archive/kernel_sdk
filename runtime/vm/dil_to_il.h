@@ -22,7 +22,7 @@ class Fragment {
 
   Fragment() : entry(NULL), current(NULL) {}
 
-  Fragment(Instruction* instruction)
+  explicit Fragment(Instruction* instruction)
     : entry(instruction), current(instruction) {}
 
   Fragment(Instruction* entry, Instruction* current)
@@ -97,28 +97,29 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment EmitStaticCall(const Function& target);
 
   Fragment EmitInstanceCall(const dart::String& name,
-			    Token::Kind kind,
-			    ArgumentArray arguments);
+                            Token::Kind kind,
+                            ArgumentArray arguments);
   Fragment EmitInstanceCall(const dart::String& name,
-			    Token::Kind kind,
-			    PushArgumentInstr* argument);
+                            Token::Kind kind,
+                            PushArgumentInstr* argument);
   Fragment EmitInstanceCall(const dart::String& name,
-			    Token::Kind kind,
-			    PushArgumentInstr* argument0,
-			    PushArgumentInstr* argument1);
+                            Token::Kind kind,
+                            PushArgumentInstr* argument0,
+                            PushArgumentInstr* argument1);
   Fragment EmitInstanceCall(const dart::String& name,
-			    Token::Kind kind,
-			    PushArgumentInstr* argument0,
-			    PushArgumentInstr* argument1,
-			    PushArgumentInstr* argument2);
+                            Token::Kind kind,
+                            PushArgumentInstr* argument0,
+                            PushArgumentInstr* argument1,
+                            PushArgumentInstr* argument2);
   Fragment EmitInstanceCall(const dart::String& name,
-			    Token::Kind kind,
-			    PushArgumentInstr* argument0,
-			    PushArgumentInstr* argument1,
-			    PushArgumentInstr* argument2,
-			    PushArgumentInstr* argument3);
+                            Token::Kind kind,
+                            PushArgumentInstr* argument0,
+                            PushArgumentInstr* argument1,
+                            PushArgumentInstr* argument2,
+                            PushArgumentInstr* argument3);
 
-  dart::RawString* DartString(String* string, Heap::Space space = Heap::kNew);
+  dart::RawString* DartString(String* string,  // NOLINT
+                              Heap::Space space = Heap::kNew);
   dart::RawClass* LookupClassByName(const dart::String& name);
   dart::RawClass* LookupClassByName(String* name);
   dart::RawField* LookupFieldByName(const dart::String& name);
@@ -133,7 +134,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment DropTemporaries(intptr_t count);
 
   void AddVariable(VariableDeclaration* declaration,
-		   LocalVariable* variable);
+                   LocalVariable* variable);
 
   void SetTempIndex(Definition* definition);
 
