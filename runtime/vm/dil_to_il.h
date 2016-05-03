@@ -70,6 +70,8 @@ class FlowGraphBuilder : public TreeVisitor {
   void VisitConstructorInvocation(ConstructorInvocation* node);
   void VisitIsExpression(IsExpression* node);
   void VisitAsExpression(AsExpression* node);
+  void VisitConditionalExpression(ConditionalExpression* node);
+  void VisitLogicalExpression(LogicalExpression* node);
 
   void VisitBlock(Block* node);
   void VisitReturnStatement(ReturnStatement* node);

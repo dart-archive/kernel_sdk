@@ -1074,6 +1074,12 @@ class Not : public Expression {
 
 class LogicalExpression : public Expression {
  public:
+  enum Operator {
+    kAnd,
+    kOr,
+    kIfNull
+  };
+
   static LogicalExpression* ReadFrom(Reader* reader);
   virtual void WriteTo(Writer* writer);
 

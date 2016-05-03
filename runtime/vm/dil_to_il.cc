@@ -639,6 +639,151 @@ void FlowGraphBuilder::VisitAsExpression(AsExpression* node) {
 }
 
 
+void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
+  Fragment instructions = VisitExpression(node->condition());
+  ConstantInstr* true_constant = new(Z) ConstantInstr(Bool::True());
+  Push(true_constant);
+  instructions <<= true_constant;
+
+  Value* right_value = Pop();
+  Value* left_value = Pop();
+  StrictCompareInstr* compare =
+      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                Token::kEQ_STRICT,
+                                left_value,
+                                right_value,
+                                false);
+  BranchInstr* branch = new(Z) BranchInstr(compare);
+  instructions <<= branch;
+
+  Value* top = stack_;
+  TargetEntryInstr* then_entry = *branch->true_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  Fragment then_fragment(then_entry);
+  then_fragment += VisitExpression(node->then());
+  Value* result = Pop();
+  StoreLocalInstr* store =
+      new(Z) StoreLocalInstr(*parsed_function_.expression_temp_var(),
+                             result,
+                             TokenPosition::kNoSource);
+  then_fragment <<= store;
+
+  ASSERT(top == stack_);
+  TargetEntryInstr* otherwise_entry = *branch->false_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  Fragment otherwise_fragment(otherwise_entry);
+  otherwise_fragment += VisitExpression(node->otherwise());
+  result = Pop();
+  store =
+      new(Z) StoreLocalInstr(*parsed_function_.expression_temp_var(),
+                             result,
+                             TokenPosition::kNoSource);
+  otherwise_fragment <<= store;
+
+  JoinEntryInstr* join =
+      new(Z) JoinEntryInstr(AllocateBlockId(),
+                            CatchClauseNode::kInvalidTryIndex);
+  then_fragment <<= new(Z) GotoInstr(join);
+  otherwise_fragment <<= new(Z) GotoInstr(join);
+
+  instructions = Fragment(instructions.entry, join);
+  LoadLocalInstr* load =
+      new(Z) LoadLocalInstr(*parsed_function_.expression_temp_var(),
+                            TokenPosition::kNoSource);
+  Push(load);
+  fragment_ = instructions <<= load;
+}
+
+
+void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
+  if (node->op() == LogicalExpression::kAnd ||
+      node->op() == LogicalExpression::kOr) {
+    Fragment instructions = VisitExpression(node->left());
+    ConstantInstr* true_constant = new(Z) ConstantInstr(Bool::True());
+    Push(true_constant);
+    instructions <<= true_constant;
+
+    Value* right_value = Pop();
+    Value* left_value = Pop();
+    StrictCompareInstr* compare =
+        new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                  Token::kEQ_STRICT,
+                                  left_value,
+                                  right_value,
+                                  false);
+    BranchInstr* branch = new(Z) BranchInstr(compare);
+    instructions <<= branch;
+
+    Value* top = stack_;
+    TargetEntryInstr* right_entry =
+        new(Z) TargetEntryInstr(AllocateBlockId(),
+                                CatchClauseNode::kInvalidTryIndex);
+    Fragment right_fragment(right_entry);
+    right_fragment += VisitExpression(node->right());
+    true_constant = new(Z) ConstantInstr(Bool::True());
+    Push(true_constant);
+    right_fragment <<= true_constant;
+
+    right_value = Pop();
+    left_value = Pop();
+    compare =
+        new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                  Token::kEQ_STRICT,
+                                  left_value,
+                                  right_value,
+                                  false);
+    Push(compare);
+    right_fragment <<= compare;
+    Value* result = Pop();
+    StoreLocalInstr* store =
+        new(Z) StoreLocalInstr(*parsed_function_.expression_temp_var(),
+                               result,
+                               TokenPosition::kNoSource);
+    right_fragment <<= store;
+
+    ASSERT(top == stack_);
+    TargetEntryInstr* constant_entry =
+        new(Z) TargetEntryInstr(AllocateBlockId(),
+                                CatchClauseNode::kInvalidTryIndex);
+    Fragment constant_fragment(constant_entry);
+    ConstantInstr* constant =
+        new(Z) ConstantInstr(Bool::Get(node->op() == LogicalExpression::kOr));
+    Push(constant);
+    constant_fragment <<= constant;
+    result = Pop();
+    store =
+        new(Z) StoreLocalInstr(*parsed_function_.expression_temp_var(),
+                               result,
+                               TokenPosition::kNoSource);
+    constant_fragment <<= store;
+
+    if (node->op() == LogicalExpression::kAnd) {
+      *branch->true_successor_address() = right_entry;
+      *branch->false_successor_address() = constant_entry;
+    } else {
+      *branch->true_successor_address() = constant_entry;
+      *branch->false_successor_address() = right_entry;
+    }
+    JoinEntryInstr* join =
+        new(Z) JoinEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+    right_fragment <<= new(Z) GotoInstr(join);
+    constant_fragment <<= new(Z) GotoInstr(join);
+
+    instructions = Fragment(instructions.entry, join);
+    LoadLocalInstr* load =
+        new(Z) LoadLocalInstr(*parsed_function_.expression_temp_var(),
+                              TokenPosition::kNoSource);
+    Push(load);
+    fragment_ = instructions <<= load;
+  } else {
+    UNIMPLEMENTED();
+  }
+}
+
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               ArgumentArray* arguments) {
   if (node->types().length() != 0 || node->named().length() != 0) {
