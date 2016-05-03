@@ -6,6 +6,7 @@
 #define VM_DIL_TO_IL_H_
 
 #include <map>
+#include <vector>
 
 #include "vm/dil.h"
 #include "vm/flow_graph.h"
@@ -74,6 +75,8 @@ class FlowGraphBuilder : public TreeVisitor {
   void VisitReturnStatement(ReturnStatement* node);
   void VisitExpressionStatement(ExpressionStatement* node);
   void VisitVariableDeclaration(VariableDeclaration* node);
+
+  void AdjustTemporaries(int base);
 
  private:
   Fragment TranslateArguments(Arguments* node, ArgumentArray* arguments);
@@ -149,7 +152,8 @@ class FlowGraphBuilder : public TreeVisitor {
   int next_block_id_;
   int AllocateBlockId() { return next_block_id_++; }
 
-  std::map<dil::VariableDeclaration*, LocalVariable*> variables_;
+  std::map<VariableDeclaration*, LocalVariable*> locals_;
+  std::vector<LocalVariable*> temporaries_;
 
   Fragment fragment_;
   Value* stack_;

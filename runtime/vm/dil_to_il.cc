@@ -132,10 +132,10 @@ Fragment FlowGraphBuilder::MakeTemporary(LocalVariable** variable) {
       new(Z) LocalVariable(TokenPosition::kNoSource,
 	                   dart::String::ZoneHandle(Z, Symbols::New(name)),
 	                   *initial_value->Type()->ToAbstractType());
-  // 2 = expression temporary and current context variables.
-  (*variable)->set_index(kFirstLocalSlotFromFp - 2 - variables_.size() -
-      pending_argument_count_ -
-      index);
+  // Set the index relative to the base of the expression stack.  Later this
+  // will be adjusted to be relative to the frame pointer.
+  (*variable)->set_index(-(index + pending_argument_count_));
+  temporaries_.push_back(*variable);
   return temp;
 }
 
@@ -154,7 +154,7 @@ Fragment FlowGraphBuilder::DropTemporaries(intptr_t count) {
 void FlowGraphBuilder::AddVariable(VariableDeclaration* declaration,
 				   LocalVariable* variable) {
   parsed_function_.node_sequence()->scope()->AddVariable(variable);
-  variables_[declaration] = variable;
+  locals_[declaration] = variable;
 }
 
 
@@ -207,6 +207,15 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
   }
 
   return new(Z) FlowGraph(parsed_function_, graph_entry, next_block_id_ - 1);
+}
+
+
+void FlowGraphBuilder::AdjustTemporaries(int base) {
+  for (std::vector<LocalVariable*>::iterator it = temporaries_.begin();
+       it != temporaries_.end();
+       ++it) {
+    (*it)->AdjustIndex(base);
+  }
 }
 
 
@@ -376,7 +385,7 @@ void FlowGraphBuilder::VisitTypeLiteral(TypeLiteral* node) {
 
 
 void FlowGraphBuilder::VisitVariableGet(VariableGet* node) {
-  LocalVariable* local = variables_[node->variable()];
+  LocalVariable* local = locals_[node->variable()];
   LoadLocalInstr* load =
       new(Z) LoadLocalInstr(*local, TokenPosition::kNoSource);
   Push(load);
@@ -385,7 +394,7 @@ void FlowGraphBuilder::VisitVariableGet(VariableGet* node) {
 
 
 void FlowGraphBuilder::VisitVariableSet(VariableSet* node) {
-  LocalVariable* local = variables_[node->variable()];
+  LocalVariable* local = locals_[node->variable()];
   Fragment instructions = VisitExpression(node->expression());
   Value* value = Pop();
   StoreLocalInstr* store =

@@ -69,6 +69,10 @@ class LocalVariable : public ZoneAllocated {
     index_ = index;
   }
 
+  void AdjustIndex(int base) {
+    index_ += base;
+  }
+
   void set_invisible(bool value) {
     is_invisible_ = value;
   }
