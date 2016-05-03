@@ -365,7 +365,7 @@ abstract class Compiler implements LibraryLoaderListener, IdGenerator {
           this,
           environment),
       parser = new ParserTask(this, parsing.parserOptions),
-      patchParser = new PatchParserTask(this, parsing.parserOptions),
+      patchParser = createPatchParserTask(),
       resolver = createResolverTask(),
       closureToClassMapper = new closureMapping.ClosureTask(this),
       checker = new TypeCheckerTask(this),
@@ -393,6 +393,10 @@ abstract class Compiler implements LibraryLoaderListener, IdGenerator {
   /// Override this to mock the resolver for testing.
   ResolverTask createResolverTask() {
     return new ResolverTask(this, backend.constantCompilerTask);
+  }
+
+  PatchParserTask createPatchParserTask() {
+    return new PatchParserTask(this, parsing.parserOptions);
   }
 
   Universe get resolverWorld => enqueuer.resolution.universe;
