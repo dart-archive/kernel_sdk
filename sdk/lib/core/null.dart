@@ -12,10 +12,10 @@ part of dart.core;
  * Null.
  */
 class Null {
-  factory Null._uninstantiable() {
-    throw new UnsupportedError('class Null cannot be instantiated');
-  }
+  external factory Null._uninstantiable();
 
   /** Returns the string `"null"`. */
-  String toString() => "null";
+  external String toString();
+
+  external int get hashCode;
 }

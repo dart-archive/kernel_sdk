@@ -48,4 +48,6 @@ class bool {
   String toString() {
     return this ? "true" : "false";
   }
+
+  external int get hashCode;
 }

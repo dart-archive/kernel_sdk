@@ -24,11 +24,11 @@ class _EnumHelper {
 // implement sync* generator functions. A sync* generator allocates
 // and returns a new _SyncIterable object.
 
-typedef bool SyncGeneratorCallback(Iterator iterator);
+typedef bool _SyncGeneratorCallback(Iterator iterator);
 
 class _SyncIterable extends IterableBase {
   // moveNextFn is the closurized body of the generator function.
-  final SyncGeneratorCallback moveNextFn;
+  final _SyncGeneratorCallback moveNextFn;
 
   const _SyncIterable(this.moveNextFn);
 
@@ -41,7 +41,7 @@ class _SyncIterator implements Iterator {
   bool isYieldEach;  // Set by generated code for the yield* statement.
   Iterator yieldEachIterator;
   var _current;  // Set by generated code for the yield and yield* statement.
-  SyncGeneratorCallback moveNextFn;
+  _SyncGeneratorCallback moveNextFn;
 
   get current => yieldEachIterator != null
       ? yieldEachIterator.current

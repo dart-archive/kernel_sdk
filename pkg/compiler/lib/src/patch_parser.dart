@@ -277,7 +277,10 @@ class PatchMemberListener extends MemberListener {
         // Skip this element.
       }
     } else {
-      if (false && Name.isPublicName(patch.name)) {
+      Element origin = enclosingClass.origin.localLookup(patch.name);
+      if (origin != null) {
+        patchElement(compiler, reporter, origin, patch);
+      } else if (Name.isPublicName(patch.name)) {
         reporter.reportErrorMessage(patch, MessageKind.INJECTED_PUBLIC_MEMBER);
       }
       enclosingClass.addMember(patch, reporter);
@@ -324,7 +327,11 @@ class PatchElementListener extends ElementListener implements Listener {
         // Skip this element.
       }
     } else {
-      if (false && Name.isPublicName(patch.name)) {
+      LibraryElement originLibrary = compilationUnitElement.library;
+      Element origin = originLibrary.localLookup(patch.name);
+      if (origin != null) {
+        patchElement(compiler, reporter, origin, patch);
+      } else if (Name.isPublicName(patch.name)) {
         reporter.reportErrorMessage(patch, MessageKind.INJECTED_PUBLIC_MEMBER);
       }
       compilationUnitElement.addMember(patch, reporter);
