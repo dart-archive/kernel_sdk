@@ -693,7 +693,7 @@ void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
       new(Z) LoadLocalInstr(*parsed_function_.expression_temp_var(),
                             TokenPosition::kNoSource);
   Push(load);
-  fragment_ = instructions <<= load;
+  fragment_ = instructions << load;
 }
 
 
@@ -777,7 +777,7 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
         new(Z) LoadLocalInstr(*parsed_function_.expression_temp_var(),
                               TokenPosition::kNoSource);
     Push(load);
-    fragment_ = instructions <<= load;
+    fragment_ = instructions << load;
   } else {
     UNIMPLEMENTED();
   }

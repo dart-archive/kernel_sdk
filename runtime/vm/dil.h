@@ -1090,7 +1090,7 @@ class LogicalExpression : public Expression {
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
 
   Expression* left() { return left_; }
-  uint8_t op() { return operator_; }
+  Operator op() { return operator_; }
   Expression* right() { return right_; }
 
  private:
@@ -1098,7 +1098,7 @@ class LogicalExpression : public Expression {
   LogicalExpression() {}
 
   Child<Expression> left_;
-  uint8_t operator_;
+  Operator operator_;
   Child<Expression> right_;
 };
 

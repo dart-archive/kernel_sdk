@@ -1586,7 +1586,7 @@ LogicalExpression* LogicalExpression::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   LogicalExpression* expr = new LogicalExpression();
   expr->left_ = Expression::ReadFrom(reader);
-  expr->operator_ = reader->ReadByte();
+  expr->operator_ = static_cast<Operator>(reader->ReadByte());
   expr->right_ = Expression::ReadFrom(reader);
   return expr;
 }
