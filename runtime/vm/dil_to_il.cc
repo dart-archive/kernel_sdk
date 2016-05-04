@@ -65,6 +65,7 @@ FlowGraphBuilder::FlowGraphBuilder(Procedure* procedure,
         dart::Class::Handle(parsed_function.function().Owner()).library())),
     ic_data_array_(Z, 0),
     next_block_id_(first_block_id),
+    scope_(parsed_function.node_sequence()->scope()),
     stack_(NULL),
     pending_argument_count_(0) {
 }
@@ -153,7 +154,7 @@ Fragment FlowGraphBuilder::DropTemporaries(intptr_t count) {
 
 void FlowGraphBuilder::AddVariable(VariableDeclaration* declaration,
                                    LocalVariable* variable) {
-  parsed_function_.node_sequence()->scope()->AddVariable(variable);
+  scope_->AddVariable(variable);
   locals_[declaration] = variable;
 }
 
@@ -784,6 +785,14 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
 }
 
 
+void FlowGraphBuilder::VisitNot(Not* node) {
+  Fragment instructions = VisitExpression(node->expression());
+  BooleanNegateInstr* negate = new(Z) BooleanNegateInstr(Pop());
+  Push(negate);
+  fragment_ = instructions << negate;
+}
+
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               ArgumentArray* arguments) {
   if (node->types().length() != 0 || node->named().length() != 0) {
@@ -803,13 +812,19 @@ Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
 }
 
 
+void FlowGraphBuilder::VisitEmptyStatement(EmptyStatement* node) {
+  fragment_ = Fragment();
+}
+
 void FlowGraphBuilder::VisitBlock(Block* node) {
+  scope_ = new LocalScope(scope_, 0, 0);
   Fragment instructions;
   List<Statement>& statements = node->statements();
   for (int i = 0; i < statements.length(); ++i) {
     instructions += VisitStatement(statements[i]);
   }
   fragment_ = instructions;
+  scope_ = scope_->parent();
 }
 
 
@@ -863,6 +878,54 @@ void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
   }
   fragment_ = instructions <<
       new(Z) StoreLocalInstr(*local, value, TokenPosition::kNoSource);
+}
+
+
+void FlowGraphBuilder::VisitIfStatement(IfStatement* node) {
+  Fragment instructions = VisitExpression(node->condition());
+  ConstantInstr* true_constant = new(Z) ConstantInstr(Bool::True());
+  Push(true_constant);
+  instructions <<= true_constant;
+
+  Value* right_value = Pop();
+  Value* left_value = Pop();
+  StrictCompareInstr* compare =
+      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                Token::kEQ_STRICT,
+                                left_value,
+                                right_value,
+                                false);
+  BranchInstr* branch = new(Z) BranchInstr(compare);
+  instructions <<= branch;
+
+  TargetEntryInstr* then_entry = *branch->true_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  Fragment then_fragment(then_entry);
+  then_fragment += VisitStatement(node->then());
+
+  TargetEntryInstr* otherwise_entry = *branch->false_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  Fragment otherwise_fragment(otherwise_entry);
+  otherwise_fragment += VisitStatement(node->otherwise());
+
+  if (then_fragment.is_open()) {
+    if (otherwise_fragment.is_open()) {
+      JoinEntryInstr* join =
+          new(Z) JoinEntryInstr(AllocateBlockId(),
+                                CatchClauseNode::kInvalidTryIndex);
+      then_fragment <<= new(Z) GotoInstr(join);
+      otherwise_fragment <<= new(Z) GotoInstr(join);
+      fragment_ = Fragment(instructions.entry, join);
+    } else {
+      fragment_ = Fragment(instructions.entry, then_fragment.current);
+    }
+  } else if (otherwise_fragment.is_open()) {
+    fragment_ = Fragment(instructions.entry, otherwise_fragment.current);
+  } else {
+    fragment_ = instructions.closed();
+  }
 }
 
 
