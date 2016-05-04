@@ -1701,8 +1701,14 @@ class CompilerDiagnosticReporter extends DiagnosticReporter {
           if (astElement.hasNode) {
             Token from = astElement.node.getBeginToken();
             Token to = astElement.node.getEndToken();
-            if (astElement.metadata.isNotEmpty) {
-              from = astElement.metadata.first.beginToken;
+            for (MetadataAnnotation annotation in astElement.metadata) {
+              // For patched elements, metadata contains annotations from both
+              // origin and patch. Search for the first annotation from this
+              // element. For example, if origin class is @Deprecated.
+              if (annotation.annotatedElement == currentElement) {
+                from = annotation.beginToken;
+                break;
+              }
             }
             return validateToken(from, to);
           }
