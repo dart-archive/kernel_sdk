@@ -80,6 +80,8 @@ class FlowGraphBuilder : public TreeVisitor {
   void VisitExpressionStatement(ExpressionStatement* node);
   void VisitVariableDeclaration(VariableDeclaration* node);
   void VisitIfStatement(IfStatement* node);
+  void VisitWhileStatement(WhileStatement* node);
+  void VisitDoStatement(DoStatement* node);
 
   void AdjustTemporaries(int base);
 
@@ -162,6 +164,7 @@ class FlowGraphBuilder : public TreeVisitor {
   std::vector<LocalVariable*> temporaries_;
 
   LocalScope* scope_;
+  int loop_depth_;
   Fragment fragment_;
   Value* stack_;
   int pending_argument_count_;

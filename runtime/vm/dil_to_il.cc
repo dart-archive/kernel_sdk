@@ -66,6 +66,7 @@ FlowGraphBuilder::FlowGraphBuilder(Procedure* procedure,
     ic_data_array_(Z, 0),
     next_block_id_(first_block_id),
     scope_(parsed_function.node_sequence()->scope()),
+    loop_depth_(0),
     stack_(NULL),
     pending_argument_count_(0) {
 }
@@ -817,7 +818,7 @@ void FlowGraphBuilder::VisitEmptyStatement(EmptyStatement* node) {
 }
 
 void FlowGraphBuilder::VisitBlock(Block* node) {
-  scope_ = new LocalScope(scope_, 0, 0);
+  scope_ = new LocalScope(scope_, 0, loop_depth_);
   Fragment instructions;
   List<Statement>& statements = node->statements();
   for (int i = 0; i < statements.length(); ++i) {
@@ -926,6 +927,103 @@ void FlowGraphBuilder::VisitIfStatement(IfStatement* node) {
   } else {
     fragment_ = instructions.closed();
   }
+}
+
+
+void FlowGraphBuilder::VisitWhileStatement(WhileStatement* node) {
+  ++loop_depth_;
+  Fragment condition = VisitExpression(node->condition());
+  ConstantInstr* true_constant = new(Z) ConstantInstr(Bool::True());
+  Push(true_constant);
+  condition <<= true_constant;
+
+  Value* right_value = Pop();
+  Value* left_value = Pop();
+  StrictCompareInstr* compare =
+      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                Token::kEQ_STRICT,
+                                left_value,
+                                right_value,
+                                false);
+  BranchInstr* branch = new(Z) BranchInstr(compare);
+  condition <<= branch;
+
+  TargetEntryInstr* body_entry = *branch->true_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  Fragment body(body_entry);
+  body += VisitStatement(node->body());
+
+  Instruction* entry;
+  if (body.is_open()) {
+    JoinEntryInstr* join =
+        new(Z) JoinEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+    body <<= new(Z) GotoInstr(join);
+
+    Fragment loop(join);
+    loop <<= new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource,
+                                            loop_depth_);
+    loop += condition;
+    entry = new(Z) GotoInstr(join);
+  } else {
+    entry = condition.entry;
+  }
+
+  TargetEntryInstr* loop_exit = *branch->false_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+
+  fragment_ = Fragment(entry, loop_exit);
+  --loop_depth_;
+}
+
+
+void FlowGraphBuilder::VisitDoStatement(DoStatement* node) {
+  ++loop_depth_;
+  Fragment body = VisitStatement(node->body());
+
+  if (body.is_closed()) {
+    fragment_ = body;
+    --loop_depth_;
+    return;
+  }
+
+  JoinEntryInstr* join =
+      new(Z) JoinEntryInstr(AllocateBlockId(),
+                            CatchClauseNode::kInvalidTryIndex);
+  Fragment loop(join);
+  loop <<= new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource,
+                                          loop_depth_);
+  loop += body;
+  loop += VisitExpression(node->condition());
+  ConstantInstr* true_constant = new(Z) ConstantInstr(Bool::True());
+  Push(true_constant);
+  loop <<= true_constant;
+
+  Value* right_value = Pop();
+  Value* left_value = Pop();
+  StrictCompareInstr* compare =
+      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                Token::kEQ_STRICT,
+                                left_value,
+                                right_value,
+                                false);
+  BranchInstr* branch = new(Z) BranchInstr(compare);
+  loop <<= branch;
+
+  TargetEntryInstr* loop_repeat = *branch->true_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  Fragment repeat(loop_repeat);
+  repeat <<= new(Z) GotoInstr(join);
+
+  TargetEntryInstr* loop_exit = *branch->false_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+
+  fragment_ = Fragment(new(Z) GotoInstr(join), loop_exit);
+  --loop_depth_;
 }
 
 
