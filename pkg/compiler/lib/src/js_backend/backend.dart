@@ -577,9 +577,7 @@ class JavaScriptBackend extends Backend {
       }
       return element;
     }
-    return patchResolverTask.measure(() {
-      return patchResolverTask.resolveExternalFunction(element);
-    });
+    return patchResolverTask.resolveExternalFunction(element);
   }
 
   bool isForeign(Element element) => element.library == helpers.foreignLibrary;

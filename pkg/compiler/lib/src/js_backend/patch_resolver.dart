@@ -20,7 +20,8 @@ class PatchResolverTask extends CompilerTask {
 
   String get name => 'JavaScript patch resolver';
 
-  FunctionElement resolveExternalFunction(FunctionElementX element) {
+  FunctionElement resolveExternalFunction(FunctionElementX element)
+      => measureElement(element, () {
     if (element.isPatched) {
       FunctionElementX patch = element.patch;
       reporter.withCurrentElement(patch, () {
@@ -33,7 +34,7 @@ class PatchResolverTask extends CompilerTask {
           element, MessageKind.PATCH_EXTERNAL_WITHOUT_IMPLEMENTATION);
     }
     return element;
-  }
+  });
 
   void checkMatchingPatchParameters(FunctionElement origin,
       List<Element> originParameters, List<Element> patchParameters) {
