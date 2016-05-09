@@ -86,7 +86,9 @@ class FlowGraphBuilder : public TreeVisitor {
   void AdjustTemporaries(int base);
 
  private:
-  Fragment TranslateArguments(Arguments* node, ArgumentArray* arguments);
+  Fragment TranslateArguments(Arguments* node,
+                              ArgumentArray* arguments,
+                              Array* argument_names);
 
   Fragment VisitStatement(Statement* statement) {
     statement->AcceptStatementVisitor(this);
@@ -100,12 +102,15 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Fragment EmitConstant(const Object& value);
 
-  Fragment EmitStaticCall(const Function& target, ArgumentArray arguments);
-  Fragment EmitStaticCall(const Function& target);
+  Fragment EmitStaticCall(const Function& target,
+                          ArgumentArray arguments,
+                          const Array& argument_names);
 
+  Fragment EmitStaticCall(const Function& target);
   Fragment EmitInstanceCall(const dart::String& name,
                             Token::Kind kind,
-                            ArgumentArray arguments);
+                            ArgumentArray arguments,
+                            const Array& argument_names);
   Fragment EmitInstanceCall(const dart::String& name,
                             Token::Kind kind,
                             PushArgumentInstr* argument);
