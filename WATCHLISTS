@@ -19,9 +19,9 @@
     },
   },
 
-  'WATCHLISTS': {
-    'runtime': ['vm-dev@dartlang.org'],
-    'observatory': ['johnmccutchan@google.com', 'turnidge@google.com', 'rmacnak@google.com'],
-  },
+#  'WATCHLISTS': {
+#    'runtime': ['vm-dev@dartlang.org'],
+#    'observatory': ['johnmccutchan@google.com', 'turnidge@google.com', 'rmacnak@google.com'],
+#  },
 }
 
