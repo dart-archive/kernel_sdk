@@ -246,7 +246,7 @@ class String {
   void WriteTo(Writer* writer);
   void WriteToImpl(Writer* writer);
 
-  String(uint8_t* utf8, int length) {
+  String(const uint8_t* utf8, int length) {
     buffer_ = new uint8_t[length];
     size_ = length;
     memcpy(buffer_, utf8, length);
@@ -341,6 +341,17 @@ class Library : public TreeNode {
   List<Class>& classes() { return classes_; }
   List<Field>& fields() { return fields_; }
   List<Procedure>& procedures() { return procedures_; }
+
+  bool IsCorelibrary() {
+    if (name_->size() < 5) return false;
+    uint8_t* buffer = import_uri_->buffer();
+    return
+        buffer[0] == 'd' &&
+        buffer[1] == 'a' &&
+        buffer[2] == 'r' &&
+        buffer[3] == 't' &&
+        buffer[4] == ':';
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Library);
@@ -486,6 +497,12 @@ class Member : public TreeNode {
 
 class Field : public Member {
  public:
+  enum Flags {
+    kFlagFinal = 1 << 0,
+    kFlagConst = 1 << 1,
+    kFlagStatic = 1 << 2
+  };
+
   Field* ReadFrom(Reader* reader);
   void WriteTo(Writer* writer);
 
@@ -495,7 +512,10 @@ class Field : public Member {
 
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
 
-  word flags() { return flags_; }
+  bool IsConst() { return (flags_ & kFlagConst) == kFlagConst; }
+  bool IsFinal() { return (flags_ & kFlagFinal) == kFlagFinal; }
+  bool IsStatic() { return (flags_ & kFlagStatic) == kFlagStatic; }
+
   DartType* type() { return type_; }
   Expression* initializer() { return initializer_; }
 
@@ -543,8 +563,9 @@ class Constructor : public Member {
 class Procedure : public Member {
  public:
   enum Flags {
-    kIsStatic,
-    kIsAbstract
+    kFlagStatic = 1 << 0,
+    kFlagAbstract = 1 << 1,
+    kFlagExternal = 1 << 2
   };
 
   // Keep in sync with package:dynamo/lib/ast.dart:ProcedureKind
@@ -570,8 +591,11 @@ class Procedure : public Member {
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
 
   ProcedureKind kind() { return kind_; }
-  word flags() { return flags_; }
   FunctionNode* function() { return function_; }
+
+  bool IsStatic() { return (flags_ & kFlagStatic) == kFlagStatic; }
+  bool IsAbstract() { return (flags_ & kFlagAbstract) == kFlagAbstract; }
+  bool IsExternal() { return (flags_ & kFlagExternal) == kFlagExternal; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Procedure);
@@ -2402,6 +2426,12 @@ class Visitor : public TreeVisitor,
   virtual void VisitDefaultTreeNode(TreeNode* node) { VisitDefaultNode(node); }
   virtual void VisitDefaultDartType(DartType* node) { VisitDefaultNode(node); }
   virtual void VisitName(Name* node) { VisitDefaultNode(node); }
+  virtual void VisitDefaultClassReference(Class* node) {
+    VisitDefaultNode(node);
+  }
+  virtual void VisitDefaultMemberReference(Member* node) {
+    VisitDefaultNode(node);
+  }
 };
 
 
@@ -2471,6 +2501,8 @@ IT* List<T>::GetOrCreate(int index, PT* parent) {
 
 }  // namespace dil
 
+dil::Program* ReadPrecompiledDilFromBuffer(const uint8_t* buffer,
+                                           intptr_t buffer_length);
 dil::Program* ReadPrecompiledDil(const char* filename);
 bool WritePrecompiledDil(const char* filename, dil::Program* program);
 

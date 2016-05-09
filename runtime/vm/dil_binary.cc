@@ -406,7 +406,7 @@ class ReaderHelper {
 
 class Reader {
  public:
-  Reader(uint8_t* buffer, long size)
+  Reader(const uint8_t* buffer, long size)
       : buffer_(buffer), size_(size), offset_(0) {}
 
   uint32_t ReadUInt32() {
@@ -478,9 +478,9 @@ class Reader {
     }
   }
 
-  uint8_t* Consume(int count) {
+  const uint8_t* Consume(int count) {
     ASSERT(offset_ + count <= size_);
-    uint8_t* old = buffer_ + offset_;
+    const uint8_t* old = buffer_ + offset_;
     offset_ += count;
     return old;
   }
@@ -511,7 +511,7 @@ class Reader {
   ReaderHelper* helper() { return &builder_; }
 
  private:
-  uint8_t* buffer_;
+  const uint8_t* buffer_;
   long size_;
   long offset_;
   ReaderHelper builder_;
@@ -2563,6 +2563,12 @@ dil::Program* ReadPrecompiledDil(const char* filename) {
     }
   }
   return NULL;
+}
+
+dil::Program* ReadPrecompiledDilFromBuffer(const uint8_t* buffer,
+                                           intptr_t buffer_length) {
+  dil::Reader reader(buffer, buffer_length);
+  return dil::Program::ReadFrom(&reader);
 }
 
 bool WritePrecompiledDil(const char* filename, dil::Program* program) {
