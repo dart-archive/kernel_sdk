@@ -78,34 +78,54 @@ dart::RawString* FlowGraphBuilder::DartString(String* string,
 }
 
 
+dart::RawString* FlowGraphBuilder::DartSymbol(String* string) {
+  return dart::Symbols::FromUTF8(string->buffer(), string->size());
+}
+
+
 dart::RawClass* FlowGraphBuilder::LookupClassByName(const dart::String& name) {
-  return library_.LookupClassAllowPrivate(name);
+  dart::RawClass* klass = library_.LookupClassAllowPrivate(name);
+  ASSERT(klass != Object::null());
+  return klass;
 }
 
 
 dart::RawClass* FlowGraphBuilder::LookupClassByName(String* name) {
-  return LookupClassByName(dart::String::Handle(DartString(name)));
+  dart::RawClass* klass = LookupClassByName(
+      dart::String::Handle(DartString(name)));
+  ASSERT(klass != Object::null());
+  return klass;
 }
 
 
 dart::RawField* FlowGraphBuilder::LookupFieldByName(const dart::String& name) {
-  return library_.LookupFieldAllowPrivate(name);
+  dart::RawField* field = library_.LookupFieldAllowPrivate(name);
+  ASSERT(field != Object::null());
+  return field;
 }
 
 
 dart::RawField* FlowGraphBuilder::LookupFieldByName(String* name) {
-  return LookupFieldByName(dart::String::Handle(DartString(name)));
+  dart::RawField* field = LookupFieldByName(
+      dart::String::Handle(DartString(name)));
+  ASSERT(field != Object::null());
+  return field;
 }
 
 
 dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(
     const dart::String& name) {
-  return library_.LookupFunctionAllowPrivate(name);
+  dart::RawFunction* function = library_.LookupFunctionAllowPrivate(name);
+  ASSERT(function != Object::null());
+  return function;
 }
 
 
 dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(String* name) {
-  return LookupStaticMethodByName(dart::String::Handle(DartString(name)));
+  dart::RawFunction* function = LookupStaticMethodByName(
+      dart::String::Handle(DartString(name)));
+  ASSERT(function != Object::null());
+  return function;
 }
 
 
@@ -155,8 +175,26 @@ Fragment FlowGraphBuilder::DropTemporaries(intptr_t count) {
 
 void FlowGraphBuilder::AddVariable(VariableDeclaration* declaration,
                                    LocalVariable* variable) {
+  ASSERT(variable != NULL);
   scope_->AddVariable(variable);
   locals_[declaration] = variable;
+}
+
+
+void FlowGraphBuilder::AddParameter(VariableDeclaration* declaration,
+                                    LocalVariable* variable,
+                                    int pos) {
+  ASSERT(variable != NULL);
+  scope_->InsertParameterAt(pos, variable);
+  locals_[declaration] = variable;
+}
+
+
+dart::LocalVariable* FlowGraphBuilder::LookupVariable(
+    VariableDeclaration* var) {
+  LocalVariable* local = locals_[var];
+  ASSERT(local != NULL);
+  return local;
 }
 
 
@@ -205,7 +243,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
         new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
     null->set_temp_index(0);
     body <<= null;
-    body <<= new(Z) ReturnInstr(TokenPosition::kNoSource, new Value(null));
+    body <<= new(Z) ReturnInstr(TokenPosition::kNoSource, new(Z) Value(null));
   }
 
   return new(Z) FlowGraph(parsed_function_, graph_entry, next_block_id_ - 1);
@@ -347,7 +385,7 @@ void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
 
 void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
   fragment_ = EmitConstant(
-      dart::String::Handle(DartString(node->value(), Heap::kOld)));
+      dart::String::ZoneHandle(DartString(node->value(), Heap::kOld)));
 }
 
 
@@ -387,7 +425,7 @@ void FlowGraphBuilder::VisitTypeLiteral(TypeLiteral* node) {
 
 
 void FlowGraphBuilder::VisitVariableGet(VariableGet* node) {
-  LocalVariable* local = locals_[node->variable()];
+  LocalVariable* local = LookupVariable(node->variable());
   LoadLocalInstr* load =
       new(Z) LoadLocalInstr(*local, TokenPosition::kNoSource);
   Push(load);
@@ -396,7 +434,7 @@ void FlowGraphBuilder::VisitVariableGet(VariableGet* node) {
 
 
 void FlowGraphBuilder::VisitVariableSet(VariableSet* node) {
-  LocalVariable* local = locals_[node->variable()];
+  LocalVariable* local = LookupVariable(node->variable());
   Fragment instructions = VisitExpression(node->expression());
   Value* value = Pop();
   StoreLocalInstr* store =
@@ -817,6 +855,7 @@ void FlowGraphBuilder::VisitEmptyStatement(EmptyStatement* node) {
   fragment_ = Fragment();
 }
 
+
 void FlowGraphBuilder::VisitBlock(Block* node) {
   scope_ = new LocalScope(scope_, 0, loop_depth_);
   Fragment instructions;
@@ -838,7 +877,7 @@ void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
         new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
     null->set_temp_index(0);
     instructions = Fragment(null);
-    result = new Value(null);
+    result = new(Z) Value(null);
   } else {
     instructions = VisitExpression(node->expression());
     result = Pop();
@@ -856,11 +895,11 @@ void FlowGraphBuilder::VisitExpressionStatement(ExpressionStatement* node) {
 
 
 void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
-  const dart::String& name = dart::String::Handle(DartString(node->name()));
+  const dart::String& name = dart::String::ZoneHandle(DartString(node->name()));
   const dart::String& symbol = dart::String::ZoneHandle(Z, Symbols::New(name));
   LocalVariable* local =
-    new LocalVariable(TokenPosition::kNoSource, symbol,
-                      Type::ZoneHandle(Z, Type::DynamicType()));
+    new(Z) LocalVariable(TokenPosition::kNoSource, symbol,
+                         Type::ZoneHandle(Z, Type::DynamicType()));
 
   AddVariable(node, local);
 

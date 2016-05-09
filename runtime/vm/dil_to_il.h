@@ -127,6 +127,7 @@ class FlowGraphBuilder : public TreeVisitor {
 
   dart::RawString* DartString(String* string,  // NOLINT
                               Heap::Space space = Heap::kNew);
+  dart::RawString* DartSymbol(String* string); // NOLINT
   dart::RawClass* LookupClassByName(const dart::String& name);
   dart::RawClass* LookupClassByName(String* name);
   dart::RawField* LookupFieldByName(const dart::String& name);
@@ -140,8 +141,11 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment MakeTemporary(LocalVariable** variable);
   Fragment DropTemporaries(intptr_t count);
 
-  void AddVariable(VariableDeclaration* declaration,
-                   LocalVariable* variable);
+  void AddVariable(VariableDeclaration* declaration, LocalVariable* variable);
+  void AddParameter(VariableDeclaration* declaration,
+                    LocalVariable* variable,
+                    int pos);
+  dart::LocalVariable* LookupVariable(VariableDeclaration* var);
 
   void SetTempIndex(Definition* definition);
 
