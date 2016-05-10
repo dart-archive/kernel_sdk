@@ -16,6 +16,7 @@
 #include "vm/dart_api_state.h"
 #include "vm/dart_entry.h"
 #include "vm/debugger.h"
+#include "vm/dil_reader.h"
 #include "vm/exceptions.h"
 #include "vm/flags.h"
 #include "vm/growable_array.h"
@@ -5211,6 +5212,34 @@ DART_EXPORT Dart_Handle Dart_LoadScriptFromSnapshot(const uint8_t* buffer,
   }
   library ^= tmp.raw();
   library.set_debuggable(true);
+  I->object_store()->set_root_library(library);
+  return Api::NewHandle(T, library.raw());
+}
+
+DART_EXPORT Dart_Handle Dart_LoadDil(const uint8_t* buffer,
+                                     intptr_t buffer_len) {
+  API_TIMELINE_DURATION;
+  DARTSCOPE(Thread::Current());
+  Isolate* I = T->isolate();
+  StackZone zone(T);
+
+  Library& library = Library::Handle(Z, I->object_store()->root_library());
+  if (!library.IsNull()) {
+    const String& library_url = String::Handle(Z, library.url());
+    return Api::NewError("%s: A script has already been loaded from '%s'.",
+                         CURRENT_FUNC, library_url.ToCString());
+  }
+  CHECK_CALLBACK_STATE(T);
+  CHECK_COMPILATION_ALLOWED(I);
+
+  // TODO(kustermann): Memory leak!
+  DilReader* reader = new DilReader(buffer, buffer_len);
+  const Object& tmp = reader->ReadProgram();
+  if (tmp.IsError()) {
+    return Api::NewHandle(T, tmp.raw());
+  }
+  library ^= tmp.raw();
+  library.set_debuggable(false);
   I->object_store()->set_root_library(library);
   return Api::NewHandle(T, library.raw());
 }

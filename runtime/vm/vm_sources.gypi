@@ -339,6 +339,8 @@
     'dil_binary.cc',
     'dil_to_il.cc',
     'dil_to_il.h',
+    'dil_reader.h',
+    'dil_reader.cc',
     'proccpuinfo.cc',
     'proccpuinfo.h',
     'profiler_service.cc',

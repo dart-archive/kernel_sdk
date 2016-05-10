@@ -4,6 +4,8 @@
 
 #include "bin/dartutils.h"
 
+#include <string.h>
+
 #include "bin/crypto.h"
 #include "bin/directory.h"
 #include "bin/extensions.h"
@@ -46,6 +48,7 @@ const char* const DartUtils::kHttpScheme = "http:";
 const char* const DartUtils::kVMServiceLibURL = "dart:vmservice";
 
 const uint8_t DartUtils::magic_number[] = { 0xf5, 0xf5, 0xdc, 0xdc };
+static const uint8_t magic_number_dilfile[] = { 0x90, 0xab, 0xcd, 0xef };
 
 static bool IsWindowsHost() {
 #if defined(TARGET_OS_WINDOWS)
@@ -471,22 +474,31 @@ Dart_Handle DartUtils::LibraryTagHandler(Dart_LibraryTag tag,
 
 const uint8_t* DartUtils::SniffForMagicNumber(const uint8_t* text_buffer,
                                               intptr_t* buffer_len,
-                                              bool* is_snapshot) {
+                                              bool* is_snapshot,
+                                              bool* is_dilfile) {
+  *is_snapshot = false;
+  *is_dilfile = false;
+
   intptr_t len = sizeof(magic_number);
-  if (*buffer_len <= len) {
-    *is_snapshot = false;
+  if (*buffer_len <= len) return text_buffer;
+
+  if (memcmp(text_buffer, magic_number, sizeof(magic_number)) == 0) {
+    *is_snapshot = true;
+    *buffer_len -= len;
+    return text_buffer + len;
+  }
+
+  len = sizeof(magic_number_dilfile);
+  if (*buffer_len <= len) return text_buffer;
+
+  if (memcmp(text_buffer,
+             magic_number_dilfile,
+             sizeof(magic_number_dilfile)) == 0) {
+    *is_dilfile = true;
     return text_buffer;
   }
-  for (intptr_t i = 0; i < len; i++) {
-    if (text_buffer[i] != magic_number[i]) {
-      *is_snapshot = false;
-      return text_buffer;
-    }
-  }
-  *is_snapshot = true;
-  ASSERT(*buffer_len > len);
-  *buffer_len -= len;
-  return text_buffer + len;
+
+  return text_buffer;
 }
 
 
@@ -561,11 +573,14 @@ void FUNCTION_NAME(Builtin_LoadSource)(Dart_NativeArguments args) {
   if (Dart_IsNull(tag_in) && Dart_IsNull(library_uri)) {
     // Entry file. Check for payload and load accordingly.
     bool is_snapshot = false;
-    const uint8_t *payload =
-        DartUtils::SniffForMagicNumber(data, &num_bytes, &is_snapshot);
+    bool is_dilfile = false;
+    const uint8_t *payload = DartUtils::SniffForMagicNumber(
+        data, &num_bytes, &is_snapshot, &is_dilfile);
 
     if (is_snapshot) {
       result = Dart_LoadScriptFromSnapshot(payload, num_bytes);
+    } else if (is_dilfile) {
+      result = Dart_LoadDil(payload, num_bytes);
     } else {
       Dart_Handle source = Dart_NewStringFromUTF8(data, num_bytes);
       if (Dart_IsError(source)) {

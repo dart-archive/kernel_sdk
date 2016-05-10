@@ -2712,6 +2712,12 @@ DART_EXPORT Dart_Handle Dart_LoadScriptFromSnapshot(const uint8_t* buffer,
                                                     intptr_t buffer_len);
 
 /**
+ * Loads a dart application which was compiled to a dill file
+ */
+DART_EXPORT Dart_Handle Dart_LoadDil(const uint8_t* buffer,
+                                     intptr_t buffer_len);
+
+/**
  * Gets the library for the root script for the current isolate.
  *
  * If the root script has not yet been set for the current isolate,

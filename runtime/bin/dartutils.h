@@ -206,7 +206,8 @@ class DartUtils {
   // adjusted.
   static const uint8_t* SniffForMagicNumber(const uint8_t* text_buffer,
                                             intptr_t* buffer_len,
-                                            bool* is_snapshot);
+                                            bool* is_snapshot,
+                                            bool* is_dilfile);
 
   // Write a magic number to indicate a script snapshot file.
   static void WriteMagicNumber(File* file);
