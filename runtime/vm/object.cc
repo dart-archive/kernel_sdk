@@ -6567,6 +6567,7 @@ RawFunction* Function::New(const String& name,
   result.set_deoptimization_counter(0);
   result.set_optimized_instruction_count(0);
   result.set_optimized_call_site_count(0);
+  result.set_dil_function(0);
   result.set_is_optimizable(is_native ? false : true);
   result.set_is_inlinable(true);
   result.set_allows_hoisting_check_class(true);
@@ -6595,6 +6596,7 @@ RawFunction* Function::Clone(const Class& new_owner) const {
   clone.set_deoptimization_counter(0);
   clone.set_optimized_instruction_count(0);
   clone.set_optimized_call_site_count(0);
+  clone.set_dil_function(dil_function());
   if (new_owner.NumTypeParameters() > 0) {
     // Adjust uninstantiated types to refer to type parameters of the new owner.
     AbstractType& type = AbstractType::Handle(clone.result_type());
@@ -13108,6 +13110,9 @@ RawLocalVarDescriptors* Code::GetLocalVarDescriptors() const {
   if (v.IsNull()) {
     ASSERT(!is_optimized());
     const Function& f = Function::Handle(function());
+    if (f.dil_function() != 0) {
+      return v.raw();
+    }
     ASSERT(!f.IsIrregexpFunction());  // Not yet implemented.
     Compiler::ComputeLocalVarDescriptors(*this);
   }

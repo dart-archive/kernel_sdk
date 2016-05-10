@@ -857,6 +857,7 @@ class RawFunction : public RawObject {
   uint32_t kind_tag_;  // See Function::KindTagBits.
   uint16_t optimized_instruction_count_;
   uint16_t optimized_call_site_count_;
+  intptr_t dil_function_;
 };
 
 

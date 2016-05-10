@@ -2477,6 +2477,14 @@ class Function : public Object {
                     static_cast<uint16_t>(value));
   }
 
+  intptr_t dil_function() const {
+    return raw_ptr()->dil_function_;
+  }
+
+  void set_dil_function(intptr_t dil_function) const {
+    StoreNonPointer(&raw_ptr()->dil_function_, dil_function);
+  }
+
   bool IsOptimizable() const;
   bool IsNativeAutoSetupScope() const;
   void SetIsOptimizable(bool value) const;
