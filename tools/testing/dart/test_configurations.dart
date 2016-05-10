@@ -49,6 +49,10 @@ final TEST_SUITE_DIRECTORIES = [
   new Path('utils/tests/peg'),
 ];
 
+final DILL_TEST_SUITE_DIRECTORIES = [
+  new Path('tests/dill'),
+];
+
 void testConfigurations(List<Map> configurations) {
   var startTime = new DateTime.now();
   // Extract global options from first configuration.
@@ -219,6 +223,14 @@ void testConfigurations(List<Map> configurations) {
         if (selectors.containsKey(name)) {
           testSuites
               .add(new StandardTestSuite.forDirectory(conf, testSuiteDir));
+        }
+      }
+
+      for (final testSuiteDir in DILL_TEST_SUITE_DIRECTORIES) {
+        final name = testSuiteDir.filename;
+        if (selectors.containsKey(name)) {
+          testSuites
+              .add(new StandardTestSuite.forDillDirectory(conf, testSuiteDir));
         }
       }
     }

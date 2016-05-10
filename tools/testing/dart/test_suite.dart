@@ -726,6 +726,15 @@ class StandardTestSuite extends TestSuite {
         recursive: true);
   }
 
+  factory StandardTestSuite.forDillDirectory(Map configuration, Path directory) {
+    var name = directory.filename;
+    var status_paths = ['$directory/$name.status'];
+
+    return new StandardTestSuite(configuration, name, directory, status_paths,
+        isTestFilePredicate: (filename) => filename.endsWith('_test.dill'),
+        recursive: true);
+  }
+
   List<Uri> get dart2JsBootstrapDependencies => _dart2JsBootstrapDependencies;
 
   /**
