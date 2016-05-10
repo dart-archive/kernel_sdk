@@ -159,6 +159,9 @@ dil::FunctionNode* ParsedFunction::GetBinaryIR() {
   // repeatedly search for it.  This should be improved.
   if (ir_function_ != NULL) return ir_function_;
 
+  intptr_t dil_function = function().dil_function();
+  if (dil_function == 0) return NULL;
+
   switch (function().kind()) {
     case RawFunction::kClosureFunction:
     case RawFunction::kRegularFunction:
@@ -167,42 +170,7 @@ dil::FunctionNode* ParsedFunction::GetBinaryIR() {
     case RawFunction::kConstructor: {
       if (function().IsImplicitClosureFunction()) return NULL;
       if (function().IsConstructorClosureFunction()) return NULL;
-      const Script& script = Script::Handle(function().script());
-      const String& url = String::Handle(script.url());
 
-      // If it is a .dart file:// URL, map it to the filename of an IL binary
-      // file in the same location.
-      const char* url_string = url.ToCString();
-      size_t length = strlen(url_string);
-      if (strncmp(url_string, "file://", 7) != 0) return NULL;
-      if (strncmp(url_string + length - 5, ".dart", 5) != 0) return NULL;
-      length -= 7;
-      char* dill_name = reinterpret_cast<char*>(malloc(length + 1));
-      strncpy(dill_name, url_string + 7, length - 5);
-      strncpy(dill_name + length - 5, ".dill", 6);
-
-      // Read the binary, check that the first library matches the expected
-      // name and look for a function with the given name.
-      dil::Program* program = ReadPrecompiledDil(dill_name);
-      if (program == NULL) return NULL;
-      const Library& library = Library::Handle(script.FindLibrary());
-      const String& library_name = String::Handle(library.name());
-      dil::String* name = program->libraries()[0]->name();
-      const String& name_string =
-          String::Handle(String::FromUTF8(name->buffer(), name->size()));
-      if (!library_name.Equals(name_string)) return NULL;
-
-      const String& function_name = String::Handle(function().name());
-      dil::List<dil::Procedure>& procedures =
-          program->libraries()[0]->procedures();
-      int i = 0;
-      for (; i < procedures.length(); ++i) {
-        dil::String* name = procedures[i]->name()->string();
-        const String& name_string =
-            String::Handle(String::FromUTF8(name->buffer(), name->size()));
-        if (function_name.Equals(name_string)) break;
-      }
-      if (i == procedures.length()) return NULL;
 
       // The IR builder will create its own local variables and scopes, and it
       // will not need an AST.  The code generator will assume that there is a
@@ -213,7 +181,15 @@ dil::FunctionNode* ParsedFunction::GetBinaryIR() {
       scope->AddVariable(EnsureExpressionTemp());
       scope->AddVariable(current_context_var());
       node_sequence_ = new SequenceNode(TokenPosition::kNoSource, scope);
-      return ir_function_ = procedures[i]->function();
+
+      dil::Node* node = reinterpret_cast<dil::Node*>(dil_function);
+      if (node->IsProcedure()) {
+        return ir_function_ = dil::Procedure::Cast(node)->function();
+      } else if (node->IsConstructor()) {
+        return ir_function_ = dil::Constructor::Cast(node)->function();
+      } else {
+        UNIMPLEMENTED();
+      }
     }
     default:
       return NULL;
@@ -1537,7 +1513,6 @@ SequenceNode* Parser::ParseConstructorClosure(const Function& func) {
 SequenceNode* Parser::ParseImplicitClosure(const Function& func) {
   TRACE_PARSER("ParseImplicitClosure");
   TokenPosition token_pos = func.token_pos();
-
   OpenFunctionBlock(func);
 
   ParamList params;
@@ -1560,10 +1535,13 @@ SequenceNode* Parser::ParseImplicitClosure(const Function& func) {
                              &field_type);
     ASSERT(func.num_fixed_parameters() == 2);  // closure, value.
   } else if (!parent.IsGetterFunction() && !parent.IsImplicitGetterFunction()) {
-    const bool allow_explicit_default_values = true;
-    SkipFunctionPreamble();
-    ParseFormalParameterList(allow_explicit_default_values, false, &params);
-    SetupDefaultsForOptionalParams(params);
+    // NOTE: For the `dil -> flowgraph` we don't use the parser.
+    if (parent.dil_function() == 0) {
+      const bool allow_explicit_default_values = true;
+      SkipFunctionPreamble();
+      ParseFormalParameterList(allow_explicit_default_values, false, &params);
+      SetupDefaultsForOptionalParams(params);
+    }
   }
 
   // Populate function scope with the formal parameters.
@@ -14472,7 +14450,6 @@ dil::FunctionNode* ParsedFunction::GetBinaryIR() {
   UNREACHABLE();
   return NULL;
 }
-
 
 void ParsedFunction::AddToGuardedFields(const Field* field) const {
   UNREACHABLE();

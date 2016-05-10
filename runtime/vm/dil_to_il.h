@@ -45,7 +45,7 @@ typedef ZoneGrowableArray<PushArgumentInstr*>* ArgumentArray;
 class FlowGraphBuilder : public TreeVisitor {
  public:
   FlowGraphBuilder(FunctionNode* function,
-                   const ParsedFunction& parsed_function,
+                   ParsedFunction& parsed_function,
                    int first_block_id = 1);
 
   FlowGraph* BuildGraph();
@@ -130,15 +130,21 @@ class FlowGraphBuilder : public TreeVisitor {
                             PushArgumentInstr* argument2,
                             PushArgumentInstr* argument3);
 
-  dart::RawString* DartString(String* string,  // NOLINT
+  dart::RawString* DartString(String* str,
                               Heap::Space space = Heap::kNew);
-  dart::RawString* DartSymbol(String* string); // NOLINT
+  dart::RawString* DartSymbol(String* str);
+  dart::RawString* DartConstructorName(Constructor* node);
+  dart::RawLibrary* LookupLibraryByDilLibrary(Library* library);
   dart::RawClass* LookupClassByName(const dart::String& name);
   dart::RawClass* LookupClassByName(String* name);
+  dart::RawClass* LookupClassByDilClass(Class* klass);
   dart::RawField* LookupFieldByName(const dart::String& name);
   dart::RawField* LookupFieldByName(String* name);
+  dart::RawFunction* LookupStaticMethodByDilProcedure(Procedure* procedure);
   dart::RawFunction* LookupStaticMethodByName(const dart::String& name);
   dart::RawFunction* LookupStaticMethodByName(String* name);
+  dart::RawFunction* LookupConstructorByDilConstructor(
+      const dart::Class& owner, Constructor* constructor);
 
   PushArgumentInstr* MakeArgument();
   Fragment AddArgumentToList(ZoneGrowableArray<PushArgumentInstr*>* arguments);
@@ -162,7 +168,7 @@ class FlowGraphBuilder : public TreeVisitor {
 
   FunctionNode* function_;
 
-  const ParsedFunction& parsed_function_;
+  ParsedFunction& parsed_function_;
   const dart::Library& library_;
   const ZoneGrowableArray<const ICData*> ic_data_array_;
 

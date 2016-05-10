@@ -732,7 +732,7 @@ class CallSiteInliner : public ValueObject {
         // Do not inline functions compiled from binary IR (yet).  The
         // translation is not yet implemented, and it makes testing a bit more
         // difficult when it's enabled.
-        if (parsed_function->GetBinaryIR() != NULL) return false;
+        if (parsed_function->function().dil_function() != 0) return false;
 
         if (Compiler::IsBackgroundCompilation()) {
           if (isolate->IsTopLevelParsing() ||

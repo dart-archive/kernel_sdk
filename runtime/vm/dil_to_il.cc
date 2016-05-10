@@ -56,7 +56,7 @@ Fragment operator<<(const Fragment& fragment, Instruction* next) {
 
 
 FlowGraphBuilder::FlowGraphBuilder(FunctionNode* function,
-                                   const ParsedFunction& parsed_function,
+                                   ParsedFunction& parsed_function,
                                    int first_block_id)
   : zone_(Thread::Current()->zone()),
     function_(function),
@@ -83,6 +83,29 @@ dart::RawString* FlowGraphBuilder::DartSymbol(String* string) {
 }
 
 
+dart::RawString* FlowGraphBuilder::DartConstructorName(Constructor* node) {
+  Class* klass = Class::Cast(node->parent());
+
+  // We build a String which looks like <classname>.<constructor-name>.
+  dart::String& temp = dart::String::Handle(DartString(klass->name()));
+  temp ^= dart::String::Concat(temp, Symbols::Dot());
+  return dart::String::Concat(
+      temp,
+      dart::String::Handle(DartString(node->name()->string())));  // NOLINT
+}
+
+
+dart::RawLibrary* FlowGraphBuilder::LookupLibraryByDilLibrary(
+    Library* dil_library) {
+  dart::String& library_name =
+      dart::String::Handle(DartSymbol(dil_library->import_uri()));
+  ASSERT(!library_name.IsNull());
+  dart::RawLibrary* library = dart::Library::LookupLibrary(library_name);
+  ASSERT(library != Object::null());
+  return library;
+}
+
+
 dart::RawClass* FlowGraphBuilder::LookupClassByName(const dart::String& name) {
   dart::RawClass* klass = library_.LookupClassAllowPrivate(name);
   ASSERT(klass != Object::null());
@@ -93,6 +116,25 @@ dart::RawClass* FlowGraphBuilder::LookupClassByName(const dart::String& name) {
 dart::RawClass* FlowGraphBuilder::LookupClassByName(String* name) {
   dart::RawClass* klass = LookupClassByName(
       dart::String::Handle(DartString(name)));
+  ASSERT(klass != Object::null());
+  return klass;
+}
+
+
+dart::RawClass* FlowGraphBuilder::LookupClassByDilClass(Class* dil_klass) {
+  dart::RawClass* klass = NULL;
+
+  const dart::String& class_name =
+      dart::String::Handle(DartString(dil_klass->name()));
+  if (dil_klass->parent()->IsCorelibrary()) {
+    Library* dil_library = Library::Cast(dil_klass->parent());
+    dart::Library& library = dart::Library::Handle(
+        LookupLibraryByDilLibrary(dil_library));
+    klass = library.LookupClassAllowPrivate(class_name);
+  } else {
+    klass = LookupClassByName(class_name);
+  }
+
   ASSERT(klass != Object::null());
   return klass;
 }
@@ -113,6 +155,29 @@ dart::RawField* FlowGraphBuilder::LookupFieldByName(String* name) {
 }
 
 
+dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByDilProcedure(
+    Procedure* procedure) {
+  Library* dil_library = Library::Cast(procedure->parent());
+  if (dil_library->IsCorelibrary()) {
+    dart::Library& library = dart::Library::Handle(
+        LookupLibraryByDilLibrary(dil_library));
+    dart::String& procedure_name =
+        dart::String::Handle(DartSymbol(procedure->name()->string()));
+    ASSERT(!procedure_name.IsNull());
+    dart::RawFunction* function =
+        library.LookupFunctionAllowPrivate(procedure_name);
+    ASSERT(function != Object::null());
+    return function;
+  } else {
+    dart::RawFunction* function =
+        library_.LookupFunctionAllowPrivate(
+            dart::String::Handle(DartString(procedure->name()->string())));
+    ASSERT(function != Object::null());
+    return function;
+  }
+}
+
+
 dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(
     const dart::String& name) {
   dart::RawFunction* function = library_.LookupFunctionAllowPrivate(name);
@@ -124,6 +189,17 @@ dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(
 dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(String* name) {
   dart::RawFunction* function = LookupStaticMethodByName(
       dart::String::Handle(DartString(name)));
+  ASSERT(function != Object::null());
+  return function;
+}
+
+
+dart::RawFunction* FlowGraphBuilder::LookupConstructorByDilConstructor(
+    const dart::Class& owner, Constructor* constructor) {
+  dart::String& constructor_name =
+      dart::String::Handle(DartConstructorName(constructor));
+  dart::RawFunction* function =
+      owner.LookupConstructorAllowPrivate(constructor_name);
   ASSERT(function != Object::null());
   return function;
 }
@@ -232,6 +308,85 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
   GraphEntryInstr* graph_entry =
       new(Z) GraphEntryInstr(parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
+
+  // Populate stack with arguments
+  {
+    bool is_method = !parsed_function_.function().IsStaticFunction();
+
+    dart::AbstractType& dynamic =
+        dart::AbstractType::ZoneHandle(Type::DynamicType());
+    int pos = 0;
+    if (is_method) {
+      dart::Class& klass =
+          dart::Class::Handle(parsed_function_.function().Owner());
+      Type& klass_type =
+          Type::ZoneHandle(Type::NewNonParameterizedType(klass));
+      LocalVariable* parameter = new(Z) LocalVariable(
+          TokenPosition::kNoSource,
+          dart::String::ZoneHandle(Symbols::New("this")),
+          klass_type);
+      // FIXME: We should probably put it into an field for generating
+      // expressions relying on this.
+      AddParameter(NULL, parameter, pos);
+      pos++;
+    }
+    for (int i = 0;
+         i < function_->positional_parameters().length();
+         i++, pos++) {
+      VariableDeclaration* var = function_->positional_parameters()[i];
+      LocalVariable* parameter = new(Z) LocalVariable(
+          TokenPosition::kNoSource,
+          dart::String::ZoneHandle(DartSymbol(var->name())),
+          dynamic);
+      AddParameter(var, parameter, pos);
+    }
+    for (int i = 0; i < function_->named_parameters().length(); i++, pos++) {
+      VariableDeclaration* var = function_->named_parameters()[i];
+      LocalVariable* parameter = new(Z) LocalVariable(
+          TokenPosition::kNoSource,
+          dart::String::ZoneHandle(DartSymbol(var->name())),
+          dynamic);
+      AddParameter(var, parameter, pos);
+    }
+  }
+
+  // Setup default values for optional parameters.
+  int num_optional_parameters =
+      parsed_function_.function().NumOptionalParameters();
+  if (num_optional_parameters > 0) {
+    ZoneGrowableArray<const Instance*>* default_values =
+        new ZoneGrowableArray<const Instance*>(Z, num_optional_parameters);
+
+    if (parsed_function_.function().HasOptionalNamedParameters()) {
+      ASSERT(!parsed_function_.function().HasOptionalPositionalParameters());
+      for (int i = 0; i < num_optional_parameters; i++) {
+        // FIXME(kustermann):
+        // We should evaluate the constant expression:
+        //
+        //     VariableDeclaration* variable =
+        //         procedure_->function()->named_parameters()[i];
+        //     default_value =
+        //         EvaluateConstantExpression(variable->initializer());
+        const Instance* default_value = &Instance::ZoneHandle(Instance::null());
+        default_values->Add(default_value);
+      }
+    } else {
+      ASSERT(parsed_function_.function().HasOptionalPositionalParameters());
+      // int required = procedure_->function()->required_parameter_count();
+      for (int i = 0; i < num_optional_parameters; i++) {
+        // FIXME(kustermann):
+        // We should evaluate the constant expression:
+        //
+        //     VariableDeclaration* variable =
+        //         procedure_->function()->positional_parameters()[i];
+        //     default_value =
+        //         EvaluateConstantExpression(variable->initializer());
+        const Instance* default_value = &Instance::ZoneHandle(Instance::null());
+        default_values->Add(default_value);
+      }
+    }
+    parsed_function_.set_default_parameter_values(default_values);
+  }
 
   Fragment body(normal_entry);
   body <<= new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource, 0);
@@ -559,7 +714,7 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   Fragment instructions = TranslateArguments(
       node->arguments(), &arguments, &argument_names);
   const Function& target = Function::ZoneHandle(Z,
-      LookupStaticMethodByName(node->procedure()->name()->string()));
+      LookupStaticMethodByDilProcedure(node->procedure()));
   fragment_ = instructions + EmitStaticCall(target, arguments, argument_names);
 }
 
@@ -574,18 +729,16 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   instructions += TranslateArguments(
       node->arguments(), &arguments, &argument_names);
 
-  const dart::String& name = dart::String::ZoneHandle(Z,
-      Symbols::New(dart::String::Handle(DartString(node->name()->string()))));
+  const dart::String& name = dart::String::ZoneHandle(Z, Symbols::New(
+      dart::String::Handle(DartString(node->name()->string()))));  // NOLINT
   fragment_ = instructions +
       EmitInstanceCall(name, Token::kILLEGAL, arguments, argument_names);
 }
 
 
 void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
-  const dart::String& class_name = dart::String::Handle(
-      DartString(Class::Cast(node->target()->parent())->name()));
-  const dart::Class& owner =
-      dart::Class::ZoneHandle(Z, LookupClassByName(class_name));
+  const dart::Class& owner = dart::Class::ZoneHandle(
+      Z, LookupClassByDilClass(Class::Cast(node->target()->parent())));
   ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
   AllocateObjectInstr* alloc =
       new(Z) AllocateObjectInstr(TokenPosition::kNoSource,
@@ -607,14 +760,8 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
   instructions += TranslateArguments(
       node->arguments(), &arguments, &argument_names);
 
-  dart::String& constructor_name = dart::String::Handle();
-  constructor_name ^= dart::String::Concat(class_name, Symbols::Dot());
-  constructor_name ^= dart::String::Concat(
-      constructor_name,
-      dart::String::Handle(
-          DartString(node->target()->name()->string())));  // NOLINT
   const Function& target = Function::ZoneHandle(Z,
-      owner.LookupConstructorAllowPrivate(constructor_name));
+      LookupConstructorByDilConstructor(owner, node->target()));
   instructions += EmitStaticCall(target, arguments, argument_names);
   Drop();
 
@@ -891,6 +1038,7 @@ void FlowGraphBuilder::VisitBlock(Block* node) {
   fragment_ = instructions;
   scope_ = scope_->parent();
 }
+
 
 void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
   Fragment instructions;

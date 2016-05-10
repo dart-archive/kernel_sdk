@@ -5233,7 +5233,7 @@ DART_EXPORT Dart_Handle Dart_LoadDil(const uint8_t* buffer,
   CHECK_COMPILATION_ALLOWED(I);
 
   // TODO(kustermann): Memory leak!
-  DilReader* reader = new DilReader(buffer, buffer_len);
+  dil::DilReader* reader = new dil::DilReader(buffer, buffer_len);
   const Object& tmp = reader->ReadProgram();
   if (tmp.IsError()) {
     return Api::NewHandle(T, tmp.raw());
