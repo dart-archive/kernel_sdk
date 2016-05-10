@@ -154,10 +154,10 @@ static RawTypeArguments* NewTypeArguments(
 }
 
 
-dil::Procedure* ParsedFunction::GetBinaryIR() {
+dil::FunctionNode* ParsedFunction::GetBinaryIR() {
   // If a function has a binary IR we will cache it, if it doesn't we will
   // repeatedly search for it.  This should be improved.
-  if (ir_procedure_ != NULL) return ir_procedure_;
+  if (ir_function_ != NULL) return ir_function_;
 
   switch (function().kind()) {
     case RawFunction::kClosureFunction:
@@ -213,7 +213,7 @@ dil::Procedure* ParsedFunction::GetBinaryIR() {
       scope->AddVariable(EnsureExpressionTemp());
       scope->AddVariable(current_context_var());
       node_sequence_ = new SequenceNode(TokenPosition::kNoSource, scope);
-      return ir_procedure_ = procedures[i];
+      return ir_function_ = procedures[i]->function();
     }
     default:
       return NULL;
@@ -14468,7 +14468,7 @@ void Parser::SkipQualIdent() {
 
 namespace dart {
 
-dil::Procedure* ParsedFunction::GetBinaryIR() {
+dil::FunctionNode* ParsedFunction::GetBinaryIR() {
   UNREACHABLE();
   return NULL;
 }

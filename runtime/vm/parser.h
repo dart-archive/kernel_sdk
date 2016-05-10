@@ -60,7 +60,7 @@ class ParsedFunction : public ZoneAllocated {
         num_copied_params_(0),
         num_stack_locals_(0),
         have_seen_await_expr_(false),
-        ir_procedure_(NULL) {
+        ir_function_(NULL) {
     ASSERT(function.IsZoneHandle());
     // Every function has a local variable for the current context.
     LocalVariable* temp = new(zone()) LocalVariable(
@@ -71,7 +71,7 @@ class ParsedFunction : public ZoneAllocated {
     current_context_var_ = temp;
   }
 
-  dil::Procedure* GetBinaryIR();
+  dil::FunctionNode* GetBinaryIR();
 
   const Function& function() const { return function_; }
   const Code& code() const { return code_; }
@@ -194,7 +194,7 @@ class ParsedFunction : public ZoneAllocated {
   int num_stack_locals_;
   bool have_seen_await_expr_;
 
-  dil::Procedure* ir_procedure_;
+  dil::FunctionNode* ir_function_;
 
   friend class Parser;
   DISALLOW_COPY_AND_ASSIGN(ParsedFunction);

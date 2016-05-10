@@ -92,9 +92,9 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
     ParsedFunction* parsed_function,
     const ZoneGrowableArray<const ICData*>& ic_data_array,
     intptr_t osr_id) {
-  dil::Procedure* procedure = parsed_function->GetBinaryIR();
-  if (procedure != NULL) {
-    dil::FlowGraphBuilder builder(procedure, *parsed_function);
+  dil::FunctionNode* function = parsed_function->GetBinaryIR();
+  if (function != NULL) {
+    dil::FlowGraphBuilder builder(function, *parsed_function);
     FlowGraph* graph = builder.BuildGraph();
     parsed_function->AllocateVariables();
     builder.AdjustTemporaries(

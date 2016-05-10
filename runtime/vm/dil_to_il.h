@@ -44,7 +44,7 @@ typedef ZoneGrowableArray<PushArgumentInstr*>* ArgumentArray;
 
 class FlowGraphBuilder : public TreeVisitor {
  public:
-  FlowGraphBuilder(Procedure* procedure,
+  FlowGraphBuilder(FunctionNode* function,
                    const ParsedFunction& parsed_function,
                    int first_block_id = 1);
 
@@ -160,7 +160,7 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Zone* zone_;
 
-  Procedure* procedure_;
+  FunctionNode* function_;
 
   const ParsedFunction& parsed_function_;
   const dart::Library& library_;

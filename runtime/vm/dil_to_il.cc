@@ -55,11 +55,11 @@ Fragment operator<<(const Fragment& fragment, Instruction* next) {
 }
 
 
-FlowGraphBuilder::FlowGraphBuilder(Procedure* procedure,
+FlowGraphBuilder::FlowGraphBuilder(FunctionNode* function,
                                    const ParsedFunction& parsed_function,
                                    int first_block_id)
   : zone_(Thread::Current()->zone()),
-    procedure_(procedure),
+    function_(function),
     parsed_function_(parsed_function),
     library_(dart::Library::ZoneHandle(Z,
         dart::Class::Handle(parsed_function.function().Owner()).library())),
@@ -235,7 +235,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
 
   Fragment body(normal_entry);
   body <<= new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource, 0);
-  body += VisitStatement(procedure_->function()->body());
+  body += VisitStatement(function_->body());
 
   if (body.is_open()) {
     ASSERT(stack_ == NULL);
