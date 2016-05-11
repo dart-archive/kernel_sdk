@@ -46,23 +46,18 @@ class TranslationHelper {
  public:
   explicit TranslationHelper(dart::Zone* zone) : zone_(zone) {}
 
-  dart::RawString* RawDartString(const char* content);
-  dart::RawString* RawDartString(String* str, Heap::Space space = Heap::kNew);
-  dart::RawString* RawDartSymbol(const char* content);
-  dart::RawString* RawDartSymbol(String* str);
-
   const dart::String& DartString(const char* content);
-  const dart::String& DartString(String* content);
+  dart::String& DartString(String* content, Heap::Space space = Heap::kNew);
   const dart::String& DartSymbol(const char* content);
   const dart::String& DartSymbol(String* content);
 
   const dart::String& DartConstructorName(Constructor* node);
   const dart::String& DartProcedureName(Procedure* procedure);
 
- private:
-  dart::RawString* DartSetterName(Procedure* setter);
-  dart::RawString* DartGetterName(Procedure* getter);
+  const dart::String& DartSetterName(String* content);
+  const dart::String& DartGetterName(String* content);
 
+ private:
   dart::Zone* zone_;
 };
 
