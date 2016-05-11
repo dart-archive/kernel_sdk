@@ -17,7 +17,7 @@ function compile {
 if [ -f "$FILE" ]; then
   compile $FILE
 else
-  for file in $CURRENT_DIR/*.dart; do
+  for file in $CURRENT_DIR/*_test.dart; do
     compile $file
   done
 fi

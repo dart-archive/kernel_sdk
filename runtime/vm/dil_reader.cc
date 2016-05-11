@@ -11,7 +11,6 @@
 #include "vm/symbols.h"
 
 namespace dart {
-
 namespace dil {
 
 #define Z (zone_)
@@ -20,6 +19,7 @@ namespace dil {
 
 // FIXME(kustermann): We should add support for type conversion to annotate
 // fields/parameters/variables with proper types.
+// FIXME(kustermann): We should add support for initializers.
 
 Object& DilReader::ReadProgram() {
   Program* program = ReadPrecompiledDilFromBuffer(buffer_, buffer_length_);
@@ -90,8 +90,9 @@ void DilReader::ReadLibrary(Library* dil_library) {
   }
 }
 
-void DilReader::ReadClass(dart::Library& library, Class* dil_klass) {
+void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
   dart::Class& klass = LookupClass(dil_klass);
+  ClassFinalizer::FinalizeTypesInClass(klass);
 
   klass.set_library(library);
   library.AddClass(klass);
@@ -114,13 +115,17 @@ void DilReader::ReadClass(dart::Library& library, Class* dil_klass) {
                    type,
                    pos));
     klass.AddField(field);
+    field.set_has_initializer(false);
+    if (!dil_field->IsStatic()) {
+      GenerateFieldAccessors(klass, dil_klass, dil_field);
+    }
   }
 
   for (int i = 0; i < dil_klass->constructors().length(); i++) {
     Constructor* dil_constructor = dil_klass->constructors()[i];
 
     const dart::String& name = H.DartConstructorName(dil_constructor);
-    Function& function = dart::Function::Handle(Z, dart::Function::New(
+    Function& function = dart::Function::ZoneHandle(Z, dart::Function::New(
           name,
           RawFunction::kConstructor,
           false,  // is_static
@@ -139,22 +144,7 @@ void DilReader::ReadClass(dart::Library& library, Class* dil_klass) {
 
   for (int i = 0; i < dil_klass->procedures().length(); i++) {
     Procedure* dil_procedure = dil_klass->procedures()[i];
-    const dart::String& name = H.DartSymbol(dil_procedure->name()->string());
-    Function& function = Function::Handle(Z, Function::New(
-          name,
-          GetFunctionType(dil_procedure),
-          dil_procedure->IsStatic(),  // is_static
-          false,  // is_const
-          dil_procedure->IsAbstract(),
-          dil_procedure->IsExternal(),
-          false,  // is_native
-          klass,
-          pos));
-    klass.AddFunction(function);
-    function.set_dil_function(reinterpret_cast<intptr_t>(dil_procedure));
-    function.set_result_type(AbstractType::dynamic_type());
-    SetupFunctionParameters(klass, function, dil_procedure->function(), true);
-    library.AddObject(function, name);
+    ReadProcedure(library, klass, dil_procedure, dil_klass);
   }
 
   // TODO(kustermann): Support inheritance.
@@ -162,17 +152,17 @@ void DilReader::ReadClass(dart::Library& library, Class* dil_klass) {
       dart::Type::Handle(Z, dart::Type::ObjectType());
   klass.set_super_type(super_type);
 
-  klass.set_is_finalized();
+  ClassFinalizer::FinalizeClass(klass);
 }
 
-void DilReader::ReadProcedure(dart::Library& library,
-                              dart::Class& owner,
+void DilReader::ReadProcedure(const dart::Library& library,
+                              const dart::Class& owner,
                               Procedure* dil_procedure,
                               Class* dil_klass) {
-  const dart::String& name = H.DartSymbol(dil_procedure->name()->string());
+  const dart::String& name = H.DartProcedureName(dil_procedure);
   TokenPosition pos(0);
   bool is_method = dil_klass != NULL && !dil_procedure->IsStatic();
-  dart::Function& function = dart::Function::Handle(Z, Function::New(
+  dart::Function& function = dart::Function::ZoneHandle(Z, Function::New(
         name,
         GetFunctionType(dil_procedure),
         !is_method,  // is_static
@@ -185,17 +175,62 @@ void DilReader::ReadProcedure(dart::Library& library,
   owner.AddFunction(function);
   function.set_dil_function(reinterpret_cast<intptr_t>(dil_procedure));
   function.set_result_type(AbstractType::dynamic_type());
+  function.set_is_debuggable(false);
 
   SetupFunctionParameters(
       owner, function, dil_procedure->function(), is_method);
 
   library.AddObject(function, name);
   ASSERT(!Object::Handle(library.LookupObjectAllowPrivate(
-          H.DartSymbol(dil_procedure->name()->string()))).IsNull());  // NOLINT
+      H.DartProcedureName(dil_procedure))).IsNull());
 }
 
-void DilReader::SetupFunctionParameters(dart::Class& klass,
-                                        dart::Function& function,
+void DilReader::GenerateFieldAccessors(const dart::Class& klass,
+                                       Class* dil_klass,
+                                       Field* dil_field) {
+  TokenPosition pos(0);
+
+  const dart::String& getter_name =
+      H.DartGetterName(dil_field->name()->string());
+  dart::Function& getter = dart::Function::ZoneHandle(Z, dart::Function::New(
+      getter_name,
+      dart::RawFunction::kImplicitGetter,
+      dil_field->IsStatic(),
+      dil_field->IsFinal(),
+      false,  // is_abstract
+      false,  // is_external
+      false,  // is_native
+      klass,
+      pos));
+  klass.AddFunction(getter);
+  getter.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
+  getter.set_result_type(AbstractType::dynamic_type());
+  getter.set_is_debuggable(false);
+  SetupFieldAccessorFunction(klass, getter);
+
+  if (!dil_field->IsFinal()) {
+    const dart::String& setter_name =
+        H.DartSetterName(dil_field->name()->string());  // NOLINT
+    dart::Function& setter = dart::Function::ZoneHandle(Z, dart::Function::New(
+          setter_name,
+          RawFunction::kImplicitSetter,
+          dil_field->IsStatic(),
+          dil_field->IsFinal(),
+          false,  // is_abstract
+          false,  // is_external
+          false,  // is_native
+          klass,
+          pos));
+    klass.AddFunction(setter);
+    setter.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
+    setter.set_result_type(Object::void_type());
+    setter.set_is_debuggable(false);
+    SetupFieldAccessorFunction(klass, setter);
+  }
+}
+
+void DilReader::SetupFunctionParameters(const dart::Class& klass,
+                                        const dart::Function& function,
                                         FunctionNode* node,
                                         bool is_method) {
   int this_parameter = is_method ? 1 : 0;
@@ -227,13 +262,36 @@ void DilReader::SetupFunctionParameters(dart::Class& klass,
     pos++;
   }
   for (int i = 0; i < node->positional_parameters().length(); i++, pos++) {
+    VariableDeclaration* dil_variable = node->positional_parameters()[i];
     function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
-    function.SetParameterNameAt(pos, H.DartSymbol("positional_parameter_x"));
+    function.SetParameterNameAt(pos, H.DartSymbol(dil_variable->name()));
   }
   for (int i = 0; i < node->named_parameters().length(); i++, pos++) {
     VariableDeclaration* named_expression = node->named_parameters()[i];
     function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
     function.SetParameterNameAt(pos, H.DartSymbol(named_expression->name()));
+  }
+}
+
+void DilReader::SetupFieldAccessorFunction(const dart::Class& klass,
+                                           const dart::Function& function) {
+  bool is_setter = function.IsImplicitSetterFunction();
+  int num_parameters = 1 + (is_setter ? 1 : 0);
+
+  function.SetNumOptionalParameters(0, false);
+  function.set_num_fixed_parameters(num_parameters);
+  function.set_parameter_types(
+      Array::Handle(Array::New(num_parameters, Heap::kOld)));
+  function.set_parameter_names(
+      Array::Handle(Array::New(num_parameters, Heap::kOld)));
+
+  Type& klass_type = Type::Handle(Type::NewNonParameterizedType(klass));
+
+  function.SetParameterTypeAt(0, klass_type);
+  function.SetParameterNameAt(0, H.DartSymbol("this"));
+  if (is_setter) {
+    function.SetParameterTypeAt(1, AbstractType::dynamic_type());
+    function.SetParameterNameAt(1, H.DartSymbol("value"));
   }
 }
 
@@ -246,9 +304,10 @@ dart::Library& DilReader::LookupLibrary(Library* library) {
     if (library->IsCorelibrary()) {
       *handle = dart::Library::LookupLibrary(H.DartSymbol(library->name()));
     } else {
-      *handle = dart::Library::New(H.DartSymbol(library->name()));
+      *handle = dart::Library::New(H.DartSymbol(library->import_uri()));
+      handle->Register();
     }
-    libraries_.Insert(library, *handle);
+    libraries_.Insert(library, handle);
   }
   return *handle;
 }
@@ -267,7 +326,7 @@ dart::Class& DilReader::LookupClass(Class* klass) {
       handle = &dart::Class::Handle(Z,
           dart::Class::New(H.DartSymbol(klass->name()), script, pos));
     }
-    classes_.Insert(klass, *handle);
+    classes_.Insert(klass, handle);
   }
   return *handle;
 }
@@ -293,5 +352,4 @@ RawFunction::Kind DilReader::GetFunctionType(Procedure* dil_procedure) {
 }
 
 }  // namespace dil
-
 }  // namespace dart

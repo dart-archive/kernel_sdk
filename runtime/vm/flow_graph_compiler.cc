@@ -1095,6 +1095,10 @@ void FlowGraphCompiler::FinalizeStaticCallTargetsTable(const Code& code) {
 
 // Returns 'true' if regular code generation should be skipped.
 bool FlowGraphCompiler::TryIntrinsify() {
+  // FIXME(kustermann): We should do the pattern matching on the IR instead of
+  // the AST.
+  return false;
+
   // Intrinsification skips arguments checks, therefore disable if in checked
   // mode.
   if (FLAG_intrinsify && !isolate()->type_checks()) {

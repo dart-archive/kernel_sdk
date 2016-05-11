@@ -69,38 +69,39 @@ class FlowGraphBuilder : public TreeVisitor {
 
   FlowGraph* BuildGraph();
 
-  void VisitDefaultTreeNode(TreeNode* node) { UNREACHABLE(); }
+  virtual void VisitDefaultTreeNode(TreeNode* node) { UNREACHABLE(); }
 
-  void VisitNullLiteral(NullLiteral* node);
-  void VisitBoolLiteral(BoolLiteral* node);
-  void VisitIntLiteral(IntLiteral* node);
-  void VisitBigintLiteral(BigintLiteral* node);
-  void VisitDoubleLiteral(DoubleLiteral* node);
-  void VisitStringLiteral(StringLiteral* node);
-  void VisitTypeLiteral(TypeLiteral* node);
-  void VisitVariableGet(VariableGet* node);
-  void VisitVariableSet(VariableSet* node);
-  void VisitStaticGet(StaticGet* node);
-  void VisitStaticSet(StaticSet* node);
-  void VisitPropertyGet(PropertyGet* node);
-  void VisitPropertySet(PropertySet* node);
-  void VisitStaticInvocation(StaticInvocation* node);
-  void VisitMethodInvocation(MethodInvocation* node);
-  void VisitConstructorInvocation(ConstructorInvocation* node);
-  void VisitIsExpression(IsExpression* node);
-  void VisitAsExpression(AsExpression* node);
-  void VisitConditionalExpression(ConditionalExpression* node);
-  void VisitLogicalExpression(LogicalExpression* node);
-  void VisitNot(Not* node);
+  virtual void VisitNullLiteral(NullLiteral* node);
+  virtual void VisitBoolLiteral(BoolLiteral* node);
+  virtual void VisitIntLiteral(IntLiteral* node);
+  virtual void VisitBigintLiteral(BigintLiteral* node);
+  virtual void VisitDoubleLiteral(DoubleLiteral* node);
+  virtual void VisitStringLiteral(StringLiteral* node);
+  virtual void VisitTypeLiteral(TypeLiteral* node);
+  virtual void VisitVariableGet(VariableGet* node);
+  virtual void VisitVariableSet(VariableSet* node);
+  virtual void VisitStaticGet(StaticGet* node);
+  virtual void VisitStaticSet(StaticSet* node);
+  virtual void VisitPropertyGet(PropertyGet* node);
+  virtual void VisitPropertySet(PropertySet* node);
+  virtual void VisitStaticInvocation(StaticInvocation* node);
+  virtual void VisitMethodInvocation(MethodInvocation* node);
+  virtual void VisitConstructorInvocation(ConstructorInvocation* node);
+  virtual void VisitIsExpression(IsExpression* node);
+  virtual void VisitAsExpression(AsExpression* node);
+  virtual void VisitConditionalExpression(ConditionalExpression* node);
+  virtual void VisitLogicalExpression(LogicalExpression* node);
+  virtual void VisitNot(Not* node);
+  virtual void VisitThisExpression(ThisExpression* node);
 
-  void VisitEmptyStatement(EmptyStatement* node);
-  void VisitBlock(Block* node);
-  void VisitReturnStatement(ReturnStatement* node);
-  void VisitExpressionStatement(ExpressionStatement* node);
-  void VisitVariableDeclaration(VariableDeclaration* node);
-  void VisitIfStatement(IfStatement* node);
-  void VisitWhileStatement(WhileStatement* node);
-  void VisitDoStatement(DoStatement* node);
+  virtual void VisitEmptyStatement(EmptyStatement* node);
+  virtual void VisitBlock(Block* node);
+  virtual void VisitReturnStatement(ReturnStatement* node);
+  virtual void VisitExpressionStatement(ExpressionStatement* node);
+  virtual void VisitVariableDeclaration(VariableDeclaration* node);
+  virtual void VisitIfStatement(IfStatement* node);
+  virtual void VisitWhileStatement(WhileStatement* node);
+  virtual void VisitDoStatement(DoStatement* node);
 
   void AdjustTemporaries(int base);
 
@@ -129,6 +130,8 @@ class FlowGraphBuilder : public TreeVisitor {
                           const Array& argument_names);
 
   Fragment EmitStaticCall(const Function& target);
+  Fragment EmitStaticCall(const Function& target,
+                          PushArgumentInstr* argument0);
   Fragment EmitInstanceCall(const dart::String& name,
                             Token::Kind kind,
                             ArgumentArray arguments,
@@ -158,6 +161,7 @@ class FlowGraphBuilder : public TreeVisitor {
   dart::RawClass* LookupClassByDilClass(Class* klass);
   dart::RawField* LookupFieldByName(const dart::String& name);
   dart::RawField* LookupFieldByName(String* name);
+  dart::RawField* LookupFieldByDilField(Field* field);
   dart::RawFunction* LookupStaticMethodByDilProcedure(Procedure* procedure);
   dart::RawFunction* LookupStaticMethodByName(const dart::String& name);
   dart::RawFunction* LookupStaticMethodByName(String* name);
@@ -204,6 +208,9 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment fragment_;
   Value* stack_;
   int pending_argument_count_;
+
+  // Only non-NULL for instance functions.
+  LocalVariable* this_variable_;
 
   friend class DartTypeTranslator;
 };

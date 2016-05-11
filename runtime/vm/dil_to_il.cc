@@ -103,8 +103,22 @@ const dart::String& TranslationHelper::DartProcedureName(Procedure* procedure) {
 
 
 const dart::String& TranslationHelper::DartSetterName(String* content) {
-  return dart::String::ZoneHandle(Z,
-      dart::Field::SetterSymbol(DartString(content)));
+  // The names flowing into [content] are coming from the DILL file:
+  //   * user-defined setters: `fieldname=`
+  //   * property-set expressions:  `fieldname`
+  //
+  // The VM uses `get:fieldname` and `set:fieldname`.
+  //
+  // => In order to be consistent, we remove the `=` always and adopt the VM
+  //    conventions.
+  ASSERT(content->size() > 0);
+  int skip = 0;
+  if (content->buffer()[content->size() - 1] == '=') {
+    skip = 1;
+  }
+  dart::String& name = dart::String::ZoneHandle(Z,
+      dart::String::FromUTF8(content->buffer(), content->size() - skip));
+  return dart::String::ZoneHandle(Z, dart::Field::SetterSymbol(name));
 }
 
 
@@ -128,7 +142,8 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     scope_(NULL),
     loop_depth_(0),
     stack_(NULL),
-    pending_argument_count_(0) {
+    pending_argument_count_(0),
+    this_variable_(NULL) {
 }
 
 
@@ -188,25 +203,41 @@ dart::RawField* FlowGraphBuilder::LookupFieldByName(String* name) {
 }
 
 
+dart::RawField* FlowGraphBuilder::LookupFieldByDilField(Field* dil_field) {
+  TreeNode* node = dil_field->parent();
+
+  dart::Class& klass = dart::Class::Handle(Z);
+  if (node->IsClass()) {
+    klass ^= LookupClassByDilClass(Class::Cast(node));
+  } else {
+    ASSERT(node->IsLibrary());
+    dart::Library& library = dart::Library::Handle(
+        Z, LookupLibraryByDilLibrary(Library::Cast(node)));
+    klass = library.toplevel_class();
+  }
+  dart::RawField* field = klass.LookupFieldAllowPrivate(
+      H.DartSymbol(dil_field->name()->string()));
+  ASSERT(field != Object::null());
+  return field;
+}
+
+
 dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByDilProcedure(
     Procedure* procedure) {
-  Library* dil_library = Library::Cast(procedure->parent());
-  if (dil_library->IsCorelibrary()) {
-    dart::Library& library = dart::Library::Handle(
-        LookupLibraryByDilLibrary(dil_library));
-    const dart::String& procedure_name =
-        H.DartSymbol(procedure->name()->string());
-    ASSERT(!procedure_name.IsNull());
-    dart::RawFunction* function =
-        library.LookupFunctionAllowPrivate(procedure_name);
-    ASSERT(function != Object::null());
-    return function;
-  } else {
-    dart::RawFunction* function = library_.LookupFunctionAllowPrivate(
-        H.DartString(procedure->name()->string()));
-    ASSERT(function != Object::null());
-    return function;
-  }
+  ASSERT(procedure->IsStatic());
+  // The parent is either a library or a class (in which case the procedure is a
+  // static method).
+  TreeNode* parent = procedure->parent();
+  Library* dil_library = Library::Cast(
+      parent->IsClass() ? Class::Cast(parent)->parent() : parent);
+
+  dart::Library& library = dart::Library::Handle(
+      LookupLibraryByDilLibrary(dil_library));
+  const dart::String& procedure_name = H.DartProcedureName(procedure);
+  dart::RawFunction* function =
+      library.LookupFunctionAllowPrivate(procedure_name);
+  ASSERT(function != Object::null());
+  return function;
 }
 
 
@@ -333,36 +364,44 @@ void FlowGraphBuilder::Drop() {
 
 FlowGraph* FlowGraphBuilder::BuildGraph() {
   const dart::Function& function = parsed_function_->function();
+
+  if (function.IsImplicitClosureFunction()) return NULL;
+  if (function.IsConstructorClosureFunction()) return NULL;
+
+  // The IR builder will create its own local variables and scopes, and it
+  // will not need an AST.  The code generator will assume that there is a
+  // local variable stack slot allocated for the current context and (I
+  // think) that the runtime will expect it to be at a fixed offset which
+  // requires allocating an unused expression temporary variable.
+  scope_ = new LocalScope(NULL, 0, 0);
+  scope_->AddVariable(parsed_function_->EnsureExpressionTemp());
+  scope_->AddVariable(parsed_function_->current_context_var());
+  parsed_function_->SetNodeSequence(
+      new SequenceNode(TokenPosition::kNoSource, scope_));
+
   switch (function.kind()) {
     case RawFunction::kClosureFunction:
     case RawFunction::kRegularFunction:
     case RawFunction::kGetterFunction:
     case RawFunction::kSetterFunction:
     case RawFunction::kConstructor: {
-      if (function.IsImplicitClosureFunction()) return NULL;
-      if (function.IsConstructorClosureFunction()) return NULL;
-
-      // The IR builder will create its own local variables and scopes, and it
-      // will not need an AST.  The code generator will assume that there is a
-      // local variable stack slot allocated for the current context and (I
-      // think) that the runtime will expect it to be at a fixed offset which
-      // requires allocating an unused expression temporary variable.
-      scope_ = new LocalScope(NULL, 0, 0);
-      scope_->AddVariable(parsed_function_->EnsureExpressionTemp());
-      scope_->AddVariable(parsed_function_->current_context_var());
-      parsed_function_->SetNodeSequence(
-          new SequenceNode(TokenPosition::kNoSource, scope_));
-
       if (node_->IsProcedure()) {
-        return BuildGraphOfFunction(dil::Procedure::Cast(node_)->function());
+        return BuildGraphOfFunction(Procedure::Cast(node_)->function());
       } else if (node_->IsConstructor()) {
-        return BuildGraphOfFunction(dil::Constructor::Cast(node_)->function());
+        return BuildGraphOfFunction(Constructor::Cast(node_)->function());
       } else {
         UNIMPLEMENTED();
       }
     }
-    default:
+    case RawFunction::kImplicitGetter:
+    case RawFunction::kImplicitSetter: {
+      ASSERT(node_->IsField());
+      return BuildGraphOfFieldAccessor(Field::Cast(node_));
+    }
+    default: {
+      UNREACHABLE();
       return NULL;
+    }
   }
 }
 
@@ -387,13 +426,11 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function) {
           dart::Class::Handle(parsed_function_->function().Owner());
       Type& klass_type =
           Type::ZoneHandle(Type::NewNonParameterizedType(klass));
-      LocalVariable* parameter = new(Z) LocalVariable(
+      this_variable_ = new(Z) LocalVariable(
           TokenPosition::kNoSource,
           H.DartSymbol("this"),
           klass_type);
-      // FIXME: We should probably put it into an field for generating
-      // expressions relying on this.
-      AddParameter(NULL, parameter, pos);
+      AddParameter(NULL, this_variable_, pos);
       pos++;
     }
     for (int i = 0;
@@ -471,9 +508,101 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function) {
 }
 
 
-FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(Field* field) {
-  UNIMPLEMENTED();
-  return NULL;
+FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(Field* dil_field) {
+  bool is_setter = parsed_function_->function().IsImplicitSetterFunction();
+  dart::Field& field =
+      dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
+
+  TargetEntryInstr* normal_entry =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  GraphEntryInstr* graph_entry =
+      new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
+                             Compiler::kNoOSRDeoptId);
+
+  // Populate stack with arguments.
+  LocalVariable* setter_value = NULL;
+  {
+    dart::AbstractType& dynamic =
+        dart::AbstractType::ZoneHandle(Type::DynamicType());
+    dart::Class& klass =
+        dart::Class::Handle(parsed_function_->function().Owner());
+    Type& klass_type =
+        Type::ZoneHandle(Type::NewNonParameterizedType(klass));
+
+    this_variable_ = new(Z) LocalVariable(
+        TokenPosition::kNoSource,
+        dart::String::ZoneHandle(Symbols::New("this")),
+        klass_type);
+    scope_->InsertParameterAt(0, this_variable_);
+
+    if (is_setter) {
+      setter_value = new(Z) LocalVariable(
+          TokenPosition::kNoSource,
+          H.DartSymbol("value"),
+          dynamic);
+      scope_->InsertParameterAt(1, setter_value);
+    }
+  }
+
+  // Generate getter or setter body
+  Fragment body(normal_entry);
+  if (!is_setter) {
+    LoadLocalInstr* load_this =
+        new LoadLocalInstr(*this_variable_, TokenPosition::kNoSource);
+    Push(load_this);
+
+    LoadFieldInstr* load_field =
+        new(Z) LoadFieldInstr(
+                Pop(),
+                &field,
+                AbstractType::ZoneHandle(Z, field.type()),
+                TokenPosition::kNoSource);
+    Push(load_field);
+
+    body <<= load_this;
+    body <<= load_field;
+    body <<= new(Z) ReturnInstr(TokenPosition::kNoSource, Pop());
+  } else {
+    LoadLocalInstr* load_this =
+        new(Z) LoadLocalInstr(*this_variable_, TokenPosition::kNoSource);
+    Push(load_this);
+
+    LoadLocalInstr* load_setter_value =
+        new(Z) LoadLocalInstr(*setter_value, TokenPosition::kNoSource);
+    Push(load_setter_value);
+
+    body <<= load_this;
+    body <<= load_setter_value;
+
+    if (false && FLAG_use_field_guards) {
+      // FIXME(kustermann): Should we implement this? What are field guards?
+      //         t1 <- StoreLocal(:expr_temp @-3, t1)
+      //         GuardFieldClass:4(field <nullable Null>, t1)
+      //         t1 <- LoadLocal(:expr_temp @-3)
+      //         GuardFieldLength:6(field <nullable Null>, t1)
+      //         t1 <- LoadLocal(:expr_temp @-3)
+    }
+
+    Value* value = Pop();
+    Value* instance = Pop();
+    body <<= new(Z) StoreInstanceFieldInstr(
+        field,
+        instance,
+        value,
+        kEmitStoreBarrier,
+        TokenPosition::kNoSource);
+
+    ASSERT(stack_ == NULL);
+    ConstantInstr* null =
+        new(Z) ConstantInstr(Instance::ZoneHandle(Z, Instance::null()));
+    null->set_temp_index(0);
+
+    body <<= null;
+    body <<= new(Z) ReturnInstr(TokenPosition::kNoSource, new(Z) Value(null));
+  }
+
+  return new(Z) FlowGraph(*parsed_function_, graph_entry, next_block_id_ - 1);
 }
 
 
@@ -511,6 +640,14 @@ Fragment FlowGraphBuilder::EmitStaticCall(const Function& target,
 
 Fragment FlowGraphBuilder::EmitStaticCall(const Function& target) {
   ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
+  return EmitStaticCall(target, arguments, Object::null_array());
+}
+
+
+Fragment FlowGraphBuilder::EmitStaticCall(const Function& target,
+                                          PushArgumentInstr* argument0) {
+  ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 1);
+  arguments->Add(argument0);
   return EmitStaticCall(target, arguments, Object::null_array());
 }
 
@@ -697,7 +834,13 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
     }
   } else {
     ASSERT(target->IsProcedure());
-    UNREACHABLE();
+
+    // Invoke the getter function
+    Procedure* procedure = Procedure::Cast(target);
+    const Function& target = Function::ZoneHandle(Z,
+        LookupStaticMethodByDilProcedure(procedure));
+
+    fragment_ = EmitStaticCall(target);
   }
 }
 
@@ -724,7 +867,30 @@ void FlowGraphBuilder::VisitStaticSet(StaticSet* node) {
     fragment_ = instructions + DropTemporaries(0);
   } else {
     ASSERT(target->IsProcedure());
-    UNREACHABLE();
+
+    // Evaluate the expression on the right hand side
+    Fragment instructions = VisitExpression(node->expression());
+    LocalVariable* variable;
+    instructions += MakeTemporary(&variable);
+
+    LoadLocalInstr* load = new(Z) LoadLocalInstr(
+        *variable, TokenPosition::kNoSource);
+    Push(load);
+    instructions <<= load;
+
+    // Prepare argument
+    PushArgumentInstr* receiver_argument = MakeArgument();
+    instructions <<= receiver_argument;
+
+    // Invoke the setter function
+    Procedure* procedure = Procedure::Cast(target);
+    const Function& target = Function::ZoneHandle(Z,
+        LookupStaticMethodByDilProcedure(procedure));
+    instructions += EmitStaticCall(target, receiver_argument);
+
+    // Drop the unused result & leave the expression result on the stack.
+    Drop();
+    fragment_ = instructions + DropTemporaries(0);
   }
 }
 
@@ -1046,6 +1212,14 @@ void FlowGraphBuilder::VisitNot(Not* node) {
   BooleanNegateInstr* negate = new(Z) BooleanNegateInstr(Pop());
   Push(negate);
   fragment_ = instructions << negate;
+}
+
+
+void FlowGraphBuilder::VisitThisExpression(ThisExpression* node) {
+  LoadLocalInstr* load_this =
+      new LoadLocalInstr(*this_variable_, TokenPosition::kNoSource);
+  Push(load_this);
+  fragment_ = Fragment(load_this);
 }
 
 

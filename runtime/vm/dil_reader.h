@@ -26,8 +26,8 @@ class Mapping {
     return false;
   }
 
-  void Insert(DilType* node, VmType& object) {
-    map_[node] = &object;
+  void Insert(DilType* node, VmType* object) {
+    map_[node] = object;
   }
 
  private:
@@ -49,16 +49,23 @@ class DilReader {
 
  private:
   void ReadLibrary(Library* dil_library);
-  void ReadClass(dart::Library& library, Class* dil_klass);
-  void ReadProcedure(dart::Library& library,
-                     dart::Class& owner,
+  void ReadClass(const dart::Library& library, Class* dil_klass);
+  void ReadProcedure(const dart::Library& library,
+                     const dart::Class& owner,
                      Procedure* procedure,
                      Class* dil_klass = NULL);
 
-  void SetupFunctionParameters(dart::Class& owner,
-                               dart::Function& function,
+  void GenerateFieldAccessors(const dart::Class& klass,
+                              Class* dil_klass,
+                              Field* field);
+
+  void SetupFunctionParameters(const dart::Class& owner,
+                               const dart::Function& function,
                                FunctionNode* dil_function,
                                bool is_method);
+
+  void SetupFieldAccessorFunction(const dart::Class& klass,
+                                  const dart::Function& function);
 
   dart::Library& LookupLibrary(Library* library);
   dart::Class& LookupClass(Class* klass);
