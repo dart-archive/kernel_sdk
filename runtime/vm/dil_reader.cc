@@ -16,6 +16,7 @@ namespace dil {
 
 #define Z (zone_)
 #define I (isolate_)
+#define H (translation_helper_)
 
 // FIXME(kustermann): We should add support for type conversion to annotate
 // fields/parameters/variables with proper types.
@@ -23,7 +24,7 @@ namespace dil {
 Object& DilReader::ReadProgram() {
   Program* program = ReadPrecompiledDilFromBuffer(buffer_, buffer_length_);
   if (program == NULL) {
-    dart::String& error = DartString("Failed to read .dill file");
+    const dart::String& error = H.DartString("Failed to read .dill file");
     return Object::Handle(Z, ApiError::New(error));
   }
 
@@ -40,7 +41,7 @@ Object& DilReader::ReadProgram() {
 
   // Sanity check that we can find the main entrypoint.
   Object& main_obj = Object::Handle(Z,
-      library.LookupObjectAllowPrivate(DartSymbol("main")));
+      library.LookupObjectAllowPrivate(H.DartSymbol("main")));
   ASSERT(!main_obj.IsNull());
 
   return library;
@@ -53,9 +54,9 @@ void DilReader::ReadLibrary(Library* dil_library) {
 
     // FIXME(kustermann): Figure out why we need this script stuff here.
     Script& script = Script::Handle(Z,
-        Script::New(DartString(""), DartString(""), RawScript::kScriptTag));
+        Script::New(H.DartString(""), H.DartString(""), RawScript::kScriptTag));
     script.SetLocationOffset(0, 0);
-    script.Tokenize(DartString("nop() {}"));
+    script.Tokenize(H.DartString("nop() {}"));
     dart::Class& toplevel_class = dart::Class::Handle(dart::Class::New(
           Symbols::TopLevel(), script, TokenPosition::kNoSource));
     toplevel_class.set_library(library);
@@ -64,7 +65,7 @@ void DilReader::ReadLibrary(Library* dil_library) {
     // Load toplevel fields.
     for (int i = 0; i < dil_library->fields().length(); i++) {
       Field* dil_field = dil_library->fields()[i];
-      dart::String& name = DartSymbol(dil_field->name()->string());
+      const dart::String& name = H.DartSymbol(dil_field->name()->string());
       dart::Field& field = dart::Field::Handle(Z, dart::Field::NewTopLevel(
             name,
             dil_field->IsConst(),
@@ -101,7 +102,7 @@ void DilReader::ReadClass(dart::Library& library, Class* dil_klass) {
 
   for (int i = 0; i < dil_klass->fields().length(); i++) {
     Field* dil_field = dil_klass->fields()[i];
-    dart::String& name = DartSymbol(dil_field->name()->string());
+    const dart::String& name = H.DartSymbol(dil_field->name()->string());
     const AbstractType& type = AbstractType::dynamic_type();
     dart::Field& field = dart::Field::Handle(Z,
         dart::Field::New(name,
@@ -118,8 +119,7 @@ void DilReader::ReadClass(dart::Library& library, Class* dil_klass) {
   for (int i = 0; i < dil_klass->constructors().length(); i++) {
     Constructor* dil_constructor = dil_klass->constructors()[i];
 
-    dart::String& name =
-        dart::String::ZoneHandle(DartConstructorName(dil_constructor));
+    const dart::String& name = H.DartConstructorName(dil_constructor);
     Function& function = dart::Function::Handle(Z, dart::Function::New(
           name,
           RawFunction::kConstructor,
@@ -139,7 +139,7 @@ void DilReader::ReadClass(dart::Library& library, Class* dil_klass) {
 
   for (int i = 0; i < dil_klass->procedures().length(); i++) {
     Procedure* dil_procedure = dil_klass->procedures()[i];
-    dart::String& name = DartSymbol(dil_procedure->name()->string());
+    const dart::String& name = H.DartSymbol(dil_procedure->name()->string());
     Function& function = Function::Handle(Z, Function::New(
           name,
           GetFunctionType(dil_procedure),
@@ -169,7 +169,7 @@ void DilReader::ReadProcedure(dart::Library& library,
                               dart::Class& owner,
                               Procedure* dil_procedure,
                               Class* dil_klass) {
-  dart::String& name = DartSymbol(dil_procedure->name()->string());
+  const dart::String& name = H.DartSymbol(dil_procedure->name()->string());
   TokenPosition pos(0);
   bool is_method = dil_klass != NULL && !dil_procedure->IsStatic();
   dart::Function& function = dart::Function::Handle(Z, Function::New(
@@ -191,7 +191,7 @@ void DilReader::ReadProcedure(dart::Library& library,
 
   library.AddObject(function, name);
   ASSERT(!Object::Handle(library.LookupObjectAllowPrivate(
-          DartSymbol(dil_procedure->name()->string()))).IsNull());
+          H.DartSymbol(dil_procedure->name()->string()))).IsNull());  // NOLINT
 }
 
 void DilReader::SetupFunctionParameters(dart::Class& klass,
@@ -223,17 +223,17 @@ void DilReader::SetupFunctionParameters(dart::Class& klass,
   int pos = 0;
   if (is_method) {
     function.SetParameterTypeAt(pos, klass_type);
-    function.SetParameterNameAt(pos, DartSymbol("this"));
+    function.SetParameterNameAt(pos, H.DartSymbol("this"));
     pos++;
   }
   for (int i = 0; i < node->positional_parameters().length(); i++, pos++) {
     function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
-    function.SetParameterNameAt(pos, DartSymbol("positional_parameter_x"));
+    function.SetParameterNameAt(pos, H.DartSymbol("positional_parameter_x"));
   }
   for (int i = 0; i < node->named_parameters().length(); i++, pos++) {
     VariableDeclaration* named_expression = node->named_parameters()[i];
     function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
-    function.SetParameterNameAt(pos, DartSymbol(named_expression->name()));
+    function.SetParameterNameAt(pos, H.DartSymbol(named_expression->name()));
   }
 }
 
@@ -244,9 +244,9 @@ dart::Library& DilReader::LookupLibrary(Library* library) {
 
     // If this is a core library, we'll use the VM version.
     if (library->IsCorelibrary()) {
-      *handle = dart::Library::LookupLibrary(DartSymbol(library->name()));
+      *handle = dart::Library::LookupLibrary(H.DartSymbol(library->name()));
     } else {
-      *handle = dart::Library::New(DartSymbol(library->name()));
+      *handle = dart::Library::New(H.DartSymbol(library->name()));
     }
     libraries_.Insert(library, *handle);
   }
@@ -259,13 +259,13 @@ dart::Class& DilReader::LookupClass(Class* klass) {
     if (klass->parent()->IsCorelibrary()) {
       dart::Library& library = LookupLibrary(klass->parent());
       handle = &dart::Class::Handle(Z,
-          library.LookupClass(DartSymbol(klass->name())));
+          library.LookupClass(H.DartSymbol(klass->name())));
     } else {
       TokenPosition pos(0);
-      Script& script = Script::Handle(Z,
-          Script::New(DartString(""), DartString(""), RawScript::kScriptTag));
+      Script& script = Script::Handle(Z, Script::New(H.DartString(""),
+          H.DartString(""), RawScript::kScriptTag));
       handle = &dart::Class::Handle(Z,
-          dart::Class::New(DartSymbol(klass->name()), script, pos));
+          dart::Class::New(H.DartSymbol(klass->name()), script, pos));
     }
     classes_.Insert(klass, *handle);
   }
@@ -290,45 +290,6 @@ RawFunction::Kind DilReader::GetFunctionType(Procedure* dil_procedure) {
     ASSERT(0 <= kind && kind <= Procedure::kFactory);
     return static_cast<RawFunction::Kind>(lookuptable[kind]);
   }
-}
-
-dart::String& DilReader::DartString(const char* string) {
-  return dart::String::Handle(Z, dart::String::New(string));
-}
-
-dart::String& DilReader::DartString(String* string) {
-  RawString* raw_string;
-  if (string == NULL) {
-    raw_string = dart::String::New("");
-  } else {
-    raw_string = dart::String::FromUTF8(string->buffer(), string->size());
-  }
-  return dart::String::Handle(Z, raw_string);
-}
-
-dart::String& DilReader::DartSymbol(const char* string) {
-  return dart::String::Handle(Z, Symbols::New(string));
-}
-
-dart::String& DilReader::DartSymbol(String* string) {
-  RawString* raw_string;
-  if (string == NULL) {
-    raw_string = Symbols::New("");
-  } else {
-    raw_string = Symbols::FromUTF8(string->buffer(), string->size());
-  }
-  return dart::String::Handle(Z, raw_string);
-}
-
-dart::RawString* DilReader::DartConstructorName(Constructor* node) {
-  Class* klass = Class::Cast(node->parent());
-
-  // We build a String which looks like <classname>.<constructor-name>.
-  dart::String& temp = DartString(klass->name());
-  temp ^= dart::String::Concat(temp, Symbols::Dot());
-  temp ^= dart::String::Concat(
-      temp, DartString(node->name()->string()));  // NOLINT
-  return Symbols::New(temp);
 }
 
 }  // namespace dil

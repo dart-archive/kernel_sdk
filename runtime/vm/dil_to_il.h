@@ -42,6 +42,30 @@ Fragment operator<<(const Fragment& fragment, Instruction* next);
 
 typedef ZoneGrowableArray<PushArgumentInstr*>* ArgumentArray;
 
+class TranslationHelper {
+ public:
+  explicit TranslationHelper(dart::Zone* zone) : zone_(zone) {}
+
+  dart::RawString* RawDartString(const char* content);
+  dart::RawString* RawDartString(String* str, Heap::Space space = Heap::kNew);
+  dart::RawString* RawDartSymbol(const char* content);
+  dart::RawString* RawDartSymbol(String* str);
+
+  const dart::String& DartString(const char* content);
+  const dart::String& DartString(String* content);
+  const dart::String& DartSymbol(const char* content);
+  const dart::String& DartSymbol(String* content);
+
+  const dart::String& DartConstructorName(Constructor* node);
+  const dart::String& DartProcedureName(Procedure* procedure);
+
+ private:
+  dart::RawString* DartSetterName(Procedure* setter);
+  dart::RawString* DartGetterName(Procedure* getter);
+
+  dart::Zone* zone_;
+};
+
 class FlowGraphBuilder : public TreeVisitor {
  public:
   FlowGraphBuilder(FunctionNode* function,
@@ -130,10 +154,6 @@ class FlowGraphBuilder : public TreeVisitor {
                             PushArgumentInstr* argument2,
                             PushArgumentInstr* argument3);
 
-  dart::RawString* DartString(String* str,
-                              Heap::Space space = Heap::kNew);
-  dart::RawString* DartSymbol(String* str);
-  dart::RawString* DartConstructorName(Constructor* node);
   dart::RawLibrary* LookupLibraryByDilLibrary(Library* library);
   dart::RawClass* LookupClassByName(const dart::String& name);
   dart::RawClass* LookupClassByName(String* name);
@@ -165,6 +185,7 @@ class FlowGraphBuilder : public TreeVisitor {
   void Drop();
 
   Zone* zone_;
+  TranslationHelper translation_helper_;
 
   FunctionNode* function_;
 

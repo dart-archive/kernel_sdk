@@ -11,6 +11,7 @@ namespace dart {
 namespace dil {
 
 #define Z (zone_)
+#define H (translation_helper_)
 
 Fragment& Fragment::operator+=(const Fragment& other) {
   if (entry == NULL) {
@@ -55,10 +56,95 @@ Fragment operator<<(const Fragment& fragment, Instruction* next) {
 }
 
 
+dart::RawString* TranslationHelper::RawDartString(const char* content) {
+  return dart::String::New(content);
+}
+
+
+dart::RawString* TranslationHelper::RawDartString(
+    String* str, Heap::Space space) {
+  return dart::String::FromUTF8(str->buffer(), str->size(), space);
+}
+
+
+dart::RawString* TranslationHelper::RawDartSymbol(const char* content) {
+  return Symbols::New(content);
+}
+
+
+dart::RawString* TranslationHelper::RawDartSymbol(String* str) {
+  return dart::Symbols::FromUTF8(str->buffer(), str->size());
+}
+
+
+const dart::String& TranslationHelper::DartString(const char* content) {
+  return dart::String::Handle(Z, RawDartString(content));
+}
+
+
+const dart::String& TranslationHelper::DartString(String* content) {
+  return dart::String::Handle(Z, RawDartString(content));
+}
+
+
+const dart::String& TranslationHelper::DartSymbol(const char* content) {
+  return dart::String::Handle(Z, RawDartSymbol(content));
+}
+
+
+const dart::String& TranslationHelper::DartSymbol(String* content) {
+  return dart::String::Handle(Z, RawDartSymbol(content));
+}
+
+
+const dart::String& TranslationHelper::DartConstructorName(Constructor* node) {
+  Class* klass = Class::Cast(node->parent());
+
+  // We build a String which looks like <classname>.<constructor-name>.
+  dart::String& temp = dart::String::Handle(Z, RawDartString(klass->name()));
+  temp ^= dart::String::Concat(temp, Symbols::Dot());
+  temp ^= dart::String::Concat(
+      temp, DartString(node->name()->string()));  // NOLINT
+  return dart::String::ZoneHandle(Z, dart::Symbols::New(temp));
+}
+
+
+const dart::String& TranslationHelper::DartProcedureName(Procedure* procedure) {
+  if (procedure->kind() == Procedure::kSetter) {
+    return dart::String::Handle(Z, DartSetterName(procedure));
+  } else if (procedure->kind() == Procedure::kGetter) {
+    return dart::String::Handle(Z, DartGetterName(procedure));
+  } else {
+    return DartSymbol(procedure->name()->string());
+  }
+}
+
+
+dart::RawString* TranslationHelper::DartSetterName(Procedure* setter) {
+  // We build a String which looks like set:<procedure-name>
+  dart::String& name = dart::String::Handle(
+      Z,
+      dart::String::Concat(dart::Symbols::SetterPrefix(),
+                           DartString(setter->name()->string())));
+  return Symbols::New(name);
+}
+
+
+dart::RawString* TranslationHelper::DartGetterName(Procedure* getter) {
+  // We build a String which looks like get:<procedure-name>
+  dart::String& name = dart::String::Handle(
+      Z,
+      dart::String::Concat(dart::Symbols::GetterPrefix(),
+                           DartString(getter->name()->string())));
+  return Symbols::New(name);
+}
+
+
 FlowGraphBuilder::FlowGraphBuilder(FunctionNode* function,
                                    ParsedFunction& parsed_function,
                                    int first_block_id)
   : zone_(Thread::Current()->zone()),
+    translation_helper_(zone_),
     function_(function),
     parsed_function_(parsed_function),
     library_(dart::Library::ZoneHandle(Z,
@@ -72,33 +158,9 @@ FlowGraphBuilder::FlowGraphBuilder(FunctionNode* function,
 }
 
 
-dart::RawString* FlowGraphBuilder::DartString(String* string,
-                                              Heap::Space space) {
-  return dart::String::FromUTF8(string->buffer(), string->size(), space);
-}
-
-
-dart::RawString* FlowGraphBuilder::DartSymbol(String* string) {
-  return dart::Symbols::FromUTF8(string->buffer(), string->size());
-}
-
-
-dart::RawString* FlowGraphBuilder::DartConstructorName(Constructor* node) {
-  Class* klass = Class::Cast(node->parent());
-
-  // We build a String which looks like <classname>.<constructor-name>.
-  dart::String& temp = dart::String::Handle(DartString(klass->name()));
-  temp ^= dart::String::Concat(temp, Symbols::Dot());
-  return dart::String::Concat(
-      temp,
-      dart::String::Handle(DartString(node->name()->string())));  // NOLINT
-}
-
-
 dart::RawLibrary* FlowGraphBuilder::LookupLibraryByDilLibrary(
     Library* dil_library) {
-  dart::String& library_name =
-      dart::String::Handle(DartSymbol(dil_library->import_uri()));
+  const dart::String& library_name = H.DartSymbol(dil_library->import_uri());
   ASSERT(!library_name.IsNull());
   dart::RawLibrary* library = dart::Library::LookupLibrary(library_name);
   ASSERT(library != Object::null());
@@ -114,8 +176,7 @@ dart::RawClass* FlowGraphBuilder::LookupClassByName(const dart::String& name) {
 
 
 dart::RawClass* FlowGraphBuilder::LookupClassByName(String* name) {
-  dart::RawClass* klass = LookupClassByName(
-      dart::String::Handle(DartString(name)));
+  dart::RawClass* klass = LookupClassByName(H.DartString(name));
   ASSERT(klass != Object::null());
   return klass;
 }
@@ -124,8 +185,7 @@ dart::RawClass* FlowGraphBuilder::LookupClassByName(String* name) {
 dart::RawClass* FlowGraphBuilder::LookupClassByDilClass(Class* dil_klass) {
   dart::RawClass* klass = NULL;
 
-  const dart::String& class_name =
-      dart::String::Handle(DartString(dil_klass->name()));
+  const dart::String& class_name = H.DartString(dil_klass->name());
   if (dil_klass->parent()->IsCorelibrary()) {
     Library* dil_library = Library::Cast(dil_klass->parent());
     dart::Library& library = dart::Library::Handle(
@@ -148,8 +208,7 @@ dart::RawField* FlowGraphBuilder::LookupFieldByName(const dart::String& name) {
 
 
 dart::RawField* FlowGraphBuilder::LookupFieldByName(String* name) {
-  dart::RawField* field = LookupFieldByName(
-      dart::String::Handle(DartString(name)));
+  dart::RawField* field = LookupFieldByName(H.DartString(name));
   ASSERT(field != Object::null());
   return field;
 }
@@ -161,17 +220,16 @@ dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByDilProcedure(
   if (dil_library->IsCorelibrary()) {
     dart::Library& library = dart::Library::Handle(
         LookupLibraryByDilLibrary(dil_library));
-    dart::String& procedure_name =
-        dart::String::Handle(DartSymbol(procedure->name()->string()));
+    const dart::String& procedure_name =
+        H.DartSymbol(procedure->name()->string());
     ASSERT(!procedure_name.IsNull());
     dart::RawFunction* function =
         library.LookupFunctionAllowPrivate(procedure_name);
     ASSERT(function != Object::null());
     return function;
   } else {
-    dart::RawFunction* function =
-        library_.LookupFunctionAllowPrivate(
-            dart::String::Handle(DartString(procedure->name()->string())));
+    dart::RawFunction* function = library_.LookupFunctionAllowPrivate(
+        H.DartString(procedure->name()->string()));
     ASSERT(function != Object::null());
     return function;
   }
@@ -188,7 +246,7 @@ dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(
 
 dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(String* name) {
   dart::RawFunction* function = LookupStaticMethodByName(
-      dart::String::Handle(DartString(name)));
+      H.DartString(name));
   ASSERT(function != Object::null());
   return function;
 }
@@ -196,10 +254,8 @@ dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(String* name) {
 
 dart::RawFunction* FlowGraphBuilder::LookupConstructorByDilConstructor(
     const dart::Class& owner, Constructor* constructor) {
-  dart::String& constructor_name =
-      dart::String::Handle(DartConstructorName(constructor));
   dart::RawFunction* function =
-      owner.LookupConstructorAllowPrivate(constructor_name);
+      owner.LookupConstructorAllowPrivate(H.DartConstructorName(constructor));
   ASSERT(function != Object::null());
   return function;
 }
@@ -336,7 +392,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       VariableDeclaration* var = function_->positional_parameters()[i];
       LocalVariable* parameter = new(Z) LocalVariable(
           TokenPosition::kNoSource,
-          dart::String::ZoneHandle(DartSymbol(var->name())),
+          dart::String::ZoneHandle(H.RawDartSymbol(var->name())),
           dynamic);
       AddParameter(var, parameter, pos);
     }
@@ -344,7 +400,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       VariableDeclaration* var = function_->named_parameters()[i];
       LocalVariable* parameter = new(Z) LocalVariable(
           TokenPosition::kNoSource,
-          dart::String::ZoneHandle(DartSymbol(var->name())),
+          dart::String::ZoneHandle(H.RawDartSymbol(var->name())),
           dynamic);
       AddParameter(var, parameter, pos);
     }
@@ -527,14 +583,14 @@ void FlowGraphBuilder::VisitIntLiteral(IntLiteral* node) {
 
 
 void FlowGraphBuilder::VisitBigintLiteral(BigintLiteral* node) {
-  const dart::String& value = dart::String::Handle(DartString(node->value()));
+  const dart::String& value = H.DartString(node->value());
   fragment_ = EmitConstant(
       Integer::ZoneHandle(Z, Integer::New(value, Heap::kOld)));
 }
 
 
 void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
-  const dart::String& value = dart::String::Handle(DartString(node->value()));
+  const dart::String& value = H.DartString(node->value());
   fragment_ = EmitConstant(
       Double::ZoneHandle(Z, Double::New(value, Heap::kOld)));
 }
@@ -542,7 +598,7 @@ void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
 
 void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
   fragment_ = EmitConstant(
-      dart::String::ZoneHandle(DartString(node->value(), Heap::kOld)));
+      dart::String::ZoneHandle(H.RawDartString(node->value(), Heap::kOld)));
 }
 
 
@@ -604,8 +660,7 @@ void FlowGraphBuilder::VisitVariableSet(VariableSet* node) {
 void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
   Member* target = node->target();
   if (target->IsField()) {
-    const dart::String& field_name =
-        dart::String::Handle(DartString(target->name()->string()));
+    const dart::String& field_name = H.DartString(target->name()->string());
     const dart::Field& field =
         dart::Field::ZoneHandle(Z, LookupFieldByName(field_name));
     const dart::Class& owner = dart::Class::Handle(field.Owner());
@@ -664,8 +719,7 @@ void FlowGraphBuilder::VisitPropertyGet(PropertyGet* node) {
   PushArgumentInstr* receiver_argument = MakeArgument();
   instructions <<= receiver_argument;
 
-  const dart::String& name =
-      dart::String::Handle(DartString(node->name()->string()));
+  const dart::String& name = H.DartString(node->name()->string());
   const dart::String& getter_name = dart::String::ZoneHandle(Z,
       Symbols::New(dart::String::Handle(dart::Field::GetterSymbol(name))));
   fragment_ = instructions + EmitInstanceCall(getter_name, Token::kGET,
@@ -695,8 +749,7 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
   PushArgumentInstr* value_argument = MakeArgument();
   instructions <<= value_argument;
 
-  const dart::String& name =
-      dart::String::Handle(DartString(node->name()->string()));
+  const dart::String& name = H.DartString(node->name()->string());
   const dart::String& setter_name = dart::String::ZoneHandle(Z,
       Symbols::New(dart::String::Handle(dart::Field::SetterSymbol(name))));
 
@@ -730,7 +783,7 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
       node->arguments(), &arguments, &argument_names);
 
   const dart::String& name = dart::String::ZoneHandle(Z, Symbols::New(
-      dart::String::Handle(DartString(node->name()->string()))));  // NOLINT
+      H.DartString(node->name()->string())));  // NOLINT
   fragment_ = instructions +
       EmitInstanceCall(name, Token::kILLEGAL, arguments, argument_names);
 }
@@ -1016,8 +1069,7 @@ Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
     NamedExpression* named_expression = named[i];
     instructions += VisitExpression(named_expression->expression());
     instructions += AddArgumentToList(*arguments);
-    argument_names->SetAt(
-        i, dart::String::Handle(Z, DartSymbol(named_expression->name())));
+    argument_names->SetAt(i, H.DartSymbol(named_expression->name()));
   }
   return instructions;
 }
@@ -1067,7 +1119,8 @@ void FlowGraphBuilder::VisitExpressionStatement(ExpressionStatement* node) {
 
 
 void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
-  const dart::String& name = dart::String::ZoneHandle(DartString(node->name()));
+  const dart::String& name =
+      dart::String::ZoneHandle(Z, H.RawDartString(node->name()));
   const dart::String& symbol = dart::String::ZoneHandle(Z, Symbols::New(name));
   LocalVariable* local =
     new(Z) LocalVariable(TokenPosition::kNoSource, symbol,
