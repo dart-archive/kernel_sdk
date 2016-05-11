@@ -80,7 +80,7 @@ DECLARE_FLAG(bool, trace_irregexp);
 #ifndef DART_PRECOMPILED_RUNTIME
 
 void DartCompilationPipeline::ParseFunction(ParsedFunction* parsed_function) {
-  if (parsed_function->GetBinaryIR() == NULL) {
+  if (parsed_function->function().dil_function() == 0) {
     Parser::ParseFunction(parsed_function);
     parsed_function->AllocateVariables();
   }
@@ -92,15 +92,18 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
     ParsedFunction* parsed_function,
     const ZoneGrowableArray<const ICData*>& ic_data_array,
     intptr_t osr_id) {
-  dil::FunctionNode* function = parsed_function->GetBinaryIR();
-  if (function != NULL) {
-    dil::FlowGraphBuilder builder(function, *parsed_function);
+  intptr_t dil_node = parsed_function->function().dil_function();
+  if (dil_node != 0) {
+    dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(dil_node);
+    dil::FlowGraphBuilder builder(node, parsed_function);
     FlowGraph* graph = builder.BuildGraph();
-    parsed_function->AllocateVariables();
-    builder.AdjustTemporaries(
-        parsed_function->first_stack_local_index() -
-        parsed_function->num_stack_locals());
-    return graph;
+    if (graph != NULL) {
+      parsed_function->AllocateVariables();
+      builder.AdjustTemporaries(
+          parsed_function->first_stack_local_index() -
+          parsed_function->num_stack_locals());
+      return graph;
+    }
   }
   FlowGraphBuilder builder(*parsed_function,
                            ic_data_array,

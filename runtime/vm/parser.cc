@@ -154,49 +154,6 @@ static RawTypeArguments* NewTypeArguments(
 }
 
 
-dil::FunctionNode* ParsedFunction::GetBinaryIR() {
-  // If a function has a binary IR we will cache it, if it doesn't we will
-  // repeatedly search for it.  This should be improved.
-  if (ir_function_ != NULL) return ir_function_;
-
-  intptr_t dil_function = function().dil_function();
-  if (dil_function == 0) return NULL;
-
-  switch (function().kind()) {
-    case RawFunction::kClosureFunction:
-    case RawFunction::kRegularFunction:
-    case RawFunction::kGetterFunction:
-    case RawFunction::kSetterFunction:
-    case RawFunction::kConstructor: {
-      if (function().IsImplicitClosureFunction()) return NULL;
-      if (function().IsConstructorClosureFunction()) return NULL;
-
-
-      // The IR builder will create its own local variables and scopes, and it
-      // will not need an AST.  The code generator will assume that there is a
-      // local variable stack slot allocated for the current context and (I
-      // think) that the runtime will expect it to be at a fixed offset which
-      // requires allocating an unused expression temporary variable.
-      LocalScope* scope = new LocalScope(NULL, 0, 0);
-      scope->AddVariable(EnsureExpressionTemp());
-      scope->AddVariable(current_context_var());
-      node_sequence_ = new SequenceNode(TokenPosition::kNoSource, scope);
-
-      dil::Node* node = reinterpret_cast<dil::Node*>(dil_function);
-      if (node->IsProcedure()) {
-        return ir_function_ = dil::Procedure::Cast(node)->function();
-      } else if (node->IsConstructor()) {
-        return ir_function_ = dil::Constructor::Cast(node)->function();
-      } else {
-        UNIMPLEMENTED();
-      }
-    }
-    default:
-      return NULL;
-  }
-}
-
-
 void ParsedFunction::AddToGuardedFields(const Field* field) const {
   if ((field->guarded_cid() == kDynamicCid) ||
       (field->guarded_cid() == kIllegalCid)) {
@@ -14445,11 +14402,6 @@ void Parser::SkipQualIdent() {
 
 
 namespace dart {
-
-dil::FunctionNode* ParsedFunction::GetBinaryIR() {
-  UNREACHABLE();
-  return NULL;
-}
 
 void ParsedFunction::AddToGuardedFields(const Field* field) const {
   UNREACHABLE();

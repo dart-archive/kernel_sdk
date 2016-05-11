@@ -140,18 +140,18 @@ dart::RawString* TranslationHelper::DartGetterName(Procedure* getter) {
 }
 
 
-FlowGraphBuilder::FlowGraphBuilder(FunctionNode* function,
-                                   ParsedFunction& parsed_function,
+FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
+                                   ParsedFunction* parsed_function,
                                    int first_block_id)
   : zone_(Thread::Current()->zone()),
     translation_helper_(zone_),
-    function_(function),
+    node_(node),
     parsed_function_(parsed_function),
     library_(dart::Library::ZoneHandle(Z,
-        dart::Class::Handle(parsed_function.function().Owner()).library())),
+        dart::Class::Handle(parsed_function->function().Owner()).library())),
     ic_data_array_(Z, 0),
     next_block_id_(first_block_id),
-    scope_(parsed_function.node_sequence()->scope()),
+    scope_(NULL),
     loop_depth_(0),
     stack_(NULL),
     pending_argument_count_(0) {
@@ -358,23 +358,59 @@ void FlowGraphBuilder::Drop() {
 
 
 FlowGraph* FlowGraphBuilder::BuildGraph() {
+  const dart::Function& function = parsed_function_->function();
+  switch (function.kind()) {
+    case RawFunction::kClosureFunction:
+    case RawFunction::kRegularFunction:
+    case RawFunction::kGetterFunction:
+    case RawFunction::kSetterFunction:
+    case RawFunction::kConstructor: {
+      if (function.IsImplicitClosureFunction()) return NULL;
+      if (function.IsConstructorClosureFunction()) return NULL;
+
+      // The IR builder will create its own local variables and scopes, and it
+      // will not need an AST.  The code generator will assume that there is a
+      // local variable stack slot allocated for the current context and (I
+      // think) that the runtime will expect it to be at a fixed offset which
+      // requires allocating an unused expression temporary variable.
+      scope_ = new LocalScope(NULL, 0, 0);
+      scope_->AddVariable(parsed_function_->EnsureExpressionTemp());
+      scope_->AddVariable(parsed_function_->current_context_var());
+      parsed_function_->SetNodeSequence(
+          new SequenceNode(TokenPosition::kNoSource, scope_));
+
+      if (node_->IsProcedure()) {
+        return BuildGraphOfFunction(dil::Procedure::Cast(node_)->function());
+      } else if (node_->IsConstructor()) {
+        return BuildGraphOfFunction(dil::Constructor::Cast(node_)->function());
+      } else {
+        UNIMPLEMENTED();
+      }
+    }
+    default:
+      return NULL;
+  }
+}
+
+
+FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function) {
   TargetEntryInstr* normal_entry =
       new(Z) TargetEntryInstr(AllocateBlockId(),
                               CatchClauseNode::kInvalidTryIndex);
   GraphEntryInstr* graph_entry =
-      new(Z) GraphEntryInstr(parsed_function_, normal_entry,
+      new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
 
   // Populate stack with arguments
   {
-    bool is_method = !parsed_function_.function().IsStaticFunction();
+    bool is_method = !parsed_function_->function().IsStaticFunction();
 
     dart::AbstractType& dynamic =
         dart::AbstractType::ZoneHandle(Type::DynamicType());
     int pos = 0;
     if (is_method) {
       dart::Class& klass =
-          dart::Class::Handle(parsed_function_.function().Owner());
+          dart::Class::Handle(parsed_function_->function().Owner());
       Type& klass_type =
           Type::ZoneHandle(Type::NewNonParameterizedType(klass));
       LocalVariable* parameter = new(Z) LocalVariable(
@@ -387,17 +423,17 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       pos++;
     }
     for (int i = 0;
-         i < function_->positional_parameters().length();
+         i < function->positional_parameters().length();
          i++, pos++) {
-      VariableDeclaration* var = function_->positional_parameters()[i];
+      VariableDeclaration* var = function->positional_parameters()[i];
       LocalVariable* parameter = new(Z) LocalVariable(
           TokenPosition::kNoSource,
           dart::String::ZoneHandle(H.RawDartSymbol(var->name())),
           dynamic);
       AddParameter(var, parameter, pos);
     }
-    for (int i = 0; i < function_->named_parameters().length(); i++, pos++) {
-      VariableDeclaration* var = function_->named_parameters()[i];
+    for (int i = 0; i < function->named_parameters().length(); i++, pos++) {
+      VariableDeclaration* var = function->named_parameters()[i];
       LocalVariable* parameter = new(Z) LocalVariable(
           TokenPosition::kNoSource,
           dart::String::ZoneHandle(H.RawDartSymbol(var->name())),
@@ -408,13 +444,13 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
 
   // Setup default values for optional parameters.
   int num_optional_parameters =
-      parsed_function_.function().NumOptionalParameters();
+      parsed_function_->function().NumOptionalParameters();
   if (num_optional_parameters > 0) {
     ZoneGrowableArray<const Instance*>* default_values =
         new ZoneGrowableArray<const Instance*>(Z, num_optional_parameters);
 
-    if (parsed_function_.function().HasOptionalNamedParameters()) {
-      ASSERT(!parsed_function_.function().HasOptionalPositionalParameters());
+    if (parsed_function_->function().HasOptionalNamedParameters()) {
+      ASSERT(!parsed_function_->function().HasOptionalPositionalParameters());
       for (int i = 0; i < num_optional_parameters; i++) {
         // FIXME(kustermann):
         // We should evaluate the constant expression:
@@ -427,7 +463,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
         default_values->Add(default_value);
       }
     } else {
-      ASSERT(parsed_function_.function().HasOptionalPositionalParameters());
+      ASSERT(parsed_function_->function().HasOptionalPositionalParameters());
       // int required = procedure_->function()->required_parameter_count();
       for (int i = 0; i < num_optional_parameters; i++) {
         // FIXME(kustermann):
@@ -441,12 +477,12 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
         default_values->Add(default_value);
       }
     }
-    parsed_function_.set_default_parameter_values(default_values);
+    parsed_function_->set_default_parameter_values(default_values);
   }
 
   Fragment body(normal_entry);
   body <<= new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource, 0);
-  body += VisitStatement(function_->body());
+  body += VisitStatement(function->body());
 
   if (body.is_open()) {
     ASSERT(stack_ == NULL);
@@ -457,7 +493,13 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
     body <<= new(Z) ReturnInstr(TokenPosition::kNoSource, new(Z) Value(null));
   }
 
-  return new(Z) FlowGraph(parsed_function_, graph_entry, next_block_id_ - 1);
+  return new(Z) FlowGraph(*parsed_function_, graph_entry, next_block_id_ - 1);
+}
+
+
+FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(Field* field) {
+  UNIMPLEMENTED();
+  return NULL;
 }
 
 
@@ -912,7 +954,7 @@ void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
   then_fragment += VisitExpression(node->then());
   Value* result = Pop();
   StoreLocalInstr* store =
-      new(Z) StoreLocalInstr(*parsed_function_.expression_temp_var(),
+      new(Z) StoreLocalInstr(*parsed_function_->expression_temp_var(),
                              result,
                              TokenPosition::kNoSource);
   then_fragment <<= store;
@@ -925,7 +967,7 @@ void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
   otherwise_fragment += VisitExpression(node->otherwise());
   result = Pop();
   store =
-      new(Z) StoreLocalInstr(*parsed_function_.expression_temp_var(),
+      new(Z) StoreLocalInstr(*parsed_function_->expression_temp_var(),
                              result,
                              TokenPosition::kNoSource);
   otherwise_fragment <<= store;
@@ -938,7 +980,7 @@ void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
 
   instructions = Fragment(instructions.entry, join);
   LoadLocalInstr* load =
-      new(Z) LoadLocalInstr(*parsed_function_.expression_temp_var(),
+      new(Z) LoadLocalInstr(*parsed_function_->expression_temp_var(),
                             TokenPosition::kNoSource);
   Push(load);
   fragment_ = instructions << load;
@@ -986,7 +1028,7 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
     right_fragment <<= compare;
     Value* result = Pop();
     StoreLocalInstr* store =
-        new(Z) StoreLocalInstr(*parsed_function_.expression_temp_var(),
+        new(Z) StoreLocalInstr(*parsed_function_->expression_temp_var(),
                                result,
                                TokenPosition::kNoSource);
     right_fragment <<= store;
@@ -1002,7 +1044,7 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
     constant_fragment <<= constant;
     result = Pop();
     store =
-        new(Z) StoreLocalInstr(*parsed_function_.expression_temp_var(),
+        new(Z) StoreLocalInstr(*parsed_function_->expression_temp_var(),
                                result,
                                TokenPosition::kNoSource);
     constant_fragment <<= store;
@@ -1022,7 +1064,7 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
 
     instructions = Fragment(instructions.entry, join);
     LoadLocalInstr* load =
-        new(Z) LoadLocalInstr(*parsed_function_.expression_temp_var(),
+        new(Z) LoadLocalInstr(*parsed_function_->expression_temp_var(),
                               TokenPosition::kNoSource);
     Push(load);
     fragment_ = instructions << load;

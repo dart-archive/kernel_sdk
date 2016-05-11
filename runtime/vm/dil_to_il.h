@@ -68,8 +68,8 @@ class TranslationHelper {
 
 class FlowGraphBuilder : public TreeVisitor {
  public:
-  FlowGraphBuilder(FunctionNode* function,
-                   ParsedFunction& parsed_function,
+  FlowGraphBuilder(TreeNode* node,
+                   ParsedFunction* parsed_function,
                    int first_block_id = 1);
 
   FlowGraph* BuildGraph();
@@ -110,6 +110,9 @@ class FlowGraphBuilder : public TreeVisitor {
   void AdjustTemporaries(int base);
 
  private:
+  FlowGraph* BuildGraphOfFunction(FunctionNode* node);
+  FlowGraph* BuildGraphOfFieldAccessor(Field* node);
+
   Fragment TranslateArguments(Arguments* node,
                               ArgumentArray* arguments,
                               Array* argument_names);
@@ -187,9 +190,11 @@ class FlowGraphBuilder : public TreeVisitor {
   Zone* zone_;
   TranslationHelper translation_helper_;
 
-  FunctionNode* function_;
+  // The node we are currently compiling (e.g. FunctionNode, Constructor,
+  // Field)
+  TreeNode* node_;
 
-  ParsedFunction& parsed_function_;
+  ParsedFunction* parsed_function_;
   const dart::Library& library_;
   const ZoneGrowableArray<const ICData*> ic_data_array_;
 
