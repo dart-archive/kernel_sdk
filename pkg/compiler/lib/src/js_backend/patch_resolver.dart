@@ -81,7 +81,7 @@ class PatchResolverTask extends CompilerTask {
             // optional parameter.
             &&
             origin != compiler.unnamedListConstructor) {
-          reporter.reportError(
+          reporter.reportWarning(
               reporter.createMessage(
                   originParameter, MessageKind.PATCH_PARAMETER_MISMATCH, {
                 'methodName': origin.name,
@@ -110,7 +110,7 @@ class PatchResolverTask extends CompilerTask {
       reporter.withCurrentElement(patch, () {
         Node errorNode =
             patchTree.returnType != null ? patchTree.returnType : patchTree;
-        reporter.reportErrorMessage(
+        reporter.reportWarningMessage(
             errorNode, MessageKind.PATCH_RETURN_TYPE_MISMATCH, {
           'methodName': origin.name,
           'originReturnType': originSignature.type.returnType,

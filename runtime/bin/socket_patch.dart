@@ -1709,7 +1709,8 @@ patch class RawDatagramSocket {
   }
 }
 
-class _RawDatagramSocket extends Stream implements RawDatagramSocket {
+class _RawDatagramSocket extends Stream<RawSocketEvent>
+    implements RawDatagramSocket {
   _NativeSocket _socket;
   StreamController<RawSocketEvent> _controller;
   bool _readEventsEnabled = true;

@@ -223,7 +223,7 @@ class ResolverTask extends CompilerTask {
           if (element.isGenerativeConstructor) {
             reporter.reportErrorMessage(
                 tree, MessageKind.CONST_CONSTRUCTOR_WITH_BODY);
-          } else if (!tree.isRedirectingFactory) {
+          } else if (!tree.isRedirectingFactory && !element.isPatch) {
             reporter.reportErrorMessage(tree, MessageKind.CONST_FACTORY);
           }
         }

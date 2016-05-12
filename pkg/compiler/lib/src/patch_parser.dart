@@ -281,7 +281,11 @@ class PatchMemberListener extends MemberListener {
       if (origin != null) {
         patchElement(compiler, reporter, origin, patch);
       } else if (Name.isPublicName(patch.name)) {
-        reporter.reportErrorMessage(patch, MessageKind.INJECTED_PUBLIC_MEMBER);
+        // TODO(ahe): We can hide this message if [patch] overrides a member of
+        // a superclass. However, checking for this isn't possible at this
+        // point as the superclass of [origin] hasn't been computed yet.
+        reporter.reportWarningMessage(
+            patch, MessageKind.INJECTED_PUBLIC_MEMBER);
       }
       enclosingClass.addMember(patch, reporter);
     }
@@ -353,7 +357,7 @@ void patchElement(Compiler compiler, DiagnosticReporter reporter,
       origin.isFunction ||
       origin.isAbstractField)) {
     // TODO(ahe): Remove this error when the parser rejects all bad modifiers.
-    reporter.reportErrorMessage(origin, MessageKind.PATCH_NONPATCHABLE);
+    reporter.reportWarningMessage(origin, MessageKind.PATCH_NONPATCHABLE);
     return;
   }
   if (patch.isClass) {
@@ -368,7 +372,7 @@ void patchElement(Compiler compiler, DiagnosticReporter reporter,
     tryPatchFunction(reporter, origin, patch);
   } else {
     // TODO(ahe): Remove this error when the parser rejects all bad modifiers.
-    reporter.reportErrorMessage(patch, MessageKind.PATCH_NONPATCHABLE);
+    reporter.reportWarningMessage(patch, MessageKind.PATCH_NONPATCHABLE);
   }
 }
 
@@ -641,7 +645,7 @@ void tryPatchFunction(
 void patchFunction(DiagnosticReporter reporter, BaseFunctionElementX origin,
     BaseFunctionElementX patch) {
   if (!origin.modifiers.isExternal) {
-    reporter.reportError(
+    reporter.reportWarning(
         reporter.createMessage(origin, MessageKind.PATCH_NON_EXTERNAL),
         <DiagnosticMessage>[
           reporter.createMessage(patch, MessageKind.PATCH_POINT_TO_FUNCTION,
