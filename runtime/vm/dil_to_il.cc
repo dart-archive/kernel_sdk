@@ -188,6 +188,197 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
 }
 
 
+Fragment FlowGraphBuilder::AllocateObject(const dart::Class& klass) {
+  ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
+  AllocateObjectInstr* allocate =
+      new(Z) AllocateObjectInstr(TokenPosition::kNoSource, klass, arguments);
+  Push(allocate);
+  return Fragment(allocate);
+}
+
+
+Fragment FlowGraphBuilder::BooleanNegate() {
+  BooleanNegateInstr* negate = new(Z) BooleanNegateInstr(Pop());
+  Push(negate);
+  return Fragment(negate);
+}
+
+
+Fragment FlowGraphBuilder::Boolify() {
+  Fragment instructions = Constant(Bool::True());
+  Value* constant_value = Pop();
+  StrictCompareInstr* compare =
+      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                Token::kEQ_STRICT,
+                                Pop(),
+                                constant_value,
+                                false);
+  Push(compare);
+  return instructions << compare;
+}
+
+
+Fragment FlowGraphBuilder::Branch(TargetEntryInstr** then_entry,
+                                  TargetEntryInstr** otherwise_entry) {
+  Fragment instructions = Constant(Bool::True());
+  Value* constant_value = Pop();
+  StrictCompareInstr* compare =
+      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                Token::kEQ_STRICT,
+                                Pop(),
+                                constant_value,
+                                false);
+  BranchInstr* branch = new(Z) BranchInstr(compare);
+  *then_entry = *branch->true_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  *otherwise_entry = *branch->false_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  return (instructions << branch).closed();
+}
+
+
+Fragment FlowGraphBuilder::CheckStackOverflow() {
+  return Fragment(new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource,
+                                                 loop_depth_));
+}
+
+
+Fragment FlowGraphBuilder::Constant(const Object& value) {
+  ConstantInstr* constant = new(Z) ConstantInstr(value);
+  Push(constant);
+  return Fragment(constant);
+}
+
+
+Fragment FlowGraphBuilder::Goto(JoinEntryInstr* destination) {
+  return Fragment(new(Z) GotoInstr(destination)).closed();
+}
+
+
+Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
+                                        Token::Kind kind,
+                                        int argument_count) {
+  return InstanceCall(name, kind, argument_count, Array::null_array());
+}
+
+
+Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
+                                        Token::Kind kind,
+                                        int argument_count,
+                                        const Array& argument_names) {
+  ArgumentArray arguments = GetArguments(argument_count);
+  InstanceCallInstr* call =
+      new(Z) InstanceCallInstr(TokenPosition::kNoSource,
+          name,
+          kind,
+          arguments,
+          argument_names,
+          1,
+          ic_data_array_);
+  Push(call);
+  return Fragment(call);
+}
+
+
+Fragment FlowGraphBuilder::LoadField(const dart::Field& field) {
+  LoadFieldInstr* load =
+      new(Z) LoadFieldInstr(Pop(),
+                            &field,
+                            AbstractType::ZoneHandle(Z, field.type()),
+                            TokenPosition::kNoSource);
+  Push(load);
+  return Fragment(load);
+}
+
+
+Fragment FlowGraphBuilder::LoadLocal(LocalVariable* variable) {
+  LoadLocalInstr* load =
+      new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
+  Push(load);
+  return Fragment(load);
+}
+
+
+Fragment FlowGraphBuilder::LoadStaticField() {
+  LoadStaticFieldInstr* load =
+      new(Z) LoadStaticFieldInstr(Pop(), TokenPosition::kNoSource);
+  Push(load);
+  return Fragment(load);
+}
+
+
+Fragment FlowGraphBuilder::NullConstant() {
+  return Constant(Instance::ZoneHandle(Z, Instance::null()));
+}
+
+
+Fragment FlowGraphBuilder::PushArgument() {
+  PushArgumentInstr* argument = new(Z) PushArgumentInstr(Pop());
+  Push(argument);
+
+  argument->set_temp_index(argument->temp_index() - 1);
+  ++pending_argument_count_;
+
+  return Fragment(argument);
+}
+
+
+Fragment FlowGraphBuilder::Return() {
+  Value* value = Pop();
+  ASSERT(stack_ == NULL);
+  return Fragment(new(Z) ReturnInstr(TokenPosition::kNoSource, value)).closed();
+}
+
+
+Fragment FlowGraphBuilder::StaticCall(const Function& target,
+                                      int argument_count) {
+  return StaticCall(target, argument_count, Array::null_array());
+}
+
+
+Fragment FlowGraphBuilder::StaticCall(const Function& target,
+                                      int argument_count,
+                                      const Array& argument_names) {
+  ArgumentArray arguments = GetArguments(argument_count);
+  StaticCallInstr* call =
+      new(Z) StaticCallInstr(TokenPosition::kNoSource,
+                             target,
+                             argument_names,
+                             arguments,
+                             ic_data_array_);
+  Push(call);
+  return Fragment(call);
+}
+
+
+Fragment FlowGraphBuilder::StoreInstanceField(const dart::Field& field) {
+  Value* value = Pop();
+  StoreInstanceFieldInstr* store =
+      new(Z) StoreInstanceFieldInstr(field,
+                                     Pop(),
+                                     value,
+                                     kEmitStoreBarrier,
+                                     TokenPosition::kNoSource);
+  return Fragment(store);
+}
+
+
+Fragment FlowGraphBuilder::StoreLocal(LocalVariable* variable) {
+  StoreLocalInstr* store =
+      new(Z) StoreLocalInstr(*variable, Pop(), TokenPosition::kNoSource);
+  Push(store);
+  return Fragment(store);
+}
+
+
+Fragment FlowGraphBuilder::StoreStaticField(const dart::Field& field) {
+  return Fragment(
+      new(Z) StoreStaticFieldInstr(field, Pop(), TokenPosition::kNoSource));
+}
+
+
 dart::RawLibrary* FlowGraphBuilder::LookupLibraryByDilLibrary(
     Library* dil_library) {
   const dart::String& library_name = H.DartSymbol(dil_library->import_uri());
@@ -331,41 +522,6 @@ LocalVariable* FlowGraphBuilder::MakeTemporary() {
   stack_->definition()->set_ssa_temp_index(0);
 
   return variable;
-}
-
-
-Fragment FlowGraphBuilder::Boolify() {
-  Fragment instructions = Constant(Bool::True());
-  Value* constant_value = Pop();
-  StrictCompareInstr* compare =
-      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
-                                Token::kEQ_STRICT,
-                                Pop(),
-                                constant_value,
-                                false);
-  Push(compare);
-  return instructions << compare;
-}
-
-
-Fragment FlowGraphBuilder::Branch(TargetEntryInstr** then_entry,
-                                  TargetEntryInstr** otherwise_entry) {
-  Fragment instructions = Constant(Bool::True());
-  Value* constant_value = Pop();
-  StrictCompareInstr* compare =
-      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
-                                Token::kEQ_STRICT,
-                                Pop(),
-                                constant_value,
-                                false);
-  BranchInstr* branch = new(Z) BranchInstr(compare);
-  *then_entry = *branch->true_successor_address() =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
-  *otherwise_entry = *branch->false_successor_address() =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
-  return (instructions << branch).closed();
 }
 
 
@@ -576,29 +732,6 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function) {
 }
 
 
-Fragment FlowGraphBuilder::LoadField(const dart::Field& field) {
-  LoadFieldInstr* load =
-      new(Z) LoadFieldInstr(Pop(),
-                            &field,
-                            AbstractType::ZoneHandle(Z, field.type()),
-                            TokenPosition::kNoSource);
-  Push(load);
-  return Fragment(load);
-}
-
-
-Fragment FlowGraphBuilder::StoreInstanceField(const dart::Field& field) {
-  Value* value = Pop();
-  StoreInstanceFieldInstr* store =
-      new(Z) StoreInstanceFieldInstr(field,
-                                     Pop(),
-                                     value,
-                                     kEmitStoreBarrier,
-                                     TokenPosition::kNoSource);
-  return Fragment(store);
-}
-
-
 FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(Field* dil_field) {
   bool is_setter = parsed_function_->function().IsImplicitSetterFunction();
   dart::Field& field =
@@ -688,52 +821,6 @@ ArgumentArray FlowGraphBuilder::GetArguments(int count) {
 }
 
 
-Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
-                                        Token::Kind kind,
-                                        int argument_count) {
-  return InstanceCall(name, kind, argument_count, Array::null_array());
-}
-
-
-Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
-                                        Token::Kind kind,
-                                        int argument_count,
-                                        const Array& argument_names) {
-  ArgumentArray arguments = GetArguments(argument_count);
-  InstanceCallInstr* call =
-      new(Z) InstanceCallInstr(TokenPosition::kNoSource,
-          name,
-          kind,
-          arguments,
-          argument_names,
-          1,
-          ic_data_array_);
-  Push(call);
-  return Fragment(call);
-}
-
-
-Fragment FlowGraphBuilder::StaticCall(const Function& target,
-                                      int argument_count) {
-  return StaticCall(target, argument_count, Array::null_array());
-}
-
-
-Fragment FlowGraphBuilder::StaticCall(const Function& target,
-                                      int argument_count,
-                                      const Array& argument_names) {
-  ArgumentArray arguments = GetArguments(argument_count);
-  StaticCallInstr* call =
-      new(Z) StaticCallInstr(TokenPosition::kNoSource,
-                             target,
-                             argument_names,
-                             arguments,
-                             ic_data_array_);
-  Push(call);
-  return Fragment(call);
-}
-
-
 void FlowGraphBuilder::VisitNullLiteral(NullLiteral* node) {
   fragment_ = Fragment(Constant(Instance::ZoneHandle(Z, Instance::null())));
 }
@@ -816,14 +903,6 @@ void FlowGraphBuilder::VisitVariableSet(VariableSet* node) {
 }
 
 
-Fragment FlowGraphBuilder::LoadStaticField() {
-  LoadStaticFieldInstr* load =
-      new(Z) LoadStaticFieldInstr(Pop(), TokenPosition::kNoSource);
-  Push(load);
-  return Fragment(load);
-}
-
-
 void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
   Member* target = node->target();
   if (target->IsField()) {
@@ -839,6 +918,7 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
       Fragment instructions = Constant(field);
       fragment_ = instructions + LoadStaticField();
     } else {
+      // TODO(kmillikin): figure out how to trigger this case and add tests.
       fragment_ = StaticCall(getter, 0);
     }
   } else {
@@ -851,28 +931,6 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
 
     fragment_ = StaticCall(target, 0);
   }
-}
-
-
-Fragment FlowGraphBuilder::LoadLocal(LocalVariable* variable) {
-  LoadLocalInstr* load =
-      new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
-  Push(load);
-  return Fragment(load);
-}
-
-
-Fragment FlowGraphBuilder::StoreLocal(LocalVariable* variable) {
-  StoreLocalInstr* store =
-      new(Z) StoreLocalInstr(*variable, Pop(), TokenPosition::kNoSource);
-  Push(store);
-  return Fragment(store);
-}
-
-
-Fragment FlowGraphBuilder::StoreStaticField(const dart::Field& field) {
-  return Fragment(
-      new(Z) StoreStaticFieldInstr(field, Pop(), TokenPosition::kNoSource));
 }
 
 
@@ -917,29 +975,6 @@ void FlowGraphBuilder::VisitPropertyGet(PropertyGet* node) {
 }
 
 
-Fragment FlowGraphBuilder::Constant(const Object& value) {
-  ConstantInstr* constant = new(Z) ConstantInstr(value);
-  Push(constant);
-  return Fragment(constant);
-}
-
-
-Fragment FlowGraphBuilder::NullConstant() {
-  return Constant(Instance::ZoneHandle(Z, Instance::null()));
-}
-
-
-Fragment FlowGraphBuilder::PushArgument() {
-  PushArgumentInstr* argument = new(Z) PushArgumentInstr(Pop());
-  Push(argument);
-
-  argument->set_temp_index(argument->temp_index() - 1);
-  ++pending_argument_count_;
-
-  return Fragment(argument);
-}
-
-
 void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
   Fragment instructions(NullConstant());
   LocalVariable* variable = MakeTemporary();
@@ -979,15 +1014,6 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   int argument_count = node->arguments()->count() + 1;
   fragment_ = instructions +
       InstanceCall(name, Token::kILLEGAL, argument_count, argument_names);
-}
-
-
-Fragment FlowGraphBuilder::AllocateObject(const dart::Class& klass) {
-  ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
-  AllocateObjectInstr* allocate =
-      new(Z) AllocateObjectInstr(TokenPosition::kNoSource, klass, arguments);
-  Push(allocate);
-  return Fragment(allocate);
 }
 
 
@@ -1120,13 +1146,6 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
 }
 
 
-Fragment FlowGraphBuilder::BooleanNegate() {
-  BooleanNegateInstr* negate = new(Z) BooleanNegateInstr(Pop());
-  Push(negate);
-  return Fragment(negate);
-}
-
-
 void FlowGraphBuilder::VisitNot(Not* node) {
   Fragment instructions = TranslateExpression(node->expression());
   fragment_ = instructions + BooleanNegate();
@@ -1181,13 +1200,6 @@ void FlowGraphBuilder::VisitBlock(Block* node) {
   }
   fragment_ = instructions;
   scope_ = scope_->parent();
-}
-
-
-Fragment FlowGraphBuilder::Return() {
-  Value* value = Pop();
-  ASSERT(stack_ == NULL);
-  return Fragment(new(Z) ReturnInstr(TokenPosition::kNoSource, value)).closed();
 }
 
 
@@ -1249,17 +1261,6 @@ void FlowGraphBuilder::VisitIfStatement(IfStatement* node) {
   } else {
     fragment_ = instructions.closed();
   }
-}
-
-
-Fragment FlowGraphBuilder::Goto(JoinEntryInstr* destination) {
-  return Fragment(new(Z) GotoInstr(destination)).closed();
-}
-
-
-Fragment FlowGraphBuilder::CheckStackOverflow() {
-  return Fragment(new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource,
-                                                 loop_depth_));
 }
 
 
