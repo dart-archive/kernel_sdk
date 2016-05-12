@@ -79,6 +79,47 @@ const dart::String& TranslationHelper::DartSymbol(String* content) {
 }
 
 
+const dart::String& TranslationHelper::DartClassName(dil::Class* dil_klass) {
+  if (dil_klass->name() != NULL) {
+    ASSERT(dil_klass->IsNormalClass());
+    return DartSymbol(dil_klass->name());
+  } else {
+    ASSERT(dil_klass->IsMixinClass());
+
+    // We construct the string from right to left:
+    //     "Base&Mixin1&Mixin2&...&MixinN"
+    dart::String& partial = dart::String::Handle(Z, dart::String::New(""));
+    dart::String& amp = dart::String::Handle(Z, dart::String::New("&"));
+    dart::String& tmp = dart::String::Handle(Z);
+    while (dil_klass->name() == NULL) {
+      ASSERT(dil_klass->IsMixinClass());
+
+      MixinClass* dil_mixin_class = MixinClass::Cast(dil_klass);
+      InterfaceType* base_type = dil_mixin_class->first();
+      InterfaceType* mixin_type = dil_mixin_class->second();
+
+      String* mixin_name = NormalClass::Cast(mixin_type->klass())->name();
+
+      tmp ^= dart::String::FromUTF8(mixin_name->buffer(), mixin_name->size());
+
+      partial ^= dart::String::Concat(amp, partial);
+      partial ^= dart::String::Concat(tmp, partial);
+
+      dil_klass = base_type->klass();
+    }
+
+    tmp ^= dart::String::FromUTF8(
+        dil_klass->name()->buffer(), dil_klass->name()->size());
+
+    partial ^= dart::String::Concat(amp, partial);
+    partial ^= dart::String::Concat(tmp, partial);
+
+    partial ^= dart::Symbols::New(partial);
+    return partial;
+  }
+}
+
+
 const dart::String& TranslationHelper::DartConstructorName(Constructor* node) {
   Class* klass = Class::Cast(node->parent());
 
@@ -175,14 +216,10 @@ dart::RawClass* FlowGraphBuilder::LookupClassByDilClass(Class* dil_klass) {
   dart::RawClass* klass = NULL;
 
   const dart::String& class_name = H.DartString(dil_klass->name());
-  if (dil_klass->parent()->IsCorelibrary()) {
-    Library* dil_library = Library::Cast(dil_klass->parent());
-    dart::Library& library = dart::Library::Handle(
-        LookupLibraryByDilLibrary(dil_library));
-    klass = library.LookupClassAllowPrivate(class_name);
-  } else {
-    klass = LookupClassByName(class_name);
-  }
+  Library* dil_library = Library::Cast(dil_klass->parent());
+  dart::Library& library = dart::Library::Handle(
+      LookupLibraryByDilLibrary(dil_library));
+  klass = library.LookupClassAllowPrivate(class_name);
 
   ASSERT(klass != Object::null());
   return klass;
@@ -225,19 +262,27 @@ dart::RawField* FlowGraphBuilder::LookupFieldByDilField(Field* dil_field) {
 dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByDilProcedure(
     Procedure* procedure) {
   ASSERT(procedure->IsStatic());
+  const dart::String& procedure_name = H.DartProcedureName(procedure);
+
   // The parent is either a library or a class (in which case the procedure is a
   // static method).
   TreeNode* parent = procedure->parent();
-  Library* dil_library = Library::Cast(
-      parent->IsClass() ? Class::Cast(parent)->parent() : parent);
-
-  dart::Library& library = dart::Library::Handle(
-      LookupLibraryByDilLibrary(dil_library));
-  const dart::String& procedure_name = H.DartProcedureName(procedure);
-  dart::RawFunction* function =
-      library.LookupFunctionAllowPrivate(procedure_name);
-  ASSERT(function != Object::null());
-  return function;
+  if (parent->IsClass()) {
+    dart::Class& klass = dart::Class::Handle(Z,
+        LookupClassByDilClass(Class::Cast(parent)));
+    dart::RawFunction* function =
+        klass.LookupFunctionAllowPrivate(procedure_name);
+    ASSERT(function != Object::null());
+    return function;
+  } else {
+    ASSERT(parent->IsLibrary());
+    dart::Library& library = dart::Library::Handle(
+        LookupLibraryByDilLibrary(Library::Cast(parent)));
+    dart::RawFunction* function =
+        library.LookupFunctionAllowPrivate(procedure_name);
+    ASSERT(function != Object::null());
+    return function;
+  }
 }
 
 

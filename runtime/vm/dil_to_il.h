@@ -51,6 +51,8 @@ class TranslationHelper {
   const dart::String& DartSymbol(const char* content);
   const dart::String& DartSymbol(String* content);
 
+  const dart::String& DartClassName(Class* dil_klass);
+
   const dart::String& DartConstructorName(Constructor* node);
   const dart::String& DartProcedureName(Procedure* procedure);
 

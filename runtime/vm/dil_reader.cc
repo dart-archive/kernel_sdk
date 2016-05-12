@@ -90,9 +90,46 @@ void DilReader::ReadLibrary(Library* dil_library) {
   }
 }
 
+void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
+  if (dil_klass->IsNormalClass()) {
+    NormalClass* dil_normal_class = NormalClass::Cast(dil_klass);
+    InterfaceType* super_class_type = dil_normal_class->super_class();
+    Class* dil_super_class = super_class_type->klass();
+    dart::Class& super_class = LookupClass(dil_super_class);
+
+    TypeArguments& type_args = TypeArguments::Handle(Z);
+    Type& super_type = Type::Handle(Z,
+        Type::New(super_class, type_args, TokenPosition::kNoSource));
+    klass->set_super_type(super_type);
+  } else {
+    MixinClass* dil_mixin = MixinClass::Cast(dil_klass);
+    dart::Class& base = LookupClass(dil_mixin->first()->klass());
+    dart::Class& mixin = LookupClass(dil_mixin->second()->klass());
+
+    // Make types for [base] and [mixin]
+    TypeArguments& null_type_args = TypeArguments::Handle(Z);
+    Type& base_type = Type::Handle(Z,
+        Type::New(base, null_type_args, TokenPosition::kNoSource));
+    Type& mixin_type = Type::Handle(Z,
+        Type::New(mixin, null_type_args, TokenPosition::kNoSource));
+
+    // Tell the rest of the system there is nothing to resolve.
+    base_type.SetIsResolved();
+
+    // Build implemented interface types
+    const dart::Array& interfaces = dart::Array::Handle(Z, dart::Array::New(1));
+    interfaces.SetAt(0, mixin_type);
+
+    klass->set_super_type(base_type);
+    klass->set_mixin(mixin_type);
+    klass->set_interfaces(interfaces);
+  }
+  ClassFinalizer::FinalizeTypesInClass(*klass);
+}
+
 void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
+  // This will trigger a call to [ReadPreliminaryClass] if not already done.
   dart::Class& klass = LookupClass(dil_klass);
-  ClassFinalizer::FinalizeTypesInClass(klass);
 
   klass.set_library(library);
   library.AddClass(klass);
@@ -147,11 +184,6 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     ReadProcedure(library, klass, dil_procedure, dil_klass);
   }
 
-  // TODO(kustermann): Support inheritance.
-  dart::AbstractType& super_type =
-      dart::Type::Handle(Z, dart::Type::ObjectType());
-  klass.set_super_type(super_type);
-
   ClassFinalizer::FinalizeClass(klass);
 }
 
@@ -180,9 +212,11 @@ void DilReader::ReadProcedure(const dart::Library& library,
   SetupFunctionParameters(
       owner, function, dil_procedure->function(), is_method);
 
-  library.AddObject(function, name);
-  ASSERT(!Object::Handle(library.LookupObjectAllowPrivate(
-      H.DartProcedureName(dil_procedure))).IsNull());
+  if (dil_klass == NULL) {
+    library.AddObject(function, name);
+    ASSERT(!Object::Handle(library.LookupObjectAllowPrivate(
+        H.DartProcedureName(dil_procedure))).IsNull());
+  }
 }
 
 void DilReader::GenerateFieldAccessors(const dart::Class& klass,
@@ -301,12 +335,14 @@ dart::Library& DilReader::LookupLibrary(Library* library) {
     handle = &dart::Library::Handle(Z);
 
     // If this is a core library, we'll use the VM version.
+    const dart::String& url = H.DartSymbol(library->import_uri());
     if (library->IsCorelibrary()) {
-      *handle = dart::Library::LookupLibrary(H.DartSymbol(library->name()));
+      *handle = dart::Library::LookupLibrary(url);
     } else {
-      *handle = dart::Library::New(H.DartSymbol(library->import_uri()));
+      *handle = dart::Library::New(url);
       handle->Register();
     }
+    ASSERT(!handle->IsNull());
     libraries_.Insert(library, handle);
   }
   return *handle;
@@ -315,18 +351,20 @@ dart::Library& DilReader::LookupLibrary(Library* library) {
 dart::Class& DilReader::LookupClass(Class* klass) {
   dart::Class* handle = NULL;
   if (!classes_.Lookup(klass, &handle)) {
+    const dart::String& name = H.DartClassName(klass);
     if (klass->parent()->IsCorelibrary()) {
       dart::Library& library = LookupLibrary(klass->parent());
-      handle = &dart::Class::Handle(Z,
-          library.LookupClass(H.DartSymbol(klass->name())));
+      handle = &dart::Class::Handle(Z, library.LookupClass(name));
+      classes_.Insert(klass, handle);
     } else {
       TokenPosition pos(0);
       Script& script = Script::Handle(Z, Script::New(H.DartString(""),
           H.DartString(""), RawScript::kScriptTag));
-      handle = &dart::Class::Handle(Z,
-          dart::Class::New(H.DartSymbol(klass->name()), script, pos));
+      handle = &dart::Class::Handle(Z, dart::Class::New(name, script, pos));
+      classes_.Insert(klass, handle);
+
+      ReadPreliminaryClass(handle, klass);
     }
-    classes_.Insert(klass, handle);
   }
   return *handle;
 }

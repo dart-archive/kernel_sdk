@@ -49,6 +49,7 @@ class DilReader {
 
  private:
   void ReadLibrary(Library* dil_library);
+  void ReadPreliminaryClass(dart::Class* klass, Class* dil_klass);
   void ReadClass(const dart::Library& library, Class* dil_klass);
   void ReadProcedure(const dart::Library& library,
                      const dart::Class& owner,
