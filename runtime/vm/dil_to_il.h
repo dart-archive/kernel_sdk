@@ -104,6 +104,8 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitIfStatement(IfStatement* node);
   virtual void VisitWhileStatement(WhileStatement* node);
   virtual void VisitDoStatement(DoStatement* node);
+  virtual void VisitForStatement(ForStatement* node);
+  virtual void VisitForInStatement(ForInStatement* node);
 
   void AdjustTemporaries(int base);
 
@@ -111,51 +113,47 @@ class FlowGraphBuilder : public TreeVisitor {
   FlowGraph* BuildGraphOfFunction(FunctionNode* node);
   FlowGraph* BuildGraphOfFieldAccessor(Field* node);
 
-  Fragment TranslateArguments(Arguments* node,
-                              ArgumentArray* arguments,
-                              Array* argument_names);
+  Fragment TranslateArguments(Arguments* node, Array* argument_names);
+  ArgumentArray GetArguments(int count);
 
-  Fragment VisitStatement(Statement* statement) {
+  Fragment TranslateStatement(Statement* statement) {
     statement->AcceptStatementVisitor(this);
     return fragment_;
   }
 
-  Fragment VisitExpression(Expression* expression) {
+  Fragment TranslateExpression(Expression* expression) {
     expression->AcceptExpressionVisitor(this);
     return fragment_;
   }
 
-  Fragment EmitConstant(const Object& value);
-
-  Fragment EmitStaticCall(const Function& target,
-                          ArgumentArray arguments,
-                          const Array& argument_names);
-
-  Fragment EmitStaticCall(const Function& target);
-  Fragment EmitStaticCall(const Function& target,
-                          PushArgumentInstr* argument0);
-  Fragment EmitInstanceCall(const dart::String& name,
-                            Token::Kind kind,
-                            ArgumentArray arguments,
-                            const Array& argument_names);
-  Fragment EmitInstanceCall(const dart::String& name,
-                            Token::Kind kind,
-                            PushArgumentInstr* argument);
-  Fragment EmitInstanceCall(const dart::String& name,
-                            Token::Kind kind,
-                            PushArgumentInstr* argument0,
-                            PushArgumentInstr* argument1);
-  Fragment EmitInstanceCall(const dart::String& name,
-                            Token::Kind kind,
-                            PushArgumentInstr* argument0,
-                            PushArgumentInstr* argument1,
-                            PushArgumentInstr* argument2);
-  Fragment EmitInstanceCall(const dart::String& name,
-                            Token::Kind kind,
-                            PushArgumentInstr* argument0,
-                            PushArgumentInstr* argument1,
-                            PushArgumentInstr* argument2,
-                            PushArgumentInstr* argument3);
+  Fragment AllocateObject(const dart::Class& klass);
+  Fragment BooleanNegate();
+  Fragment Boolify();
+  Fragment Branch(TargetEntryInstr** then_entry,
+                  TargetEntryInstr** otherwise_entry);
+  Fragment CheckStackOverflow();
+  Fragment Constant(const Object& value);
+  Fragment Goto(JoinEntryInstr* destination);
+  Fragment InstanceCall(const dart::String& name,
+                        Token::Kind kind,
+                        int argument_count);
+  Fragment InstanceCall(const dart::String& name,
+                        Token::Kind kind,
+                        int argument_count,
+                        const Array& argument_names);
+  Fragment LoadField(const dart::Field& field);
+  Fragment LoadLocal(LocalVariable* variable);
+  Fragment LoadStaticField();
+  Fragment NullConstant();
+  Fragment PushArgument();
+  Fragment Return();
+  Fragment StaticCall(const Function& target, int argument_count);
+  Fragment StaticCall(const Function& target,
+                      int argument_count,
+                      const Array& argument_names);
+  Fragment StoreInstanceField(const dart::Field& field);
+  Fragment StoreLocal(LocalVariable* variable);
+  Fragment StoreStaticField(const dart::Field& field);
 
   dart::RawLibrary* LookupLibraryByDilLibrary(Library* library);
   dart::RawClass* LookupClassByName(const dart::String& name);
@@ -170,11 +168,7 @@ class FlowGraphBuilder : public TreeVisitor {
   dart::RawFunction* LookupConstructorByDilConstructor(
       const dart::Class& owner, Constructor* constructor);
 
-  PushArgumentInstr* MakeArgument();
-  Fragment AddArgumentToList(ZoneGrowableArray<PushArgumentInstr*>* arguments);
-
-  Fragment MakeTemporary(LocalVariable** variable);
-  Fragment DropTemporaries(intptr_t count);
+  LocalVariable* MakeTemporary();
 
   void AddVariable(VariableDeclaration* declaration, LocalVariable* variable);
   void AddParameter(VariableDeclaration* declaration,
@@ -186,7 +180,7 @@ class FlowGraphBuilder : public TreeVisitor {
 
   void Push(Definition* definition);
   Value* Pop();
-  void Drop();
+  Fragment Drop();
 
   Zone* zone_;
   TranslationHelper translation_helper_;

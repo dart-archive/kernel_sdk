@@ -952,6 +952,8 @@ class Arguments : public TreeNode {
   List<Expression>& positional() { return positional_; }
   List<NamedExpression>& named() { return named_; }
 
+  int count() { return positional_.length() + named_.length(); }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(Arguments);
   Arguments() {}
