@@ -59,4 +59,50 @@ class CodeUnits extends UnmodifiableListBase<int> {
   int operator[](int i) => _string.codeUnitAt(i);
 
   static String stringOf(CodeUnits u) => u._string;
+
+  static final int cid = ClassID.getID(new CodeUnits(""));
+}
+
+class VMLibraryHooks {
+  // Example: "dart:isolate _Timer._factory"
+  static var timerFactory;
+
+  // Example: "dart:io _EventHandler._sendData"
+  static var eventHandlerSendData;
+
+  // A nullary closure that answers the current clock value in milliseconds.
+  // Example: "dart:io _EventHandler._timerMillisecondClock"
+  static var timerMillisecondClock;
+
+  // Implementation of Resource.readAsBytes.
+  static var resourceReadAsBytes;
+
+  // Implementation of package root/map provision.
+  static var packageRootString;
+  static var packageConfigString;
+  static var packageRootUriFuture;
+  static var packageConfigUriFuture;
+  static var resolvePackageUriFuture;
+
+  static var platformScript;
+}
+
+final bool is64Bit = _inquireIs64Bit();
+
+external bool _inquireIs64Bit();
+
+class ClassID {
+  external static int getID(Object value);
+
+  external static int get cidArray;
+
+  external static int get cidExternalOneByteString;
+
+  external static int get cidGrowableObjectArray;
+
+  external static int get cidImmutableArray;
+
+  external static int get cidOneByteString;
+
+  external static int get cidTwoByteString;
 }

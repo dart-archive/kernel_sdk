@@ -6,7 +6,7 @@ patch class Symbol {
   /* patch */ const Symbol(String name)
       : this._name = name;
 
-  /* patch */ toString() => 'Symbol("${getUnmangledName(this)}")';
+  /* patch */ String toString() => 'Symbol("${getUnmangledName(this)}")';
 
   static getUnmangledName(Symbol symbol) {
     String string = Symbol.getName(symbol);

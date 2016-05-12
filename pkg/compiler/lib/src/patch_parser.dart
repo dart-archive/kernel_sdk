@@ -210,7 +210,7 @@ class PatchParserTask extends CompilerTask {
           // Patch elements are stored on the patched functions or classes.
           scanLibraryElements(patchLibrary.entryCompilationUnit);
         });
-        return loader.processLibraryTags(patchLibrary);
+        return loader.processLibraryTags(patchLibrary, isPatchLibrary: true);
       });
     });
   }
@@ -332,7 +332,8 @@ class PatchElementListener extends ElementListener implements Listener {
       if (origin != null) {
         patchElement(compiler, reporter, origin, patch);
       } else if (Name.isPublicName(patch.name)) {
-        reporter.reportErrorMessage(patch, MessageKind.INJECTED_PUBLIC_MEMBER);
+        reporter.reportWarningMessage(
+            patch, MessageKind.INJECTED_PUBLIC_MEMBER);
       }
       compilationUnitElement.addMember(patch, reporter);
     }

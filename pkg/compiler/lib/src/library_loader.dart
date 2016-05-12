@@ -186,7 +186,8 @@ abstract class LibraryLoader {
   /// This method must be called when a new synthesized/patch library has been
   /// scanned in order to process the library tags in [library] and thus handle
   /// imports/exports/parts in the synthesized/patch library.
-  Future processLibraryTags(LibraryElement library);
+  Future processLibraryTags(
+      LibraryElement library, {bool isPatchLibrary: false});
 }
 
 /**
@@ -435,7 +436,8 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
    * the import/export scopes are not set up.
    */
   Future processLibraryTags(
-      LibraryDependencyHandler handler, LibraryElementX library) {
+      LibraryDependencyHandler handler, LibraryElementX library,
+      {bool isPatchLibrary: false}) {
     TagState tagState = new TagState();
 
     bool importsDartCore = false;
@@ -509,7 +511,8 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
           StringNode uri = part.uri;
           Uri resolvedUri = base.resolve(uri.dartString.slowToString());
           tagState.checkTag(TagState.PART, part, reporter);
-          return scanPart(part, resolvedUri, library);
+          return scanPart(
+              part, resolvedUri, library, isPatchLibrary: isPatchLibrary);
         } else {
           reporter.internalError(tag, "Unhandled library tag.");
         }
@@ -586,14 +589,16 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
    * Handle a part tag in the scope of [library]. The [resolvedUri] given is
    * used as is, any URI resolution should be done beforehand.
    */
-  Future scanPart(Part part, Uri resolvedUri, LibraryElement library) {
+  Future scanPart(
+      Part part, Uri resolvedUri, LibraryElement library,
+      {bool isPatchLibrary: false}) {
     if (!resolvedUri.isAbsolute) throw new ArgumentError(resolvedUri);
     Uri readableUri = uriTranslator.translate(library, resolvedUri, part);
     if (readableUri == null) return new Future.value();
     return reporter.withCurrentElement(library, () {
       return scriptLoader.readScript(readableUri, part).then((Script script) {
         if (script == null) return;
-        createUnitSync(script, library);
+        createUnitSync(script, library, isPatchLibrary: isPatchLibrary);
       });
     });
   }
@@ -723,12 +728,17 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
     });
   }
 
-  CompilationUnitElement createUnitSync(Script script, LibraryElement library) {
+  CompilationUnitElement createUnitSync(
+      Script script, LibraryElement library, {bool isPatchLibrary: false}) {
     CompilationUnitElementX unit = new CompilationUnitElementX(script, library);
     reporter.withCurrentElement(unit, () {
-      scanner.scanUnit(unit);
-      if (unit.partTag == null && !script.isSynthesized) {
-        reporter.reportErrorMessage(unit, MessageKind.MISSING_PART_OF_TAG);
+      if (isPatchLibrary) {
+        compiler.patchParser.scanUnit(unit);
+      } else {
+        scanner.scanUnit(unit);
+        if (unit.partTag == null && !script.isSynthesized) {
+          reporter.reportErrorMessage(unit, MessageKind.MISSING_PART_OF_TAG);
+        }
       }
     });
     return unit;
@@ -1298,8 +1308,10 @@ class LibraryDependencyHandler implements LibraryLoader {
     nodeMap[library].registerInitialExports();
   }
 
-  Future processLibraryTags(LibraryElement library) {
-    return task.processLibraryTags(this, library);
+  Future processLibraryTags(
+      LibraryElement library, {bool isPatchLibrary: false}) {
+    return task.processLibraryTags(
+        this, library, isPatchLibrary: isPatchLibrary);
   }
 }
 

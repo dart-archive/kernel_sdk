@@ -117,7 +117,7 @@ class Symbol implements core.Symbol {
     return 0x1fffffff & (arbitraryPrime * _name.hashCode);
   }
 
-  toString() => 'Symbol("$_name")';
+  external String toString();
 
   /// Platform-private accessor which cannot be called from user libraries.
   static String getName(Symbol symbol) => symbol._name;
@@ -142,4 +142,6 @@ class Symbol implements core.Symbol {
   static bool isValidSymbol(String name) {
     return (name.isEmpty || symbolPattern.hasMatch(name));
   }
+
+  external static getUnmangledName(Symbol symbol);
 }

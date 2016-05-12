@@ -52,7 +52,8 @@ class ScannerTask extends CompilerTask {
     });
   }
 
-  void scanElements(CompilationUnitElement compilationUnit) {
+  void scanElements(
+      CompilationUnitElement compilationUnit) {
     Script script = compilationUnit.script;
     Token tokens =
         new Scanner(script.file, includeComments: _preserveComments).tokenize();
@@ -73,6 +74,17 @@ class ScannerTask extends CompilerTask {
     return measure(() {
       return new StringScanner.fromString(source, includeComments: false)
           .tokenize();
+    });
+  }
+
+  Token tokenizeUnit(CompilationUnitElement unit) {
+    return measureElement(unit, () {
+      Token tokens = new Scanner(
+          unit.script.file, includeComments: _preserveComments).tokenize();
+      if (_preserveComments) {
+        tokens = processAndStripComments(tokens);
+      }
+      return tokens;
     });
   }
 
