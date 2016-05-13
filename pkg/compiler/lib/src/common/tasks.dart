@@ -204,6 +204,22 @@ class CompilerTask {
     return watch == null ? action() : measureSubtaskHelper(name, action);
   }
 
+  /// Measure the time spent in [action] (if in verbose mode) and accumulate it
+  /// under a subtask with the given name.
+  measureSubtaskElement(String name, Element element, action()) {
+    return watch == null
+        ? reporter.withCurrentElement(element, action)
+        : measureSubtaskElementHelper(name, element, action);
+  }
+
+  /// Helper method for [measureSubtaskElement]. Don't call this directly as it
+  /// assumes that [watch] isn't null.
+  measureSubtaskElementHelper(String name, Element element, action()) {
+    assert(watch != null);
+    return reporter.withCurrentElement(
+        element, () => measureSubtaskHelper(name, action));
+  }
+
   /// Helper method for [measureSubtask]. Don't call this directly as it
   /// assumes that [watch] isn't null.
   measureSubtaskHelper(String name, action()) {

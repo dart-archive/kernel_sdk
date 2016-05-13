@@ -198,12 +198,13 @@ patch class NoSuchMethodError {
   // values read from another NoSuchMethodError.
   NoSuchMethodError._withType(Object this._receiver,
                               /*String|Symbol*/ memberName,
-                              this._invocation_type,
+                              int invocation_type,
                               List this._arguments,
                               Map<dynamic, dynamic> namedArguments,
                               [List existingArgumentNames = null])
       : this._memberName =
             (memberName is String) ? new Symbol(memberName) : memberName,
+        this._invocation_type = invocation_type,
         this._namedArguments =
             (namedArguments == null)
                 ? null

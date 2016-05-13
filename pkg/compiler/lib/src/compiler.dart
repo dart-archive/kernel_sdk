@@ -1055,7 +1055,7 @@ abstract class Compiler implements LibraryLoaderListener, IdGenerator {
   }
 
   WorldImpact analyzeElement(Element element)
-      => selfTask.measureSubtask("Compiler.analyzeElement", () {
+      => selfTask.measureSubtaskElement("Compiler.analyzeElement", element, () {
     assert(invariant(
         element,
         element.impliesType ||
@@ -1073,7 +1073,7 @@ abstract class Compiler implements LibraryLoaderListener, IdGenerator {
 
   WorldImpact analyze(ResolutionWorkItem work,
                       ResolutionEnqueuer world)
-      => selfTask.measureSubtask("Compiler.analyze", () {
+      => selfTask.measureSubtaskElement("Compiler.analyze", work.element, () {
     assert(invariant(work.element, identical(world, enqueuer.resolution)));
     assert(invariant(work.element, !work.isAnalyzed,
         message: 'Element ${work.element} has already been analyzed'));
