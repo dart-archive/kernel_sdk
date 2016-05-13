@@ -112,6 +112,7 @@ class FlowGraphBuilder : public TreeVisitor {
  private:
   FlowGraph* BuildGraphOfFunction(FunctionNode* node);
   FlowGraph* BuildGraphOfFieldAccessor(Field* node);
+  FlowGraph* BuildGraphOfStaticFieldInitializer(Field* node);
 
   Fragment TranslateArguments(Arguments* node, Array* argument_names);
   ArgumentArray GetArguments(int count);
@@ -143,6 +144,7 @@ class FlowGraphBuilder : public TreeVisitor {
                         const Array& argument_names);
   Fragment LoadField(const dart::Field& field);
   Fragment LoadLocal(LocalVariable* variable);
+  Fragment InitStaticField(const dart::Field& field);
   Fragment LoadStaticField();
   Fragment NullConstant();
   Fragment PushArgument();

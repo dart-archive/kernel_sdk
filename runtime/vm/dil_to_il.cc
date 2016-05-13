@@ -301,6 +301,12 @@ Fragment FlowGraphBuilder::LoadLocal(LocalVariable* variable) {
 }
 
 
+Fragment FlowGraphBuilder::InitStaticField(const dart::Field& field) {
+  InitStaticFieldInstr* init = new(Z) InitStaticFieldInstr(Pop(), field);
+  return Fragment(init);
+}
+
+
 Fragment FlowGraphBuilder::LoadStaticField() {
   LoadStaticFieldInstr* load =
       new(Z) LoadStaticFieldInstr(Pop(), TokenPosition::kNoSource);
@@ -626,6 +632,10 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       ASSERT(node_->IsField());
       return BuildGraphOfFieldAccessor(Field::Cast(node_));
     }
+    case RawFunction::kImplicitStaticFinalGetter: {
+      ASSERT(node_->IsField());
+      return BuildGraphOfStaticFieldInitializer(Field::Cast(node_));
+    }
     default: {
       UNREACHABLE();
       return NULL;
@@ -733,7 +743,10 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function) {
 
 
 FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(Field* dil_field) {
-  bool is_setter = parsed_function_->function().IsImplicitSetterFunction();
+  const dart::Function& function = parsed_function_->function();
+
+  bool is_setter = function.IsImplicitSetterFunction();
+  bool is_method = !function.IsStaticFunction();
   dart::Field& field =
       dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
 
@@ -749,49 +762,85 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(Field* dil_field) {
   {
     dart::AbstractType& dynamic =
         dart::AbstractType::ZoneHandle(Type::DynamicType());
-    dart::Class& klass =
-        dart::Class::Handle(parsed_function_->function().Owner());
+    dart::Class& klass = dart::Class::Handle(function.Owner());
     Type& klass_type =
         Type::ZoneHandle(Type::NewNonParameterizedType(klass));
 
-    this_variable_ = new(Z) LocalVariable(
-        TokenPosition::kNoSource,
-        dart::String::ZoneHandle(Symbols::New("this")),
-        klass_type);
-    scope_->InsertParameterAt(0, this_variable_);
+    int pos = 0;
+    if (is_method) {
+      this_variable_ = new(Z) LocalVariable(
+          TokenPosition::kNoSource,
+          dart::String::ZoneHandle(Symbols::New("this")),
+          klass_type);
+      scope_->InsertParameterAt(pos++, this_variable_);
+    }
 
     if (is_setter) {
       setter_value = new(Z) LocalVariable(
           TokenPosition::kNoSource,
           H.DartSymbol("value"),
           dynamic);
-      scope_->InsertParameterAt(1, setter_value);
+      scope_->InsertParameterAt(pos++, setter_value);
     }
   }
 
-  // Generate getter or setter body
+  // TODO(kustermann): Add support for FLAG_use_field_guards.
   Fragment body(normal_entry);
-  if (!is_setter) {
-    body += LoadLocal(this_variable_);
-    body += LoadField(field);
-    body += Return();
-  } else {
-    body += LoadLocal(this_variable_);
-    body += LoadLocal(setter_value);
-
-    if (false && FLAG_use_field_guards) {
-      // FIXME(kustermann): Should we implement this? What are field guards?
-      //         t1 <- StoreLocal(:expr_temp @-3, t1)
-      //         GuardFieldClass:4(field <nullable Null>, t1)
-      //         t1 <- LoadLocal(:expr_temp @-3)
-      //         GuardFieldLength:6(field <nullable Null>, t1)
-      //         t1 <- LoadLocal(:expr_temp @-3)
+  if (is_setter) {
+    if (is_method) {
+      body += LoadLocal(this_variable_);
+      body += LoadLocal(setter_value);
+      body += StoreInstanceField(field);
+    } else {
+      body += LoadLocal(setter_value);
+      body += StoreStaticField(field);
     }
-
-    body += StoreInstanceField(field);
     body += NullConstant();
     body += Return();
+  } else {
+    if (is_method) {
+      body += LoadLocal(this_variable_);
+      body += LoadField(field);
+    } else {
+      if (field.has_initializer()) {
+        body += Constant(field);
+        body += InitStaticField(field);
+      }
+      body += Constant(field);
+      body += LoadStaticField();
+    }
+    body += Return();
   }
+
+  return new(Z) FlowGraph(*parsed_function_, graph_entry, next_block_id_ - 1);
+}
+
+
+FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
+    Field* dil_field) {
+  ASSERT(dil_field->IsStatic());
+
+  Expression* initializer = dil_field->initializer();
+
+  dart::Field& field =
+      dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
+
+  TargetEntryInstr* normal_entry =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  GraphEntryInstr* graph_entry =
+      new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
+                             Compiler::kNoOSRDeoptId);
+
+  Fragment body(normal_entry);
+  body += TranslateExpression(initializer);
+  ASSERT(body.is_open());
+
+  LocalVariable* field_value = MakeTemporary();
+  body += LoadLocal(field_value);
+  body += StoreStaticField(field);
+
+  body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry, next_block_id_ - 1);
 }
@@ -914,7 +963,7 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
         dart::String::Handle(dart::Field::GetterName(field_name));
     const Function& getter =
         Function::ZoneHandle(Z, owner.LookupStaticFunction(getter_name));
-    if (getter.IsNull() || field.is_const()) {
+    if (getter.IsNull() || !field.has_initializer()) {
       Fragment instructions = Constant(field);
       fragment_ = instructions + LoadStaticField();
     } else {

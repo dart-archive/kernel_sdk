@@ -19,8 +19,7 @@ test0() {
 var x2 = 0, x3;
 
 test1() {
-  // TODO(kustermann): Field initial values don't work yet.
-  // Expect.isTrue(x2 == 0);
+  //Expect.isTrue(x2 == 0);
   Expect.isTrue(x3 == null);
   x2 = 1;
   Expect.isTrue(x2 == 1);

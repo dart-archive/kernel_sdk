@@ -57,8 +57,8 @@ class DilReader {
                      Class* dil_klass = NULL);
 
   void GenerateFieldAccessors(const dart::Class& klass,
-                              Class* dil_klass,
-                              Field* field);
+                              const dart::Field& field,
+                              Field* dil_field);
 
   void SetupFunctionParameters(const dart::Class& owner,
                                const dart::Function& function,
@@ -67,6 +67,9 @@ class DilReader {
 
   void SetupFieldAccessorFunction(const dart::Class& klass,
                                   const dart::Function& function);
+
+  void GenerateStaticFieldInitializer(const dart::Field& field,
+                                      Field* dil_field);
 
   dart::Library& LookupLibrary(Library* library);
   dart::Class& LookupClass(Class* klass);
