@@ -88,6 +88,19 @@ Object& DilReader::ReadProgram() {
     ReadLibrary(dil_library);
   }
 
+  // We finalize classes after we've constructed all classes since we currently
+  // don't construct them in pre-order of the class hierarchy (and finalization
+  // of a class needs all of its superclasses to be finalized).
+  for (int i = 0; i < length; i++) {
+    Library* dil_library = program->libraries()[i];
+    if (!dil_library->IsCorelibrary()) {
+      for (int i = 0; i < dil_library->classes().length(); i++) {
+        Class* dil_klass = dil_library->classes()[i];
+        ClassFinalizer::FinalizeClass(LookupClass(dil_klass));
+      }
+    }
+  }
+
   dart::Library& library = LookupLibrary(dil_main_library);
 
   // Sanity check that we can find the main entrypoint.
@@ -240,8 +253,6 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     Procedure* dil_procedure = dil_klass->procedures()[i];
     ReadProcedure(library, klass, dil_procedure, dil_klass);
   }
-
-  ClassFinalizer::FinalizeClass(klass);
 }
 
 void DilReader::ReadProcedure(const dart::Library& library,
