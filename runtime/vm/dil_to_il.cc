@@ -176,8 +176,6 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     translation_helper_(zone_),
     node_(node),
     parsed_function_(parsed_function),
-    library_(dart::Library::ZoneHandle(Z,
-        dart::Class::Handle(parsed_function->function().Owner()).library())),
     ic_data_array_(Z, 0),
     next_block_id_(first_block_id),
     scope_(NULL),
@@ -395,20 +393,6 @@ dart::RawLibrary* FlowGraphBuilder::LookupLibraryByDilLibrary(
 }
 
 
-dart::RawClass* FlowGraphBuilder::LookupClassByName(const dart::String& name) {
-  dart::RawClass* klass = library_.LookupClassAllowPrivate(name);
-  ASSERT(klass != Object::null());
-  return klass;
-}
-
-
-dart::RawClass* FlowGraphBuilder::LookupClassByName(String* name) {
-  dart::RawClass* klass = LookupClassByName(H.DartString(name));
-  ASSERT(klass != Object::null());
-  return klass;
-}
-
-
 dart::RawClass* FlowGraphBuilder::LookupClassByDilClass(Class* dil_klass) {
   dart::RawClass* klass = NULL;
 
@@ -420,20 +404,6 @@ dart::RawClass* FlowGraphBuilder::LookupClassByDilClass(Class* dil_klass) {
 
   ASSERT(klass != Object::null());
   return klass;
-}
-
-
-dart::RawField* FlowGraphBuilder::LookupFieldByName(const dart::String& name) {
-  dart::RawField* field = library_.LookupFieldAllowPrivate(name);
-  ASSERT(field != Object::null());
-  return field;
-}
-
-
-dart::RawField* FlowGraphBuilder::LookupFieldByName(String* name) {
-  dart::RawField* field = LookupFieldByName(H.DartString(name));
-  ASSERT(field != Object::null());
-  return field;
 }
 
 
@@ -480,22 +450,6 @@ dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByDilProcedure(
     ASSERT(function != Object::null());
     return function;
   }
-}
-
-
-dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(
-    const dart::String& name) {
-  dart::RawFunction* function = library_.LookupFunctionAllowPrivate(name);
-  ASSERT(function != Object::null());
-  return function;
-}
-
-
-dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByName(String* name) {
-  dart::RawFunction* function = LookupStaticMethodByName(
-      H.DartString(name));
-  ASSERT(function != Object::null());
-  return function;
 }
 
 
@@ -1016,7 +970,7 @@ void DartTypeTranslator::VisitInterfaceType(InterfaceType* node) {
   if (node->type_arguments().length() != 0) UNIMPLEMENTED();
 
   const dart::Class& klass =
-      dart::Class::Handle(owner_->LookupClassByName(node->klass()->name()));
+      dart::Class::Handle(owner_->LookupClassByDilClass(node->klass()));
   result_ ^= klass.DeclarationType();
 }
 
@@ -1043,12 +997,12 @@ void FlowGraphBuilder::VisitVariableSet(VariableSet* node) {
 void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
   Member* target = node->target();
   if (target->IsField()) {
-    const dart::String& field_name = H.DartString(target->name()->string());
+    Field* dil_field = Field::Cast(target);
     const dart::Field& field =
-        dart::Field::ZoneHandle(Z, LookupFieldByName(field_name));
+        dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
     const dart::Class& owner = dart::Class::Handle(field.Owner());
     const dart::String& getter_name =
-        dart::String::Handle(dart::Field::GetterName(field_name));
+        H.DartGetterName(dil_field->name()->string());
     const Function& getter =
         Function::ZoneHandle(Z, owner.LookupStaticFunction(getter_name));
     if (getter.IsNull() || !field.has_initializer()) {
@@ -1074,9 +1028,9 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
 void FlowGraphBuilder::VisitStaticSet(StaticSet* node) {
   Member* target = node->target();
   if (target->IsField()) {
+    Field* dil_field = Field::Cast(target);
     const dart::Field& field =
-        dart::Field::ZoneHandle(Z, LookupFieldByName(target->name()->string()));
-
+        dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
     Fragment instructions = TranslateExpression(node->expression());
     LocalVariable* variable = MakeTemporary();
     instructions += LoadLocal(variable);

@@ -59,7 +59,6 @@ test4() {
 main() {
   test0();
   test1();
-  // TODO(kmillikin): Class static fields are broken.
-  // test3();
+  test3();
   test4();
 }

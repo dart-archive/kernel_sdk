@@ -164,15 +164,9 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment StoreStaticField(const dart::Field& field);
 
   dart::RawLibrary* LookupLibraryByDilLibrary(Library* library);
-  dart::RawClass* LookupClassByName(const dart::String& name);
-  dart::RawClass* LookupClassByName(String* name);
   dart::RawClass* LookupClassByDilClass(Class* klass);
-  dart::RawField* LookupFieldByName(const dart::String& name);
-  dart::RawField* LookupFieldByName(String* name);
   dart::RawField* LookupFieldByDilField(Field* field);
   dart::RawFunction* LookupStaticMethodByDilProcedure(Procedure* procedure);
-  dart::RawFunction* LookupStaticMethodByName(const dart::String& name);
-  dart::RawFunction* LookupStaticMethodByName(String* name);
   dart::RawFunction* LookupConstructorByDilConstructor(
       const dart::Class& owner, Constructor* constructor);
   dart::RawFunction* LookupConstructorByDilConstructor(
@@ -200,7 +194,6 @@ class FlowGraphBuilder : public TreeVisitor {
   TreeNode* node_;
 
   ParsedFunction* parsed_function_;
-  const dart::Library& library_;
   const ZoneGrowableArray<const ICData*> ic_data_array_;
 
   int next_block_id_;
