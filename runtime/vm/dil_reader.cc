@@ -19,8 +19,6 @@ namespace dil {
 
 // FIXME(kustermann): We should add support for type conversion to annotate
 // fields/parameters/variables with proper types.
-// FIXME(kustermann): We should add support for initializers.
-
 
 class SimpleExpressionConverter : public ExpressionVisitor {
  public:

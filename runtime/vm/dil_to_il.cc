@@ -508,6 +508,14 @@ dart::RawFunction* FlowGraphBuilder::LookupConstructorByDilConstructor(
 }
 
 
+dart::RawFunction* FlowGraphBuilder::LookupConstructorByDilConstructor(
+    Constructor* constructor) {
+  Class* dil_klass = Class::Cast(constructor->parent());
+  dart::Class& klass = dart::Class::Handle(Z, LookupClassByDilClass(dil_klass));
+  return LookupConstructorByDilConstructor(klass, constructor);
+}
+
+
 LocalVariable* FlowGraphBuilder::MakeTemporary() {
   char name[64];
   intptr_t index = stack_->definition()->temp_index();
@@ -617,15 +625,14 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
     case RawFunction::kClosureFunction:
     case RawFunction::kRegularFunction:
     case RawFunction::kGetterFunction:
-    case RawFunction::kSetterFunction:
+    case RawFunction::kSetterFunction: {
+      ASSERT(node_->IsProcedure());
+      return BuildGraphOfFunction(Procedure::Cast(node_)->function());
+    }
     case RawFunction::kConstructor: {
-      if (node_->IsProcedure()) {
-        return BuildGraphOfFunction(Procedure::Cast(node_)->function());
-      } else if (node_->IsConstructor()) {
-        return BuildGraphOfFunction(Constructor::Cast(node_)->function());
-      } else {
-        UNIMPLEMENTED();
-      }
+      ASSERT(node_->IsConstructor());
+      Constructor* constructor = Constructor::Cast(node_);
+      return BuildGraphOfFunction(constructor->function(), constructor);
     }
     case RawFunction::kImplicitGetter:
     case RawFunction::kImplicitSetter: {
@@ -644,7 +651,8 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
 }
 
 
-FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function) {
+FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
+                                                  Constructor* constructor) {
   TargetEntryInstr* normal_entry =
       new(Z) TargetEntryInstr(AllocateBlockId(),
                               CatchClauseNode::kInvalidTryIndex);
@@ -731,7 +739,13 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function) {
 
   Fragment body(normal_entry);
   body += CheckStackOverflow();
-  body += TranslateStatement(function->body());
+  if (constructor != NULL) {
+    Class* dil_klass = Class::Cast(constructor->parent());
+    body += TranslateInitializers(dil_klass, &constructor->initializers());
+  }
+  if (function->body() != NULL) {
+    body += TranslateStatement(function->body());
+  }
 
   if (body.is_open()) {
     body += NullConstant();
@@ -834,7 +848,6 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
 
   Fragment body(normal_entry);
   body += TranslateExpression(initializer);
-  ASSERT(body.is_open());
 
   LocalVariable* field_value = MakeTemporary();
   body += LoadLocal(field_value);
@@ -843,6 +856,81 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
   body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry, next_block_id_ - 1);
+}
+
+
+Fragment FlowGraphBuilder::TranslateInitializers(
+    Class* dil_klass, List<Initializer>* initializers) {
+  Fragment instructions;
+
+  // These come from:
+  //   class A {
+  //     var x = (expr);
+  //   }
+  for (int i = 0; i < dil_klass->fields().length(); i++) {
+    Field* dil_field = dil_klass->fields()[i];
+    Expression* init = dil_field->initializer();
+    if (!dil_field->IsStatic() && init != NULL) {
+      dart::Field& field =
+          dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
+
+      // TODO(kustermann): Support FLAG_use_field_guards.
+      instructions += LoadLocal(this_variable_);
+      instructions += TranslateExpression(init);
+      instructions += StoreInstanceField(field);
+    }
+  }
+
+  // These to come from:
+  //   class A {
+  //     var x;
+  //     var y;
+  //     A(this.x) : super(expr), y = (expr);
+  //   }
+  for (int i = 0; i < initializers->length(); i++) {
+    Initializer* initializer = (*initializers)[i];
+    if (initializer->IsFieldInitializer()) {
+      FieldInitializer* init = FieldInitializer::Cast(initializer);
+      dart::Field& field =
+          dart::Field::ZoneHandle(Z, LookupFieldByDilField(init->field()));
+
+      // TODO(kustermann): Support FLAG_use_field_guards.
+      instructions += LoadLocal(this_variable_);
+      instructions += TranslateExpression(init->value());
+      instructions += StoreInstanceField(field);
+    } else if (initializer->IsSuperInitializer()) {
+      SuperInitializer* init = SuperInitializer::Cast(initializer);
+
+      instructions += LoadLocal(this_variable_);
+      instructions += PushArgument();
+
+      Array& argument_names = Array::ZoneHandle(Z);
+      instructions += TranslateArguments(init->arguments(), &argument_names);
+
+      const Function& target = Function::ZoneHandle(Z,
+          LookupConstructorByDilConstructor(init->target()));
+      int argument_count = init->arguments()->count() + 1;
+      instructions += StaticCall(target, argument_count, argument_names);
+      instructions += Drop();
+    } else if (initializer->IsRedirectingInitializer()) {
+      RedirectingInitializer* init = RedirectingInitializer::Cast(initializer);
+
+      instructions += LoadLocal(this_variable_);
+      instructions += PushArgument();
+
+      Array& argument_names = Array::ZoneHandle(Z);
+      instructions += TranslateArguments(init->arguments(), &argument_names);
+
+      const Function& target = Function::ZoneHandle(Z,
+          LookupConstructorByDilConstructor(init->target()));
+      int argument_count = init->arguments()->count() + 1;
+      instructions += StaticCall(target, argument_count, argument_names);
+      instructions += Drop();
+    } else {
+      UNIMPLEMENTED();
+    }
+  }
+  return instructions;
 }
 
 

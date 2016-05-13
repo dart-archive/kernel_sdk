@@ -110,12 +110,16 @@ class FlowGraphBuilder : public TreeVisitor {
   void AdjustTemporaries(int base);
 
  private:
-  FlowGraph* BuildGraphOfFunction(FunctionNode* node);
+  FlowGraph* BuildGraphOfFunction(FunctionNode* node,
+                                  Constructor* constructor = NULL);
   FlowGraph* BuildGraphOfFieldAccessor(Field* node);
   FlowGraph* BuildGraphOfStaticFieldInitializer(Field* node);
 
   Fragment TranslateArguments(Arguments* node, Array* argument_names);
   ArgumentArray GetArguments(int count);
+
+  Fragment TranslateInitializers(Class* dil_klass,
+                                 List<Initializer>* initialiers);
 
   Fragment TranslateStatement(Statement* statement) {
     statement->AcceptStatementVisitor(this);
@@ -124,6 +128,7 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Fragment TranslateExpression(Expression* expression) {
     expression->AcceptExpressionVisitor(this);
+    ASSERT(fragment_.is_open());
     return fragment_;
   }
 
@@ -169,6 +174,8 @@ class FlowGraphBuilder : public TreeVisitor {
   dart::RawFunction* LookupStaticMethodByName(String* name);
   dart::RawFunction* LookupConstructorByDilConstructor(
       const dart::Class& owner, Constructor* constructor);
+  dart::RawFunction* LookupConstructorByDilConstructor(
+      Constructor* constructor);
 
   LocalVariable* MakeTemporary();
 

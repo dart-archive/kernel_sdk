@@ -19,7 +19,7 @@ test0() {
 var x2 = 0, x3;
 
 test1() {
-  //Expect.isTrue(x2 == 0);
+  Expect.isTrue(x2 == 0);
   Expect.isTrue(x3 == null);
   x2 = 1;
   Expect.isTrue(x2 == 1);
@@ -48,8 +48,7 @@ class D {
 
 test4() {
   var d = new D();
-  // TODO(kustermann): Field initial values don't work yet.
-  // Expect.isTrue(d.x6 == 0);
+  Expect.isTrue(d.x6 == 0);
   Expect.isTrue(d.x7 == null);
   d.x6 = 1;
   Expect.isTrue(d.x6 == 1);
