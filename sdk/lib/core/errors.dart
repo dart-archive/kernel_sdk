@@ -468,7 +468,6 @@ class NoSuchMethodError extends Error {
       this._namedArguments,
       [List existingArgumentNames = null]);
 
-
   external NoSuchMethodError._withType(
       Object this._receiver,
       /*String|Symbol*/ memberName,
