@@ -95,6 +95,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitLogicalExpression(LogicalExpression* node);
   virtual void VisitNot(Not* node);
   virtual void VisitThisExpression(ThisExpression* node);
+  virtual void VisitStringConcatenation(StringConcatenation* node);
 
   virtual void VisitEmptyStatement(EmptyStatement* node);
   virtual void VisitBlock(Block* node);

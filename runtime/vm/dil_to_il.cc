@@ -1294,6 +1294,39 @@ void FlowGraphBuilder::VisitThisExpression(ThisExpression* node) {
 }
 
 
+void FlowGraphBuilder::VisitStringConcatenation(StringConcatenation* node) {
+  dart::Library& core = dart::Library::Handle(Z,
+      dart::Library::LookupLibrary(H.DartSymbol("dart:core")));
+  dart::Class& sb_klass = dart::Class::Handle(Z,
+      core.LookupClassAllowPrivate(H.DartSymbol("StringBuffer")));
+  dart::Function& sb_const = dart::Function::ZoneHandle(Z,
+      sb_klass.LookupConstructor(H.DartSymbol("StringBuffer.")));
+
+  Fragment instructions;
+  instructions += AllocateObject(sb_klass);
+  LocalVariable* sb = MakeTemporary();
+
+  instructions += LoadLocal(sb);
+  instructions += PushArgument();
+  instructions += StaticCall(sb_const, 1);
+  instructions += Drop();
+
+  for (int i = 0; i < node->expressions().length(); i++) {
+    instructions += LoadLocal(sb);
+    instructions += PushArgument();
+    instructions += TranslateExpression(node->expressions()[i]);
+    instructions += PushArgument();
+    instructions += InstanceCall(H.DartSymbol("write"), Token::kILLEGAL, 2);
+    instructions += Drop();
+  }
+
+  instructions += PushArgument();
+  instructions += InstanceCall(H.DartSymbol("toString"), Token::kILLEGAL, 1);
+
+  fragment_ = instructions;
+}
+
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               Array* argument_names) {
   if (node->types().length() != 0) {
