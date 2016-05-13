@@ -105,4 +105,6 @@ class ClassID {
   external static int get cidOneByteString;
 
   external static int get cidTwoByteString;
+
+  external static int get cidBigint;
 }

@@ -3,10 +3,10 @@
 // BSD-style license that can be found in the LICENSE file.
 // Immutable map class for compiler generated map literals.
 
-class ImmutableMap<K, V> implements Map<K, V> {
+class _ImmutableMap<K, V> implements Map<K, V> {
   final _ImmutableList _kvPairs;
 
-  const ImmutableMap._create(_ImmutableList keyValuePairs)
+  const _ImmutableMap._create(_ImmutableList keyValuePairs)
       : _kvPairs = keyValuePairs;
 
 
@@ -87,7 +87,7 @@ class ImmutableMap<K, V> implements Map<K, V> {
 
 class _ImmutableMapKeyIterable<E> extends IterableBase<E>
                                   implements EfficientLength {
-  final ImmutableMap _map;
+  final _ImmutableMap _map;
   _ImmutableMapKeyIterable(this._map);
 
   Iterator<E> get iterator {
@@ -99,7 +99,7 @@ class _ImmutableMapKeyIterable<E> extends IterableBase<E>
 
 class _ImmutableMapValueIterable<E> extends IterableBase<E>
                                     implements EfficientLength {
-  final ImmutableMap _map;
+  final _ImmutableMap _map;
   _ImmutableMapValueIterable(this._map);
 
   Iterator<E> get iterator {
@@ -110,7 +110,7 @@ class _ImmutableMapValueIterable<E> extends IterableBase<E>
 }
 
 class _ImmutableMapKeyIterator<E> implements Iterator<E> {
-  ImmutableMap _map;
+  _ImmutableMap _map;
   int _index = -1;
   E _current;
 
@@ -132,7 +132,7 @@ class _ImmutableMapKeyIterator<E> implements Iterator<E> {
 }
 
 class _ImmutableMapValueIterator<E> implements Iterator<E> {
-  ImmutableMap _map;
+  _ImmutableMap _map;
   int _index = -1;
   E _current;
 

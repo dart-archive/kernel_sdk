@@ -36,7 +36,7 @@ class Expando<T> {
    * same name yields two [Expando]s that work on different properties
    * of the objects they are used on.
    */
-  external Expando([String name]);
+  external Expando([this.name]);
 
   /**
    * Expando toString method override.

@@ -838,4 +838,5 @@ class _FileSystemWatcher {
   external static Stream<FileSystemEvent> _watch(
       String path, int events, bool recursive);
   external static bool get isSupported;
+  external Stream get stream;
 }

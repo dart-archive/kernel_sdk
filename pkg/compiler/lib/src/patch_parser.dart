@@ -281,11 +281,7 @@ class PatchMemberListener extends MemberListener {
       if (origin != null) {
         patchElement(compiler, reporter, origin, patch);
       } else if (Name.isPublicName(patch.name)) {
-        // TODO(ahe): We can hide this message if [patch] overrides a member of
-        // a superclass. However, checking for this isn't possible at this
-        // point as the superclass of [origin] hasn't been computed yet.
-        reporter.reportWarningMessage(
-            patch, MessageKind.INJECTED_PUBLIC_MEMBER);
+        reporter.reportErrorMessage(patch, MessageKind.INJECTED_PUBLIC_MEMBER);
       }
       enclosingClass.addMember(patch, reporter);
     }
@@ -336,8 +332,7 @@ class PatchElementListener extends ElementListener implements Listener {
       if (origin != null) {
         patchElement(compiler, reporter, origin, patch);
       } else if (Name.isPublicName(patch.name)) {
-        reporter.reportWarningMessage(
-            patch, MessageKind.INJECTED_PUBLIC_MEMBER);
+        reporter.reportErrorMessage(patch, MessageKind.INJECTED_PUBLIC_MEMBER);
       }
       compilationUnitElement.addMember(patch, reporter);
     }
@@ -357,7 +352,7 @@ void patchElement(Compiler compiler, DiagnosticReporter reporter,
       origin.isFunction ||
       origin.isAbstractField)) {
     // TODO(ahe): Remove this error when the parser rejects all bad modifiers.
-    reporter.reportWarningMessage(origin, MessageKind.PATCH_NONPATCHABLE);
+    reporter.reportErrorMessage(origin, MessageKind.PATCH_NONPATCHABLE);
     return;
   }
   if (patch.isClass) {
@@ -372,7 +367,7 @@ void patchElement(Compiler compiler, DiagnosticReporter reporter,
     tryPatchFunction(reporter, origin, patch);
   } else {
     // TODO(ahe): Remove this error when the parser rejects all bad modifiers.
-    reporter.reportWarningMessage(patch, MessageKind.PATCH_NONPATCHABLE);
+    reporter.reportErrorMessage(patch, MessageKind.PATCH_NONPATCHABLE);
   }
 }
 
@@ -645,7 +640,7 @@ void tryPatchFunction(
 void patchFunction(DiagnosticReporter reporter, BaseFunctionElementX origin,
     BaseFunctionElementX patch) {
   if (!origin.modifiers.isExternal) {
-    reporter.reportWarning(
+    reporter.reportError(
         reporter.createMessage(origin, MessageKind.PATCH_NON_EXTERNAL),
         <DiagnosticMessage>[
           reporter.createMessage(patch, MessageKind.PATCH_POINT_TO_FUNCTION,

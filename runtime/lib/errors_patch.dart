@@ -186,10 +186,10 @@ patch class NoSuchMethodError {
   // that no information is available.
   final int _invocation_type;
 
-  NoSuchMethodError(Object this._receiver,
-                    Symbol this._memberName,
-                    List this._arguments,
-                    Map<Symbol, dynamic> this._namedArguments,
+  NoSuchMethodError(this._receiver,
+                    this._memberName,
+                    this._arguments,
+                    this._namedArguments,
                     [List existingArgumentNames = null])
       : this._existingArgumentNames = existingArgumentNames,
         this._invocation_type = -1;

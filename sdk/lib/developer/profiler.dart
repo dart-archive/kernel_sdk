@@ -9,7 +9,7 @@ abstract class UserTag {
   /// The maximum number of UserTag instances that can be created by a program.
   static const MAX_USER_TAGS = 64;
 
-  factory UserTag(String label) => new _FakeUserTag(label);
+  external factory UserTag(String label);
 
   /// Label of [this].
   String get label;
@@ -19,7 +19,7 @@ abstract class UserTag {
   UserTag makeCurrent();
 
   /// The default [UserTag] with label 'Default'.
-  static UserTag get defaultTag => _FakeUserTag._defaultTag;
+  external static UserTag get defaultTag;
 }
 
 // This is a fake implementation of UserTag so that code can compile and run
@@ -60,9 +60,7 @@ class _FakeUserTag implements UserTag {
 var _currentTag = _FakeUserTag._defaultTag;
 
 /// Returns the current [UserTag] for the isolate.
-UserTag getCurrentTag() {
-  return _currentTag;
-}
+external UserTag getCurrentTag();
 
 /// Abstract [Metric] class. Metric names must be unique, are hierarchical,
 /// and use periods as separators. For example, 'a.b.c'. Uniqueness is only

@@ -462,10 +462,10 @@ class NoSuchMethodError extends Error {
    * had matched.
    */
   external NoSuchMethodError(
-      Object receiver,
-      Symbol memberName,
-      List positionalArguments,
-      Map<Symbol ,dynamic> namedArguments,
+      this._receiver,
+      this._memberName,
+      this._arguments,
+      this._namedArguments,
       [List existingArgumentNames = null]);
 
   external String toString();

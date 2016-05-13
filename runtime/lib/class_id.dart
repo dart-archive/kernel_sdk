@@ -4,16 +4,4 @@
 
 class ClassID {
   static int getID(Object value) native "ClassID_getID";
-
-  static int get cidArray => throw "bork";
-
-  static int get cidExternalOneByteString => throw "bork";
-
-  static int get cidGrowableObjectArray => throw "bork";
-
-  static int get cidImmutableArray => throw "bork";
-
-  static int get cidOneByteString => throw "bork";
-
-  static int get cidTwoByteString => throw "bork";
 }
