@@ -253,6 +253,11 @@ class PatchParserTask extends CompilerTask {
           assert(listener.nodes.isEmpty);
         }));
   }
+
+  void scanUnit(CompilationUnitElement unit, {bool isPart: true}) {
+    // TODO(ahe): Implement this.
+    throw "not implemented";
+  }
 }
 
 class PatchMemberListener extends MemberListener {

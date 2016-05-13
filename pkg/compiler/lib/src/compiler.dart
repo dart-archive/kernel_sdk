@@ -372,7 +372,7 @@ abstract class Compiler implements LibraryLoaderListener, IdGenerator {
       typesTask = new ti.TypesTask(this),
       constants = backend.constantCompilerTask,
       deferredLoadTask = new DeferredLoadTask(this),
-      mirrorUsageAnalyzerTask = new MirrorUsageAnalyzerTask(this),
+      mirrorUsageAnalyzerTask = createMirrorUsageAnalyzerTask(),
       enqueuer = backend.makeEnqueuer(),
       dumpInfoTask = new DumpInfoTask(this),
       reuseLibraryTask = new GenericTask('Reuse library', this),
@@ -397,6 +397,10 @@ abstract class Compiler implements LibraryLoaderListener, IdGenerator {
 
   PatchParserTask createPatchParserTask() {
     return new PatchParserTask(this, parsing.parserOptions);
+  }
+
+  MirrorUsageAnalyzerTask createMirrorUsageAnalyzerTask() {
+    return new MirrorUsageAnalyzerTask(this);
   }
 
   Universe get resolverWorld => enqueuer.resolution.universe;
