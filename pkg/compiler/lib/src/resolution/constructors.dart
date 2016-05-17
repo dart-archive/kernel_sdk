@@ -166,6 +166,10 @@ class InitializerResolver {
     InterfaceType targetType =
         getSuperOrThisLookupTarget(node, isSuperCall: isSuperCall);
     ClassElement lookupTarget = targetType.element;
+    if (constructor.library == lookupTarget.library) {
+      // This allows a class in a patch library to find injected constructors.
+      lookupTarget = lookupTarget.implementation;
+    }
     String constructorName =
         visitor.getRedirectingThisOrSuperConstructorName(node).text;
     ConstructorElement foundConstructor =
