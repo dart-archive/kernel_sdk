@@ -1348,6 +1348,51 @@ void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
 }
 
 
+void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
+  if (node->is_const() ||
+      !node->keyType()->IsDynamicType() ||
+      !node->valueType()->IsDynamicType()) {
+    UNIMPLEMENTED();
+  }
+
+  const dart::Class& map_class = dart::Class::Handle(Z,
+      dart::Library::LookupCoreClass(Symbols::Map()));
+  const Function& factory_method = Function::ZoneHandle(Z,
+      map_class.LookupFactory(
+          dart::Library::PrivateCoreLibName(Symbols::MapLiteralFactory())));
+
+  // The type argument for the factory call `new Map<K, V>._fromLiteral(List)`.
+  Fragment instructions = Constant(TypeArguments::ZoneHandle(Z));
+  instructions += PushArgument();
+
+  // The type arguments for `new List<X>(int len)`.
+  instructions += Constant(TypeArguments::ZoneHandle(Z));
+  List<MapEntry>& entries = node->entries();
+
+  // We generate a list of tuples, i.e. [key1, value1, ..., keyN, valueN].
+  instructions += IntConstant(2 * entries.length());
+  instructions += CreateArray();
+
+  LocalVariable* array = MakeTemporary();
+  for (int i = 0; i < entries.length(); ++i) {
+    instructions += LoadLocal(array);
+    instructions += IntConstant(2 * i);
+    instructions += TranslateExpression(entries[i]->key());
+    instructions += StoreIndexed(kArrayCid);
+    instructions += Drop();
+
+    instructions += LoadLocal(array);
+    instructions += IntConstant(2 * i + 1);
+    instructions += TranslateExpression(entries[i]->value());
+    instructions += StoreIndexed(kArrayCid);
+    instructions += Drop();
+  }
+
+  instructions += PushArgument();  // The array.
+  fragment_ = instructions + StaticCall(factory_method, 2);
+}
+
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               Array* argument_names) {
   if (node->types().length() != 0) {
