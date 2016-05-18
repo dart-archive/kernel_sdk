@@ -96,6 +96,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitNot(Not* node);
   virtual void VisitThisExpression(ThisExpression* node);
   virtual void VisitStringConcatenation(StringConcatenation* node);
+  virtual void VisitListLiteral(ListLiteral* node);
 
   virtual void VisitEmptyStatement(EmptyStatement* node);
   virtual void VisitBlock(Block* node);
@@ -140,7 +141,9 @@ class FlowGraphBuilder : public TreeVisitor {
                   TargetEntryInstr** otherwise_entry);
   Fragment CheckStackOverflow();
   Fragment Constant(const Object& value);
+  Fragment CreateArray();
   Fragment Goto(JoinEntryInstr* destination);
+  Fragment IntConstant(int64_t value);
   Fragment InstanceCall(const dart::String& name,
                         Token::Kind kind,
                         int argument_count);
@@ -159,6 +162,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment StaticCall(const Function& target,
                       int argument_count,
                       const Array& argument_names);
+  Fragment StoreIndexed(intptr_t class_id);
   Fragment StoreInstanceField(const dart::Field& field);
   Fragment StoreLocal(LocalVariable* variable);
   Fragment StoreStaticField(const dart::Field& field);

@@ -250,8 +250,25 @@ Fragment FlowGraphBuilder::Constant(const Object& value) {
 }
 
 
+Fragment FlowGraphBuilder::CreateArray() {
+  Value* element_count = Pop();
+  CreateArrayInstr* array =
+      new(Z) CreateArrayInstr(TokenPosition::kNoSource,
+                              Pop(),  // Element type.
+                              element_count);
+  Push(array);
+  return Fragment(array);
+}
+
+
 Fragment FlowGraphBuilder::Goto(JoinEntryInstr* destination) {
   return Fragment(new(Z) GotoInstr(destination)).closed();
+}
+
+
+Fragment FlowGraphBuilder::IntConstant(int64_t value) {
+  return Fragment(
+      Constant(Integer::ZoneHandle(Z, Integer::New(value, Heap::kOld))));
 }
 
 
@@ -354,6 +371,25 @@ Fragment FlowGraphBuilder::StaticCall(const Function& target,
                              ic_data_array_);
   Push(call);
   return Fragment(call);
+}
+
+
+Fragment FlowGraphBuilder::StoreIndexed(intptr_t class_id) {
+  Value* value = Pop();
+  Value* index = Pop();
+  // TODO(kmillikin): Omit store barrier when possible (e.g., storing
+  // constants).
+  StoreIndexedInstr* store =
+      new(Z) StoreIndexedInstr(Pop(),  // Array.
+                               index,
+                               value,
+                               kEmitStoreBarrier,
+                               Instance::ElementSizeFor(class_id),
+                               class_id,
+                               Thread::kNoDeoptId,
+                               TokenPosition::kNoSource);
+  Push(store);
+  return Fragment(store);
 }
 
 
@@ -923,8 +959,7 @@ void FlowGraphBuilder::VisitBoolLiteral(BoolLiteral* node) {
 
 
 void FlowGraphBuilder::VisitIntLiteral(IntLiteral* node) {
-  fragment_ = Fragment(Constant(
-      Integer::ZoneHandle(Z, Integer::New(node->value(), Heap::kOld))));
+  fragment_ = IntConstant(node->value());
 }
 
 
@@ -1281,6 +1316,38 @@ void FlowGraphBuilder::VisitStringConcatenation(StringConcatenation* node) {
 }
 
 
+void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
+  if (node->is_const() || !node->type()->IsDynamicType()) {
+    UNIMPLEMENTED();
+  }
+  // The type argument for the factory call.
+  Fragment instructions = Constant(TypeArguments::ZoneHandle(Z));
+  instructions += PushArgument();
+  // The type arguments for CreateArray.
+  instructions += Constant(TypeArguments::ZoneHandle(Z));
+  List<Expression>& expressions = node->expressions();
+  instructions += IntConstant(expressions.length());
+  instructions += CreateArray();
+
+  LocalVariable* array = MakeTemporary();
+  for (int i = 0; i < expressions.length(); ++i) {
+    instructions += LoadLocal(array);
+    instructions += IntConstant(i);
+    instructions += TranslateExpression(expressions[i]);
+    instructions += StoreIndexed(kArrayCid);
+    instructions += Drop();
+  }
+
+  const dart::Class& factory_class = dart::Class::Handle(Z,
+      dart::Library::LookupCoreClass(Symbols::List()));
+  const Function& factory_method = Function::ZoneHandle(Z,
+      factory_class.LookupFactory(
+          dart::Library::PrivateCoreLibName(Symbols::ListLiteralFactory())));
+  instructions += PushArgument();  // The array.
+  fragment_ = instructions + StaticCall(factory_method, 2);
+}
+
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               Array* argument_names) {
   if (node->types().length() != 0) {
@@ -1520,6 +1587,7 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
       dart::Field::GetterSymbol(Symbols::Current()));
   body += InstanceCall(current_getter, Token::kGET, 1);
   body += StoreLocal(variable);
+  body += Drop();
   body += TranslateStatement(node->body());
 
   if (body.is_open()) {
