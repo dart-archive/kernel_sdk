@@ -86,8 +86,11 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitStaticSet(StaticSet* node);
   virtual void VisitPropertyGet(PropertyGet* node);
   virtual void VisitPropertySet(PropertySet* node);
+  virtual void VisitSuperPropertyGet(SuperPropertyGet* node);
+  virtual void VisitSuperPropertySet(SuperPropertySet* node);
   virtual void VisitStaticInvocation(StaticInvocation* node);
   virtual void VisitMethodInvocation(MethodInvocation* node);
+  virtual void VisitSuperMethodInvocation(SuperMethodInvocation* node);
   virtual void VisitConstructorInvocation(ConstructorInvocation* node);
   virtual void VisitIsExpression(IsExpression* node);
   virtual void VisitAsExpression(AsExpression* node);
@@ -176,6 +179,8 @@ class FlowGraphBuilder : public TreeVisitor {
       const dart::Class& owner, Constructor* constructor);
   dart::RawFunction* LookupConstructorByDilConstructor(
       Constructor* constructor);
+  dart::RawFunction* LookupMethodByMember(
+      Member* target, const dart::String& method_name);
 
   LocalVariable* MakeTemporary();
 

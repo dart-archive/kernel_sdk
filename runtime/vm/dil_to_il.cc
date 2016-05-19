@@ -506,6 +506,17 @@ dart::RawFunction* FlowGraphBuilder::LookupConstructorByDilConstructor(
 }
 
 
+dart::RawFunction* FlowGraphBuilder::LookupMethodByMember(
+    Member* target, const dart::String& method_name) {
+  Class* dil_klass = Class::Cast(target->parent());
+  dart::Class& klass = dart::Class::Handle(Z, LookupClassByDilClass(dil_klass));
+
+  dart::RawFunction* function = klass.LookupFunctionAllowPrivate(method_name);
+  ASSERT(function != Object::null());
+  return function;
+}
+
+
 LocalVariable* FlowGraphBuilder::MakeTemporary() {
   char name[64];
   intptr_t index = stack_->definition()->temp_index();
@@ -1116,6 +1127,39 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
 }
 
 
+void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
+  const dart::String& method_name =
+      H.DartGetterName(node->target()->name()->string());
+  const Function& target = Function::ZoneHandle(Z,
+      LookupMethodByMember(node->target(), method_name));
+  ASSERT(target.IsGetterFunction() || target.IsImplicitGetterFunction());
+
+  Fragment instructions = LoadLocal(this_variable_);
+  instructions += PushArgument();
+  fragment_ = instructions + StaticCall(target, 1);
+}
+
+
+void FlowGraphBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
+  const dart::String& method_name =
+      H.DartSetterName(node->target()->name()->string());
+  const Function& target = Function::ZoneHandle(Z,
+      LookupMethodByMember(node->target(), method_name));
+  ASSERT(target.IsSetterFunction() || target.IsImplicitSetterFunction());
+
+  Fragment instructions = TranslateExpression(node->expression());
+  LocalVariable* expression = MakeTemporary();
+  instructions += LoadLocal(this_variable_);
+  instructions += PushArgument();
+  instructions += LoadLocal(expression);
+  instructions += PushArgument();
+  instructions += StaticCall(target, 2);
+  instructions += Drop();
+
+  fragment_ = instructions;
+}
+
+
 void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   Array& argument_names = Array::ZoneHandle(Z);
   Fragment instructions =
@@ -1140,6 +1184,22 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   int argument_count = node->arguments()->count() + 1;
   fragment_ = instructions +
       InstanceCall(name, Token::kILLEGAL, argument_count, argument_names);
+}
+
+
+void FlowGraphBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
+  const dart::String& method_name =
+      H.DartSymbol(node->target()->name()->string());  // NOLINT
+  const Function& target = Function::ZoneHandle(Z,
+      LookupMethodByMember(node->target(), method_name));
+
+  int argument_count = node->arguments()->count() + 1;
+  Array& argument_names = Array::ZoneHandle(Z);
+
+  Fragment instructions = LoadLocal(this_variable_);
+  instructions += PushArgument();
+  instructions += TranslateArguments(node->arguments(), &argument_names);
+  fragment_ = instructions + StaticCall(target, argument_count, argument_names);
 }
 
 
