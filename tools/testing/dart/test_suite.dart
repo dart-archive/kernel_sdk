@@ -1672,7 +1672,9 @@ class StandardTestSuite extends TestSuite {
    * configurations, so it may not use [configuration].
    */
   Map readOptionsFromFile(Path filePath) {
-    if (filePath.segments().contains('co19')) {
+    if (filePath.filename.endsWith('.dill')) {
+      return optionsFromDillFile();
+    } else if (filePath.segments().contains('co19')) {
       return readOptionsFromCo19File(filePath);
     }
     RegExp testOptionsRegExp = new RegExp(r"// VMOptions=(.*)");
@@ -1783,6 +1785,25 @@ class StandardTestSuite extends TestSuite {
       "subtestNames": subtestNames,
       "isolateStubs": isolateStubs,
       "containsDomImport": containsDomImport
+    };
+  }
+
+  Map optionsFromDillFile() {
+    return const {
+      "vmOptions": const [ const []],
+      "sharedOptions": const [],
+      "dartOptions": null,
+      "packageRoot": null,
+      "packages": null,
+      "hasCompileError": false,
+      "hasRuntimeError": false,
+      "hasStaticWarning": false,
+      "otherScripts": const [],
+      "isMultitest": false,
+      "isMultiHtmlTest": false,
+      "subtestNames": const [],
+      "isolateStubs": '',
+      "containsDomImport": false,
     };
   }
 
