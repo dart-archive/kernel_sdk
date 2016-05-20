@@ -186,6 +186,10 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
 }
 
 
+FlowGraphBuilder::~FlowGraphBuilder() {
+}
+
+
 Fragment FlowGraphBuilder::AllocateObject(const dart::Class& klass) {
   ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
   AllocateObjectInstr* allocate =

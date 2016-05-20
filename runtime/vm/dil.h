@@ -231,6 +231,9 @@ class Tuple {
 
   Tuple(A* a, B* b) : first_(a), second_(b) {}
 
+  A* first() { return first_; }
+  B* second() { return second_; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(Tuple);
   Tuple() {}
@@ -312,6 +315,7 @@ class Node {
   DEFINE_CASTING_OPERATIONS(Node);
 
   virtual void AcceptVisitor(Visitor* visitor) = 0;
+  virtual void VisitChildren(Visitor* visitor) = 0;
 };
 
 class TreeNode : public Node {
@@ -335,6 +339,7 @@ class Library : public TreeNode {
   DEFINE_CASTING_OPERATIONS(Library);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   String* import_uri() { return import_uri_; }
   String* name() { return name_; }
@@ -378,6 +383,7 @@ class Class : public TreeNode {
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
   virtual void AcceptClassVisitor(ClassVisitor* visitor) = 0;
+  virtual void AcceptReferenceVisitor(ClassReferenceVisitor* visitor) = 0;
 
   Library* parent() { return parent_; }
   String* name() { return name_; }
@@ -413,13 +419,15 @@ class NormalClass : public Class {
   DEFINE_CASTING_OPERATIONS(NormalClass);
 
   virtual void AcceptClassVisitor(ClassVisitor* visitor);
+  virtual void AcceptReferenceVisitor(ClassReferenceVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
-  InterfaceType* super_class() { return super_class_; }
   virtual List<TypeParameter>& type_parameters() { return type_parameters_; }
+  InterfaceType* super_class() { return super_class_; }
   virtual List<InterfaceType>& implemented_classes() { return implemented_classes_; }
-  virtual List<Field>& fields() { return fields_; }
   virtual List<Constructor>& constructors() { return constructors_; }
   virtual List<Procedure>& procedures() { return procedures_; }
+  virtual List<Field>& fields() { return fields_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NormalClass);
@@ -431,9 +439,9 @@ class NormalClass : public Class {
   List<TypeParameter> type_parameters_;
   Child<InterfaceType> super_class_;
   List<InterfaceType> implemented_classes_;
-  List<Field> fields_;
   List<Constructor> constructors_;
   List<Procedure> procedures_;
+  List<Field> fields_;
 };
 
 class MixinClass : public Class {
@@ -446,13 +454,15 @@ class MixinClass : public Class {
   DEFINE_CASTING_OPERATIONS(MixinClass);
 
   virtual void AcceptClassVisitor(ClassVisitor* visitor);
+  virtual void AcceptReferenceVisitor(ClassReferenceVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
+  virtual List<TypeParameter>& type_parameters() { return type_parameters_; }
   InterfaceType* first() { return first_; }
   InterfaceType* second() { return second_; }
-  virtual List<TypeParameter>& type_parameters() { return type_parameters_; }
   virtual List<InterfaceType>& implemented_classes() { return implemented_classes_; }
-  virtual List<Field>& fields() { return fields_; }
   virtual List<Constructor>& constructors() { return constructors_; }
+  virtual List<Field>& fields() { return fields_; }
   virtual List<Procedure>& procedures() { return procedures_; }
 
  private:
@@ -483,6 +493,7 @@ class Member : public TreeNode {
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
   virtual void AcceptMemberVisitor(MemberVisitor* visitor) = 0;
+  virtual void AcceptReferenceVisitor(MemberReferenceVisitor* visitor) = 0;
 
   TreeNode* parent() { return parent_; }
   Name* name() { return name_; }
@@ -511,6 +522,8 @@ class Field : public Member {
   DEFINE_CASTING_OPERATIONS(Field);
 
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
+  virtual void AcceptReferenceVisitor(MemberReferenceVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   bool IsConst() { return (flags_ & kFlagConst) == kFlagConst; }
   bool IsFinal() { return (flags_ & kFlagFinal) == kFlagFinal; }
@@ -541,8 +554,9 @@ class Constructor : public Member {
   DEFINE_CASTING_OPERATIONS(Constructor);
 
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
+  virtual void AcceptReferenceVisitor(MemberReferenceVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
-  Name* name() { return name_; }
   FunctionNode* function() { return function_; }
   List<Initializer>& initializers() { return initializers_; }
 
@@ -555,7 +569,6 @@ class Constructor : public Member {
   Constructor() {}
 
   uint8_t flags_;
-  Child<Name> name_;
   Child<FunctionNode> function_;
   List<Initializer> initializers_;
 };
@@ -589,6 +602,8 @@ class Procedure : public Member {
   DEFINE_CASTING_OPERATIONS(Procedure);
 
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
+  virtual void AcceptReferenceVisitor(MemberReferenceVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   ProcedureKind kind() { return kind_; }
   FunctionNode* function() { return function_; }
@@ -631,6 +646,7 @@ class InvalidInitializer : public Initializer {
 
   DEFINE_CASTING_OPERATIONS(InvalidInitializer);
   virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class FieldInitializer : public Initializer {
@@ -643,6 +659,7 @@ class FieldInitializer : public Initializer {
   DEFINE_CASTING_OPERATIONS(FieldInitializer);
 
   virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Field* field() { return field_; }
   Expression* value() { return value_; }
@@ -665,6 +682,7 @@ class SuperInitializer : public Initializer {
   DEFINE_CASTING_OPERATIONS(SuperInitializer);
 
   virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Constructor* target() { return target_; }
   Arguments* arguments() { return arguments_; }
@@ -687,6 +705,7 @@ class RedirectingInitializer : public Initializer {
   DEFINE_CASTING_OPERATIONS(RedirectingInitializer);
 
   virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Constructor* target() { return target_; }
   Arguments* arguments() { return arguments_; }
@@ -716,6 +735,7 @@ class FunctionNode : public TreeNode {
   DEFINE_CASTING_OPERATIONS(FunctionNode);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   AsyncMarker async_marker() { return async_marker_; }
   List<TypeParameter>& type_parameters() { return type_parameters_; }
@@ -757,6 +777,7 @@ class InvalidExpression : public Expression {
   virtual void WriteTo(Writer* writer);
 
   virtual ~InvalidExpression();
+  virtual void VisitChildren(Visitor* visitor);
 
   DEFINE_CASTING_OPERATIONS(InvalidExpression);
 
@@ -774,6 +795,7 @@ class VariableGet : public Expression {
   DEFINE_CASTING_OPERATIONS(VariableGet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   VariableDeclaration* variable() { return variable_; }
 
@@ -795,6 +817,7 @@ class VariableSet : public Expression {
   DEFINE_CASTING_OPERATIONS(VariableSet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   VariableDeclaration* variable() { return variable_; }
   Expression* expression() { return expression_; }
@@ -817,6 +840,7 @@ class PropertyGet : public Expression {
   DEFINE_CASTING_OPERATIONS(PropertyGet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* receiver() { return receiver_; }
   Name* name() { return name_; }
@@ -839,6 +863,7 @@ class PropertySet : public Expression {
   DEFINE_CASTING_OPERATIONS(PropertySet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* receiver() { return receiver_; }
   Name* name() { return name_; }
@@ -863,6 +888,7 @@ class SuperPropertyGet : public Expression {
   DEFINE_CASTING_OPERATIONS(SuperPropertyGet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Member* target() { return target_; }
 
@@ -883,6 +909,7 @@ class SuperPropertySet : public Expression {
   DEFINE_CASTING_OPERATIONS(SuperPropertySet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Member* target() { return target_; }
   Expression* expression() { return expression_; }
@@ -905,6 +932,7 @@ class StaticGet : public Expression {
   DEFINE_CASTING_OPERATIONS(StaticGet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Member* target() { return target_; }
 
@@ -925,6 +953,7 @@ class StaticSet : public Expression {
   DEFINE_CASTING_OPERATIONS(StaticSet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Member* target() { return target_; }
   Expression* expression() { return expression_; }
@@ -947,6 +976,7 @@ class Arguments : public TreeNode {
   DEFINE_CASTING_OPERATIONS(Arguments);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   List<DartType>& types() { return types_; }
   List<Expression>& positional() { return positional_; }
@@ -974,6 +1004,7 @@ class NamedExpression : public TreeNode {
   DEFINE_CASTING_OPERATIONS(NamedExpression);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   String* name() { return name_; }
   Expression* expression() { return expression_; }
@@ -996,6 +1027,7 @@ class MethodInvocation : public Expression {
   DEFINE_CASTING_OPERATIONS(MethodInvocation);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* receiver() { return receiver_; }
   Name* name() { return name_; }
@@ -1020,6 +1052,7 @@ class SuperMethodInvocation : public Expression {
   DEFINE_CASTING_OPERATIONS(SuperMethodInvocation);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Procedure* target() { return target_; }
   Arguments* arguments() { return arguments_; }
@@ -1042,6 +1075,7 @@ class StaticInvocation : public Expression {
   ~StaticInvocation();
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Procedure* procedure() { return procedure_; }
   Arguments* arguments() { return arguments_; }
@@ -1064,6 +1098,7 @@ class ConstructorInvocation : public Expression {
   DEFINE_CASTING_OPERATIONS(ConstructorInvocation);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   bool is_const() { return is_const_; }
   Constructor* target() { return target_; }
@@ -1088,6 +1123,7 @@ class Not : public Expression {
   DEFINE_CASTING_OPERATIONS(Not);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* expression() { return expression_; }
 
@@ -1114,6 +1150,7 @@ class LogicalExpression : public Expression {
   DEFINE_CASTING_OPERATIONS(LogicalExpression);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* left() { return left_; }
   Operator op() { return operator_; }
@@ -1138,6 +1175,7 @@ class ConditionalExpression : public Expression {
   DEFINE_CASTING_OPERATIONS(ConditionalExpression);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* condition() { return condition_; }
   Expression* then() { return then_; }
@@ -1162,6 +1200,7 @@ class StringConcatenation : public Expression {
   DEFINE_CASTING_OPERATIONS(StringConcatenation);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   List<Expression>& expressions() { return expressions_; }
 
@@ -1182,6 +1221,7 @@ class IsExpression : public Expression {
   DEFINE_CASTING_OPERATIONS(IsExpression);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* operand() { return operand_; }
   DartType* type() { return type_; }
@@ -1204,6 +1244,7 @@ class AsExpression : public Expression {
   DEFINE_CASTING_OPERATIONS(AsExpression);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* operand() { return operand_; }
   DartType* type() { return type_; }
@@ -1221,6 +1262,8 @@ class BasicLiteral : public Expression {
   virtual ~BasicLiteral();
 
   DEFINE_CASTING_OPERATIONS(BasicLiteral);
+
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class StringLiteral : public BasicLiteral {
@@ -1346,6 +1389,7 @@ class SymbolLiteral : public Expression {
   DEFINE_CASTING_OPERATIONS(SymbolLiteral);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   String* value() { return value_; }
 
@@ -1366,6 +1410,8 @@ class TypeLiteral : public Expression {
   DEFINE_CASTING_OPERATIONS(TypeLiteral);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
+
   DartType* type() { return type_; }
 
  private:
@@ -1385,6 +1431,7 @@ class ThisExpression : public Expression {
   DEFINE_CASTING_OPERATIONS(ThisExpression);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class Rethrow : public Expression {
@@ -1397,6 +1444,7 @@ class Rethrow : public Expression {
   DEFINE_CASTING_OPERATIONS(Rethrow);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class Throw : public Expression {
@@ -1409,6 +1457,7 @@ class Throw : public Expression {
   DEFINE_CASTING_OPERATIONS(Throw);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* expression() { return expression_; }
 
@@ -1429,6 +1478,7 @@ class ListLiteral : public Expression {
   DEFINE_CASTING_OPERATIONS(ListLiteral);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   bool is_const() { return is_const_; }
   DartType* type() { return type_; }
@@ -1453,10 +1503,11 @@ class MapLiteral : public Expression {
   DEFINE_CASTING_OPERATIONS(MapLiteral);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   bool is_const() { return is_const_; }
-  DartType* keyType() { return key_type_; }
-  DartType* valueType() { return value_type_; }
+  DartType* key_type() { return key_type_; }
+  DartType* value_type() { return value_type_; }
   List<MapEntry>& entries() { return entries_; }
 
  private:
@@ -1479,6 +1530,7 @@ class MapEntry : public TreeNode {
   DEFINE_CASTING_OPERATIONS(MapEntry);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* key() { return key_; }
   Expression* value() { return value_; }
@@ -1504,6 +1556,7 @@ class AwaitExpression : public Expression {
   DEFINE_CASTING_OPERATIONS(AwaitExpression);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* operand() { return operand_; }
 
@@ -1524,6 +1577,7 @@ class FunctionExpression : public Expression {
   DEFINE_CASTING_OPERATIONS(FunctionExpression);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   FunctionNode* function() { return function_; }
 
@@ -1544,6 +1598,7 @@ class Let : public Expression {
   DEFINE_CASTING_OPERATIONS(Let);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   VariableDeclaration* variable() { return variable_; }
   Expression* body() { return body_; }
@@ -1579,6 +1634,7 @@ class InvalidStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(InvalidStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class ExpressionStatement : public Statement {
@@ -1592,6 +1648,7 @@ class ExpressionStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(ExpressionStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* expression() { return expression_; }
 
@@ -1612,6 +1669,7 @@ class Block : public Statement {
   DEFINE_CASTING_OPERATIONS(Block);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   List<Statement>& statements() { return statements_; }
 
@@ -1632,6 +1690,7 @@ class EmptyStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(EmptyStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class AssertStatement : public Statement {
@@ -1644,6 +1703,7 @@ class AssertStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(AssertStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* condition() { return condition_; }
   Expression* message() { return message_; }
@@ -1666,6 +1726,7 @@ class LabeledStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(LabeledStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Statement* body() { return body_; }
 
@@ -1686,6 +1747,7 @@ class BreakStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(BreakStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   LabeledStatement* target() { return target_; }
 
@@ -1706,6 +1768,7 @@ class WhileStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(WhileStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* condition() { return condition_; }
   Statement* body() { return body_; }
@@ -1728,6 +1791,7 @@ class DoStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(DoStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* condition() { return condition_; }
   Statement* body() { return body_; }
@@ -1750,6 +1814,7 @@ class ForStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(ForStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   List<VariableDeclaration>& variables() { return variables_; }
   Expression* condition() { return condition_; }
@@ -1776,6 +1841,7 @@ class ForInStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(ForInStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   VariableDeclaration* variable() { return variable_; }
   Expression* iterable() { return iterable_; }
@@ -1802,6 +1868,7 @@ class SwitchStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(SwitchStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* condition() { return condition_; }
   List<SwitchCase>& cases() { return cases_; }
@@ -1824,6 +1891,7 @@ class SwitchCase : public TreeNode {
   DEFINE_CASTING_OPERATIONS(SwitchCase);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   List<Expression>& expressions() { return expressions_; }
   bool is_default() { return is_default_; }
@@ -1851,6 +1919,7 @@ class ContinueSwitchStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(ContinueSwitchStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   SwitchCase* target() { return target_; }
 
@@ -1871,6 +1940,7 @@ class IfStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(IfStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* condition() { return condition_; }
   Statement* then() { return then_; }
@@ -1895,6 +1965,7 @@ class ReturnStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(ReturnStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Expression* expression() { return expression_; }
 
@@ -1915,6 +1986,7 @@ class TryCatch : public Statement {
   DEFINE_CASTING_OPERATIONS(TryCatch);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Statement* body() { return body_; }
   List<Catch>& catches() { return catches_; }
@@ -1937,6 +2009,7 @@ class Catch : public TreeNode {
   DEFINE_CASTING_OPERATIONS(Catch);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   DartType* guard() { return guard_; }
   VariableDeclaration* exception() { return exception_; }
@@ -1966,6 +2039,7 @@ class TryFinally : public Statement {
   DEFINE_CASTING_OPERATIONS(TryFinally);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Statement* body() { return body_; }
   Statement* finalizer() { return finalizer_; }
@@ -1988,6 +2062,7 @@ class YieldStatement : public Statement {
   DEFINE_CASTING_OPERATIONS(YieldStatement);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   bool is_yield_start() { return is_yield_star_; }
   Expression* expression() { return expression_; }
@@ -2012,6 +2087,7 @@ class VariableDeclaration : public Statement {
   DEFINE_CASTING_OPERATIONS(VariableDeclaration);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   word flags() { return flags_; }
   String* name() { return name_; }
@@ -2041,6 +2117,7 @@ class FunctionDeclaration : public Statement {
   DEFINE_CASTING_OPERATIONS(FunctionDeclaration);
 
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   VariableDeclaration* variable() { return variable_; }
   FunctionNode* function() { return function_; }
@@ -2063,6 +2140,7 @@ class Name : public Node {
   DEFINE_CASTING_OPERATIONS(Name);
 
   virtual void AcceptVisitor(Visitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   String* string() { return string_; }
   Library* library() { return library_; }
@@ -2099,6 +2177,7 @@ class InvalidType : public DartType {
   DEFINE_CASTING_OPERATIONS(InvalidType);
 
   virtual void AcceptDartTypeVisitor(DartTypeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class DynamicType : public DartType {
@@ -2111,6 +2190,7 @@ class DynamicType : public DartType {
   DEFINE_CASTING_OPERATIONS(DynamicType);
 
   virtual void AcceptDartTypeVisitor(DartTypeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class VoidType : public DartType {
@@ -2123,6 +2203,7 @@ class VoidType : public DartType {
   DEFINE_CASTING_OPERATIONS(VoidType);
 
   virtual void AcceptDartTypeVisitor(DartTypeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 };
 
 class InterfaceType : public DartType {
@@ -2137,6 +2218,7 @@ class InterfaceType : public DartType {
   DEFINE_CASTING_OPERATIONS(InterfaceType);
 
   virtual void AcceptDartTypeVisitor(DartTypeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   Class* klass() { return klass_; }
   List<DartType>& type_arguments() { return type_arguments_; }
@@ -2160,6 +2242,7 @@ class FunctionType : public DartType {
   DEFINE_CASTING_OPERATIONS(FunctionType);
 
   virtual void AcceptDartTypeVisitor(DartTypeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   List<TypeParameter>& type_parameters() { return type_parameters_; }
   int required_parameter_count() { return required_parameter_count_; }
@@ -2188,6 +2271,7 @@ class TypeParameterType : public DartType {
   DEFINE_CASTING_OPERATIONS(TypeParameterType);
 
   virtual void AcceptDartTypeVisitor(DartTypeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   TypeParameter* parameter() { return parameter_; }
 
@@ -2208,6 +2292,7 @@ class TypeParameter : public TreeNode {
   DEFINE_CASTING_OPERATIONS(TypeParameter);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   String* name() { return name_; }
   DartType* bound() { return bound_; }
@@ -2233,6 +2318,7 @@ class Program : public TreeNode {
   DEFINE_CASTING_OPERATIONS(Program);
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
 
   StringTable& string_table() { return string_table_; }
   List<Library>& libraries() { return libraries_; }

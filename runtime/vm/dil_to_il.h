@@ -68,6 +68,7 @@ class FlowGraphBuilder : public TreeVisitor {
   FlowGraphBuilder(TreeNode* node,
                    ParsedFunction* parsed_function,
                    int first_block_id = 1);
+  virtual ~FlowGraphBuilder();
 
   FlowGraph* BuildGraph();
 
