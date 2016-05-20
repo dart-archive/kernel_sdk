@@ -1457,6 +1457,16 @@ void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
 }
 
 
+void FlowGraphBuilder::VisitLet(Let* node) {
+  scope_ = new LocalScope(scope_, 0, loop_depth_);
+  Fragment instructions = TranslateStatement(node->variable());
+  ASSERT(instructions.is_open());
+  instructions += TranslateExpression(node->body());
+  fragment_ = instructions;
+  scope_ = scope_->parent();
+}
+
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               Array* argument_names) {
   if (node->types().length() != 0) {

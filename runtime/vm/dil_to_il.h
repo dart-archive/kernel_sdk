@@ -102,6 +102,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitStringConcatenation(StringConcatenation* node);
   virtual void VisitListLiteral(ListLiteral* node);
   virtual void VisitMapLiteral(MapLiteral* node);
+  virtual void VisitLet(Let* node);
 
   virtual void VisitEmptyStatement(EmptyStatement* node);
   virtual void VisitBlock(Block* node);
