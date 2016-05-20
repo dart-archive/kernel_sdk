@@ -15,6 +15,8 @@
 namespace dart {
 namespace dil {
 
+class BreakableBlock;
+
 class Fragment {
  public:
   Instruction* entry;
@@ -115,6 +117,8 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitDoStatement(DoStatement* node);
   virtual void VisitForStatement(ForStatement* node);
   virtual void VisitForInStatement(ForInStatement* node);
+  virtual void VisitLabeledStatement(LabeledStatement* node);
+  virtual void VisitBreakStatement(BreakStatement* node);
 
   void AdjustTemporaries(int base);
 
@@ -224,6 +228,11 @@ class FlowGraphBuilder : public TreeVisitor {
   // Only non-NULL for instance functions.
   LocalVariable* this_variable_;
 
+  // A chained list of breakable blocks. Chaining and lookup is done by the
+  // [BreakableBlock] class.
+  BreakableBlock* breakable_block_;
+
+  friend class BreakableBlock;
   friend class DartTypeTranslator;
 };
 

@@ -15,6 +15,48 @@ namespace dil {
 #define H (translation_helper_)
 #define I Isolate::Current()
 
+
+class BreakableBlock {
+ public:
+  explicit BreakableBlock(FlowGraphBuilder* builder,
+                          LabeledStatement* statement)
+      : builder_(builder), labeled_statement_(statement), destination_(NULL) {
+    parent_ = builder_->breakable_block_;
+    builder_->breakable_block_ = this;
+  }
+  ~BreakableBlock() {
+    builder_->breakable_block_ = parent_;
+  }
+
+  bool HadJumper() { return destination_ != NULL; }
+
+  JoinEntryInstr* destination() { return destination_; }
+
+  JoinEntryInstr* EnsureDestination(LabeledStatement* label) {
+    BreakableBlock* block = builder_->breakable_block_;
+    while (block->labeled_statement_ != label) {
+      block = block->parent_;
+    }
+    ASSERT(block != NULL);
+    return block->EnsureDestination();
+  }
+
+ private:
+  JoinEntryInstr* EnsureDestination() {
+    if (destination_ == NULL) {
+      destination_ = new(builder_->zone_) JoinEntryInstr(
+          builder_->AllocateBlockId(),
+          CatchClauseNode::kInvalidTryIndex);
+    }
+    return destination_;
+  }
+
+  FlowGraphBuilder* builder_;
+  LabeledStatement* labeled_statement_;
+  BreakableBlock* parent_;
+  JoinEntryInstr* destination_;
+};
+
 Fragment& Fragment::operator+=(const Fragment& other) {
   if (entry == NULL) {
     entry = other.entry;
@@ -184,7 +226,8 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     loop_depth_(0),
     stack_(NULL),
     pending_argument_count_(0),
-    this_variable_(NULL) {
+    this_variable_(NULL),
+    breakable_block_(NULL) {
 }
 
 
@@ -1754,6 +1797,38 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   fragment_ = Fragment(instructions.entry, loop_exit) + Drop();
   --loop_depth_;
   scope_ = scope_->parent();
+}
+
+
+void FlowGraphBuilder::VisitLabeledStatement(LabeledStatement* node) {
+  // There can be serveral cases:
+  //
+  //   * the body contains a break
+  //   * the body doesn't contain a break
+  //
+  //   * translating the body results in a closed fragment
+  //   * translating the body results in a open fragment
+  //
+  // => We will only know which case we are in after the body has been
+  //    traversed.
+
+  BreakableBlock block(this, node);
+  Fragment instructions = TranslateStatement(node->body());
+  if (block.HadJumper()) {
+    if (instructions.is_open()) {
+      instructions += Goto(block.destination());
+    }
+    fragment_ = Fragment(instructions.entry, block.destination());
+  } else {
+    fragment_ = instructions;
+  }
+}
+
+
+void FlowGraphBuilder::VisitBreakStatement(BreakStatement* node) {
+  JoinEntryInstr* destination =
+      breakable_block_->EnsureDestination(node->target());
+  fragment_ = Goto(destination);
 }
 
 
