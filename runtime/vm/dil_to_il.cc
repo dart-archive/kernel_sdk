@@ -166,13 +166,7 @@ const dart::String& TranslationHelper::DartClassName(dil::Class* dil_klass) {
 
 const dart::String& TranslationHelper::DartConstructorName(Constructor* node) {
   Class* klass = Class::Cast(node->parent());
-
-  // We build a String which looks like <classname>.<constructor-name>.
-  dart::String& temp = DartString(klass->name());
-  temp ^= dart::String::Concat(temp, Symbols::Dot());
-  temp ^= dart::String::Concat(
-      temp, DartString(node->name()->string()));  // NOLINT
-  return dart::String::ZoneHandle(Z, dart::Symbols::New(temp));
+  return DartFactoryName(klass->name(), node->name()->string());  // NOLINT
 }
 
 
@@ -181,6 +175,10 @@ const dart::String& TranslationHelper::DartProcedureName(Procedure* procedure) {
     return DartSetterName(procedure->name()->string());
   } else if (procedure->kind() == Procedure::kGetter) {
     return DartGetterName(procedure->name()->string());
+  } else if (procedure->kind() == Procedure::kFactory) {
+    return DartFactoryName(
+        Class::Cast(procedure->parent())->name(),
+        procedure->name()->string());
   } else {
     return DartSymbol(procedure->name()->string());
   }
@@ -210,6 +208,16 @@ const dart::String& TranslationHelper::DartSetterName(String* content) {
 const dart::String& TranslationHelper::DartGetterName(String* content) {
   return dart::String::ZoneHandle(Z,
       dart::Field::GetterSymbol(DartString(content)));
+}
+
+
+const dart::String& TranslationHelper::DartFactoryName(String* klass_name,
+                                                       String* method_name) {
+  // We build a String which looks like <classname>.<constructor-name>.
+  dart::String& temp = DartString(klass_name);
+  temp ^= dart::String::Concat(temp, Symbols::Dot());
+  temp ^= dart::String::Concat(temp, DartString(method_name));
+  return dart::String::ZoneHandle(Z, dart::Symbols::New(temp));
 }
 
 
@@ -1236,13 +1244,22 @@ void FlowGraphBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
 
 
 void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
-  Array& argument_names = Array::ZoneHandle(Z);
-  Fragment instructions =
-      TranslateArguments(node->arguments(), &argument_names);
-
   const Function& target = Function::ZoneHandle(Z,
       LookupStaticMethodByDilProcedure(node->procedure()));
   int argument_count = node->arguments()->count();
+
+  Array& argument_names = Array::ZoneHandle(Z);
+  Fragment instructions;
+
+  // The VM requires currently a TypeArguments object as first parameter for
+  // every factory constructor :-/ !
+  if (target.IsFactory()) {
+    argument_count++;
+    instructions += Constant(TypeArguments::ZoneHandle(Z));
+    instructions += PushArgument();
+  }
+  instructions += TranslateArguments(node->arguments(), &argument_names);
+
   fragment_ = instructions +
       StaticCall(target, argument_count, argument_names);
 }

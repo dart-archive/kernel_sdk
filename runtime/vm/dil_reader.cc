@@ -488,6 +488,7 @@ RawFunction::Kind DilReader::GetFunctionType(Procedure* dil_procedure) {
     RawFunction::kGetterFunction,   // Procedure::kGetter
     RawFunction::kSetterFunction,   // Procedure::kSetter
     RawFunction::kRegularFunction,  // Procedure::kIndexGetter
+    RawFunction::kRegularFunction,  // Procedure::kIndexSetter
     RawFunction::kRegularFunction,  // Procedure::kOperator
     RawFunction::kRegularFunction,  // Procedure::kFactory
   };
