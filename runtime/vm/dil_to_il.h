@@ -151,6 +151,8 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment Boolify();
   Fragment Branch(TargetEntryInstr** then_entry,
                   TargetEntryInstr** otherwise_entry);
+  Fragment BranchIfNull(TargetEntryInstr** then_entry,
+                        TargetEntryInstr** otherwise_entry);
   Fragment CheckStackOverflow();
   Fragment Constant(const Object& value);
   Fragment CreateArray();

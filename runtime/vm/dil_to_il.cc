@@ -293,6 +293,26 @@ Fragment FlowGraphBuilder::Branch(TargetEntryInstr** then_entry,
   return (instructions << branch).closed();
 }
 
+Fragment FlowGraphBuilder::BranchIfNull(TargetEntryInstr** then_entry,
+                                        TargetEntryInstr** otherwise_entry) {
+  Fragment instructions = NullConstant();
+  Value* constant_value = Pop();
+  StrictCompareInstr* compare =
+      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                Token::kEQ_STRICT,
+                                Pop(),
+                                constant_value,
+                                false);
+  BranchInstr* branch = new(Z) BranchInstr(compare);
+  *then_entry = *branch->true_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  *otherwise_entry = *branch->false_successor_address() =
+      new(Z) TargetEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+  return (instructions << branch).closed();
+}
+
 
 Fragment FlowGraphBuilder::CheckStackOverflow() {
   return Fragment(new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource,
@@ -1419,7 +1439,33 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
     fragment_ = Fragment(instructions.entry, join)
         + LoadLocal(parsed_function_->expression_temp_var());
   } else {
-    UNIMPLEMENTED();
+    ASSERT(node->op() == LogicalExpression::kIfNull);
+
+    TargetEntryInstr* null_entry;
+    TargetEntryInstr* nonnull_entry;
+    JoinEntryInstr* join =
+        new(Z) JoinEntryInstr(AllocateBlockId(),
+                              CatchClauseNode::kInvalidTryIndex);
+
+    // Evaluate `left` of `left ?? right` and compare it to null.
+    Fragment instructions = TranslateExpression(node->left());
+    instructions += StoreLocal(parsed_function_->expression_temp_var());
+    instructions += BranchIfNull(&null_entry, &nonnull_entry);
+
+    // If `left` was non-null we are done.
+    Fragment nonnull_fragment(nonnull_entry);
+    nonnull_fragment += Goto(join);
+
+    // If `left` was null we evaluate `right`.
+    Fragment null_fragment(null_entry);
+    null_fragment += TranslateExpression(node->right());
+    null_fragment += StoreLocal(parsed_function_->expression_temp_var());
+    null_fragment += Drop();
+    null_fragment += Goto(join);
+
+    fragment_ =
+        Fragment(instructions.entry, join) +
+        LoadLocal(parsed_function_->expression_temp_var());
   }
 }
 
