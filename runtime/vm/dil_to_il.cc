@@ -1414,8 +1414,8 @@ void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
 
 void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
   if (node->is_const() ||
-      !node->keyType()->IsDynamicType() ||
-      !node->valueType()->IsDynamicType()) {
+      !node->key_type()->IsDynamicType() ||
+      !node->value_type()->IsDynamicType()) {
     UNIMPLEMENTED();
   }
 
