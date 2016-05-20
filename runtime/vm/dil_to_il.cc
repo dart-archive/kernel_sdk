@@ -5,6 +5,7 @@
 #include "vm/compiler.h"
 #include "vm/dil_to_il.h"
 #include "vm/intermediate_language.h"
+#include "vm/object_store.h"
 #include "vm/stack_frame.h"
 
 namespace dart {
@@ -12,6 +13,7 @@ namespace dil {
 
 #define Z (zone_)
 #define H (translation_helper_)
+#define I Isolate::Current()
 
 Fragment& Fragment::operator+=(const Fragment& other) {
   if (entry == NULL) {
@@ -994,6 +996,32 @@ void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
 
 void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
   fragment_ = Fragment(Constant(H.DartString(node->value(), Heap::kOld)));
+}
+
+
+void FlowGraphBuilder::VisitSymbolLiteral(SymbolLiteral* node) {
+  const dart::String& symbol_value = H.DartSymbol(node->value());
+
+  const dart::Class& symbol_class = dart::Class::ZoneHandle(Z,
+      I->object_store()->symbol_class());
+  ASSERT(!symbol_class.IsNull());
+  const dart::Function& symbol_constructor = Function::ZoneHandle(Z,
+      symbol_class.LookupConstructor(Symbols::SymbolCtor()));
+  ASSERT(!symbol_constructor.IsNull());
+
+  // TODO(kustermann): We should implement constant canonicalization.
+  Fragment instructions;
+  instructions += AllocateObject(symbol_class);
+  LocalVariable* symbol = MakeTemporary();
+
+  instructions += LoadLocal(symbol);
+  instructions += PushArgument();
+  instructions += Constant(symbol_value);
+  instructions += PushArgument();
+  instructions += StaticCall(symbol_constructor, 2);
+  instructions += Drop();
+
+  fragment_ = instructions;
 }
 
 

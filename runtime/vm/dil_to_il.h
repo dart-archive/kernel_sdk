@@ -80,6 +80,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitBigintLiteral(BigintLiteral* node);
   virtual void VisitDoubleLiteral(DoubleLiteral* node);
   virtual void VisitStringLiteral(StringLiteral* node);
+  virtual void VisitSymbolLiteral(SymbolLiteral* node);
   virtual void VisitTypeLiteral(TypeLiteral* node);
   virtual void VisitVariableGet(VariableGet* node);
   virtual void VisitVariableSet(VariableSet* node);
