@@ -98,6 +98,8 @@ Object& DilReader::ReadProgram() {
         Class* dil_klass = dil_library->classes()[i];
         ClassFinalizer::FinalizeClass(LookupClass(dil_klass));
       }
+      dart::Library& library = LookupLibrary(dil_library);
+      library.SetLoaded();
     }
   }
 
@@ -452,6 +454,7 @@ dart::Library& DilReader::LookupLibrary(Library* library) {
       *handle = dart::Library::LookupLibrary(url);
     } else {
       *handle = dart::Library::New(url);
+      handle->SetLoadInProgress();
       handle->Register();
     }
     ASSERT(!handle->IsNull());
