@@ -17,6 +17,7 @@ namespace dil {
 
 class BreakableBlock;
 class SwitchBlock;
+class TryFinallyBlock;
 
 class Fragment {
  public:
@@ -123,6 +124,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitBreakStatement(BreakStatement* node);
   virtual void VisitSwitchStatement(SwitchStatement* node);
   virtual void VisitContinueSwitchStatement(ContinueSwitchStatement* node);
+  virtual void VisitTryFinally(TryFinally* node);
 
   void AdjustTemporaries(int base);
 
@@ -148,6 +150,8 @@ class FlowGraphBuilder : public TreeVisitor {
     ASSERT(fragment_.is_open());
     return fragment_;
   }
+
+  Fragment TranslateFinallyFinalizers(TryFinallyBlock* outer_finally);
 
   Fragment AllocateObject(const dart::Class& klass);
   Fragment BooleanNegate();
@@ -243,9 +247,14 @@ class FlowGraphBuilder : public TreeVisitor {
   // [SwitchBlock] class.
   SwitchBlock* switch_block_;
 
+  // A chained list of try-finally blocks. Chaining and lookup is done by the
+  // [TryFinallyBlock] class.
+  TryFinallyBlock* try_finally_block_;
+
   friend class BreakableBlock;
   friend class SwitchBlock;
   friend class DartTypeTranslator;
+  friend class TryFinallyBlock;
 };
 
 }  // namespace dil

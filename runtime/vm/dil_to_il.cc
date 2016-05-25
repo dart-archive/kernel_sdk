@@ -3,6 +3,7 @@
 // BSD-style license that can be found in the LICENSE file.
 
 #include <map>
+#include <set>
 
 #include "vm/compiler.h"
 #include "vm/dil_to_il.h"
@@ -20,9 +21,12 @@ namespace dil {
 
 class BreakableBlock {
  public:
-  explicit BreakableBlock(FlowGraphBuilder* builder,
-                          LabeledStatement* statement)
-      : builder_(builder), labeled_statement_(statement), destination_(NULL) {
+  BreakableBlock(FlowGraphBuilder* builder,
+                 LabeledStatement* statement)
+      : builder_(builder),
+        labeled_statement_(statement),
+        destination_(NULL),
+        outer_finally_(builder->try_finally_block_) {
     outer_ = builder_->breakable_block_;
     builder_->breakable_block_ = this;
   }
@@ -34,12 +38,14 @@ class BreakableBlock {
 
   JoinEntryInstr* destination() { return destination_; }
 
-  JoinEntryInstr* BreakDestination(LabeledStatement* label) {
+  JoinEntryInstr* BreakDestination(LabeledStatement* label,
+                                   TryFinallyBlock** out_finally) {
     BreakableBlock* block = builder_->breakable_block_;
     while (block->labeled_statement_ != label) {
       block = block->outer_;
     }
     ASSERT(block != NULL);
+    *out_finally = block->outer_finally_;
     return block->EnsureDestination();
   }
 
@@ -57,12 +63,16 @@ class BreakableBlock {
   LabeledStatement* labeled_statement_;
   BreakableBlock* outer_;
   JoinEntryInstr* destination_;
+  TryFinallyBlock* outer_finally_;
 };
 
 
 class SwitchBlock {
  public:
-  explicit SwitchBlock(FlowGraphBuilder* builder) : builder_(builder) {
+  SwitchBlock(FlowGraphBuilder* builder, SwitchStatement* switch_stmt)
+      : builder_(builder),
+        outer_finally_(builder->try_finally_block_),
+        switch_statement_(switch_stmt) {
     outer_ = builder_->switch_block_;
     builder_->switch_block_ = this;
   }
@@ -74,12 +84,27 @@ class SwitchBlock {
     return destinations_.find(switch_case) != destinations_.end();
   }
 
-  JoinEntryInstr* Destination(SwitchCase* label) {
-    return EnsureDestination(label);
+  JoinEntryInstr* Destination(SwitchCase* label,
+                              TryFinallyBlock** outer_finally) {
+    // Find corresponding [SwitchStatement].
+    SwitchBlock* block = this;
+    while (true) {
+      block->EnsureSwitchCaseMapping();
+      if (block->Contains(label)) break;
+    }
+
+    // Set the outer finally block.
+    if (outer_finally != NULL) {
+      *outer_finally = block->outer_finally_;
+    }
+
+    // Ensure there's [JoinEntryInstr] for that [SwitchCase].
+    return block->EnsureDestination(label);
   }
 
  private:
   typedef std::map<SwitchCase*, JoinEntryInstr*> DestinationMap;
+  typedef std::set<SwitchCase*> DestinationSwitches;
 
   JoinEntryInstr* EnsureDestination(SwitchCase* switch_case) {
     DestinationMap::iterator entry = destinations_.find(switch_case);
@@ -93,10 +118,48 @@ class SwitchBlock {
     return entry->second;
   }
 
+  void EnsureSwitchCaseMapping() {
+    if (destination_switches_.begin() == destination_switches_.end()) {
+      List<SwitchCase>& cases = switch_statement_->cases();
+      for (int i = 0; i < cases.length(); i++) {
+        destination_switches_.insert(cases[i]);
+      }
+    }
+  }
+
+  bool Contains(SwitchCase* sc) {
+    return destination_switches_.find(sc) != destination_switches_.end();
+  }
+
   FlowGraphBuilder* builder_;
   SwitchBlock* outer_;
 
   DestinationMap destinations_;
+  DestinationSwitches destination_switches_;
+
+  TryFinallyBlock* outer_finally_;
+  SwitchStatement* switch_statement_;
+};
+
+
+class TryFinallyBlock {
+ public:
+  TryFinallyBlock(FlowGraphBuilder* builder, Statement* finalizer)
+      : builder_(builder), finalizer_(finalizer) {
+    outer_ = builder_->try_finally_block_;
+    builder_->try_finally_block_ = this;
+  }
+  ~TryFinallyBlock() {
+    builder_->try_finally_block_ = outer_;
+  }
+
+  Statement* finalizer() { return finalizer_; }
+  TryFinallyBlock* outer() { return outer_; }
+
+ private:
+  FlowGraphBuilder* builder_;
+  TryFinallyBlock* outer_;
+  Statement* finalizer_;
 };
 
 
@@ -279,11 +342,38 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     pending_argument_count_(0),
     this_variable_(NULL),
     breakable_block_(NULL),
-    switch_block_(NULL) {
+    switch_block_(NULL),
+    try_finally_block_(NULL) {
 }
 
 
-FlowGraphBuilder::~FlowGraphBuilder() {
+FlowGraphBuilder::~FlowGraphBuilder() { }
+
+
+Fragment FlowGraphBuilder::TranslateFinallyFinalizers(
+    TryFinallyBlock* outer_finally) {
+  TryFinallyBlock* saved = try_finally_block_;
+
+  Fragment instructions;
+
+  // While translating the body of a finalizer we need to set the try-finally
+  // block which is active when translating the body.
+  while (try_finally_block_ != outer_finally) {
+    Statement* finalizer = try_finally_block_->finalizer();
+    try_finally_block_ = try_finally_block_->outer();
+
+    // This will potentially have exceptional cases as described in
+    // [VisitTryFinally] and will handle them.
+    instructions += TranslateStatement(finalizer);
+
+    // We only need to make sure that if the finalizer ended normally, we
+    // continue towards the next outer try-finally.
+    if (!instructions.is_open()) break;
+  }
+
+  try_finally_block_ = saved;
+
+  return instructions;
 }
 
 
@@ -1703,10 +1793,24 @@ void FlowGraphBuilder::VisitBlock(Block* node) {
 
 
 void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
+  bool inside_try_finally = try_finally_block_ != NULL;
+
   Fragment instructions = node->expression() == NULL
       ? NullConstant()
       : TranslateExpression(node->expression());
-  instructions += Return();
+  if (inside_try_finally) {
+    LocalVariable* return_variable = MakeNonTemporary(
+        H.DartSymbol(":try_finally_return_value"));
+    instructions += StoreLocal(return_variable);
+    instructions += Drop();
+    instructions += TranslateFinallyFinalizers(NULL);
+    if (instructions.is_open()) {
+      instructions += LoadLocal(return_variable);
+      instructions += Return();
+    }
+  } else {
+    instructions += Return();
+  }
   fragment_ = instructions.closed();
 }
 
@@ -1944,14 +2048,21 @@ void FlowGraphBuilder::VisitLabeledStatement(LabeledStatement* node) {
 
 
 void FlowGraphBuilder::VisitBreakStatement(BreakStatement* node) {
+  TryFinallyBlock* outer_finally = NULL;
   JoinEntryInstr* destination =
-      breakable_block_->BreakDestination(node->target());
-  fragment_ = Goto(destination);
+      breakable_block_->BreakDestination(node->target(), &outer_finally);
+
+  Fragment instructions;
+  instructions += TranslateFinallyFinalizers(outer_finally);
+  if (instructions.is_open()) {
+    instructions += Goto(destination);
+  }
+  fragment_ = instructions;
 }
 
 
 void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
-  SwitchBlock block(this);
+  SwitchBlock block(this, node);
 
   // Instead of using a variable we should reuse the expression on the stack,
   // since it won't be assigned again, we don't need phi nodes.
@@ -1983,7 +2094,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
     // from `a == expr` and one from `a != expr && b == expr`). The
     // `block.Destination()` records the additional jump.
     if (switch_case->expressions().length() > 1) {
-      block.Destination(switch_case);
+      block.Destination(switch_case, NULL);
     }
 
     ASSERT(i == (node->cases().length() - 1) || body_fragments[i].is_closed());
@@ -2019,7 +2130,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         if (block.HadJumper(switch_case)) {
           // There are several branches to the body, so we will make a goto to
           // the join block (and prepend a join instruction to the real body).
-          JoinEntryInstr* join = block.Destination(switch_case);
+          JoinEntryInstr* join = block.Destination(switch_case, NULL);
           then_fragment += Goto(join);
           Fragment real_body(join);
           real_body += body_fragments[i];
@@ -2042,8 +2153,48 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
 
 void FlowGraphBuilder::VisitContinueSwitchStatement(
     ContinueSwitchStatement* node) {
-  JoinEntryInstr* entry = switch_block_->Destination(node->target());
-  fragment_ = Goto(entry);
+  TryFinallyBlock* outer_finally = NULL;
+  JoinEntryInstr* entry =
+      switch_block_->Destination(node->target(), &outer_finally);
+
+  Fragment instructions;
+  instructions += TranslateFinallyFinalizers(outer_finally);
+  if (instructions.is_open()) {
+    instructions += Goto(entry);
+  }
+  fragment_ = instructions;
+}
+
+
+void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
+  Fragment instructions;
+
+  {
+    TryFinallyBlock block(this, node->finalizer());
+
+    // There are 3 kinds of control flow instructions inside `node->body()`
+    // which potentially require executing the finalizer block:
+    //
+    //   * [BreakStatement] transfers control to a [LabledStatement]
+    //   * [ContinueSwitchStatement] transfers control to a [SwitchCase] block
+    //   * [ReturnStatement] returns a value
+    //
+    // => All three cases will automatically append all finally blocks between
+    //    the branching point and the destination.
+    instructions += TranslateStatement(node->body());
+  }
+
+  // The 4th case is when translating the body results in an open fragment, then
+  // we take care of appending the finally block here.
+  if (instructions.is_open()) {
+    instructions += TranslateStatement(node->finalizer());
+  }
+
+  // TODO(kustermann): The 5th case is when an exception occurs we need to run
+  // the finalizer block as well. Once we implement exceptions we should make
+  // sure to support that.
+
+  fragment_ = instructions;
 }
 
 

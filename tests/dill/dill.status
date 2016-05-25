@@ -1014,8 +1014,6 @@ co19/Language/Statements/Rethrow/control_transfer_t02_test: Crash
 co19/Language/Statements/Rethrow/control_transfer_t04_test: Crash
 co19/Language/Statements/Rethrow/control_transfer_t05_test: Crash
 co19/Language/Statements/Return/execution_t01_test: Crash
-co19/Language/Statements/Return/execution_t02_test: Crash
-co19/Language/Statements/Return/execution_t03_test: Crash
 co19/Language/Statements/Return/many_return_statements_t02_test: Crash
 co19/Language/Statements/Return/many_return_statements_t04_test: Crash
 co19/Language/Statements/Return/runtime_type_t01_test: Crash
