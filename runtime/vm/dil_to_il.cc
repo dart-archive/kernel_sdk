@@ -2,6 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+#include <map>
+
 #include "vm/compiler.h"
 #include "vm/dil_to_il.h"
 #include "vm/intermediate_language.h"
@@ -21,21 +23,21 @@ class BreakableBlock {
   explicit BreakableBlock(FlowGraphBuilder* builder,
                           LabeledStatement* statement)
       : builder_(builder), labeled_statement_(statement), destination_(NULL) {
-    parent_ = builder_->breakable_block_;
+    outer_ = builder_->breakable_block_;
     builder_->breakable_block_ = this;
   }
   ~BreakableBlock() {
-    builder_->breakable_block_ = parent_;
+    builder_->breakable_block_ = outer_;
   }
 
   bool HadJumper() { return destination_ != NULL; }
 
   JoinEntryInstr* destination() { return destination_; }
 
-  JoinEntryInstr* EnsureDestination(LabeledStatement* label) {
+  JoinEntryInstr* BreakDestination(LabeledStatement* label) {
     BreakableBlock* block = builder_->breakable_block_;
     while (block->labeled_statement_ != label) {
-      block = block->parent_;
+      block = block->outer_;
     }
     ASSERT(block != NULL);
     return block->EnsureDestination();
@@ -53,9 +55,50 @@ class BreakableBlock {
 
   FlowGraphBuilder* builder_;
   LabeledStatement* labeled_statement_;
-  BreakableBlock* parent_;
+  BreakableBlock* outer_;
   JoinEntryInstr* destination_;
 };
+
+
+class SwitchBlock {
+ public:
+  explicit SwitchBlock(FlowGraphBuilder* builder) : builder_(builder) {
+    outer_ = builder_->switch_block_;
+    builder_->switch_block_ = this;
+  }
+  ~SwitchBlock() {
+    builder_->switch_block_ = outer_;
+  }
+
+  bool HadJumper(SwitchCase* switch_case) {
+    return destinations_.find(switch_case) != destinations_.end();
+  }
+
+  JoinEntryInstr* Destination(SwitchCase* label) {
+    return EnsureDestination(label);
+  }
+
+ private:
+  typedef std::map<SwitchCase*, JoinEntryInstr*> DestinationMap;
+
+  JoinEntryInstr* EnsureDestination(SwitchCase* switch_case) {
+    DestinationMap::iterator entry = destinations_.find(switch_case);
+    if (entry == destinations_.end()) {
+      JoinEntryInstr* inst = new(builder_->zone_) JoinEntryInstr(
+          builder_->AllocateBlockId(),
+          CatchClauseNode::kInvalidTryIndex);
+      destinations_[switch_case] = inst;
+      return inst;
+    }
+    return entry->second;
+  }
+
+  FlowGraphBuilder* builder_;
+  SwitchBlock* outer_;
+
+  DestinationMap destinations_;
+};
+
 
 Fragment& Fragment::operator+=(const Fragment& other) {
   if (entry == NULL) {
@@ -235,7 +278,8 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     stack_(NULL),
     pending_argument_count_(0),
     this_variable_(NULL),
-    breakable_block_(NULL) {
+    breakable_block_(NULL),
+    switch_block_(NULL) {
 }
 
 
@@ -292,6 +336,7 @@ Fragment FlowGraphBuilder::Branch(TargetEntryInstr** then_entry,
                               CatchClauseNode::kInvalidTryIndex);
   return (instructions << branch).closed();
 }
+
 
 Fragment FlowGraphBuilder::BranchIfNull(TargetEntryInstr** then_entry,
                                         TargetEntryInstr** otherwise_entry) {
@@ -613,6 +658,16 @@ LocalVariable* FlowGraphBuilder::MakeTemporary() {
   // be materialized in the expression stack).
   stack_->definition()->set_ssa_temp_index(0);
 
+  return variable;
+}
+
+
+LocalVariable* FlowGraphBuilder::MakeNonTemporary(const dart::String& symbol) {
+  LocalVariable* variable =
+      new(Z) LocalVariable(TokenPosition::kNoSource,
+                           symbol,
+                           Type::ZoneHandle(Z, Type::DynamicType()));
+  scope_->AddVariable(variable);
   return variable;
 }
 
@@ -1890,8 +1945,105 @@ void FlowGraphBuilder::VisitLabeledStatement(LabeledStatement* node) {
 
 void FlowGraphBuilder::VisitBreakStatement(BreakStatement* node) {
   JoinEntryInstr* destination =
-      breakable_block_->EnsureDestination(node->target());
+      breakable_block_->BreakDestination(node->target());
   fragment_ = Goto(destination);
+}
+
+
+void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
+  SwitchBlock block(this);
+
+  // Instead of using a variable we should reuse the expression on the stack,
+  // since it won't be assigned again, we don't need phi nodes.
+  LocalVariable* switch_expression = MakeNonTemporary(Symbols::SwitchExpr());
+
+  Fragment head_instructions = TranslateExpression(node->condition());
+  head_instructions += StoreLocal(switch_expression);
+  head_instructions += Drop();
+
+  // Phase 1: Generate bodies and try to find out whether a body will be target
+  // of a jump due to:
+  //   * `continue case_label`
+  //   * `case e1: case e2: body`
+  Fragment* body_fragments = new Fragment[node->cases().length()];
+
+  for (int i = 0; i < node->cases().length(); i++) {
+    SwitchCase* switch_case = node->cases()[i];
+    body_fragments[i] = TranslateStatement(switch_case->body());
+    // If there is an implicit fall-through we have one [SwitchCase] and
+    // multiple expressions, e.g.
+    //
+    //    switch(expr) {
+    //      case a:
+    //      case b:
+    //        <stmt-body>
+    //    }
+    //
+    // This means that the <stmt-body> will have more than 1 incoming edge (one
+    // from `a == expr` and one from `a != expr && b == expr`). The
+    // `block.Destination()` records the additional jump.
+    if (switch_case->expressions().length() > 1) {
+      block.Destination(switch_case);
+    }
+
+    ASSERT(i == (node->cases().length() - 1) || body_fragments[i].is_closed());
+  }
+
+  // Phase 2: Generate everything except the real bodies:
+  //   * jump directly to a body (if there is no jumper)
+  //   * jump to a wrapper block which jumps to the body (if there is a jumper)
+  Fragment current_instructions = head_instructions;
+  for (int i = 0; i < node->cases().length(); i++) {
+    SwitchCase* switch_case = node->cases()[i];
+
+    if (switch_case->is_default()) {
+      ASSERT(i == (node->cases().length() - 1));
+      ASSERT(switch_case->expressions().length() == 0);
+      current_instructions += body_fragments[i];
+    } else {
+      for (int j = 0; j < switch_case->expressions().length(); j++) {
+        TargetEntryInstr* then;
+        TargetEntryInstr* otherwise;
+
+        current_instructions +=
+            TranslateExpression(switch_case->expressions()[j]);
+        current_instructions += PushArgument();
+        current_instructions += LoadLocal(switch_expression);
+        current_instructions += PushArgument();
+        current_instructions +=
+            InstanceCall(Symbols::EqualOperator(), Token::kILLEGAL, 2);
+        current_instructions += Branch(&then, &otherwise);
+
+        Fragment then_fragment(then);
+
+        if (block.HadJumper(switch_case)) {
+          // There are several branches to the body, so we will make a goto to
+          // the join block (and prepend a join instruction to the real body).
+          JoinEntryInstr* join = block.Destination(switch_case);
+          then_fragment += Goto(join);
+          Fragment real_body(join);
+          real_body += body_fragments[i];
+        } else {
+          // There is only a signle branch to the body, so we will just append
+          // the body fragment.
+          then_fragment += body_fragments[i];
+        }
+
+        current_instructions = Fragment(otherwise);
+      }
+    }
+  }
+
+  delete[] body_fragments;
+
+  fragment_ = Fragment(head_instructions.entry, current_instructions.current);
+}
+
+
+void FlowGraphBuilder::VisitContinueSwitchStatement(
+    ContinueSwitchStatement* node) {
+  JoinEntryInstr* entry = switch_block_->Destination(node->target());
+  fragment_ = Goto(entry);
 }
 
 

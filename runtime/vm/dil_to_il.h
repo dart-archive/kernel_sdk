@@ -16,6 +16,7 @@ namespace dart {
 namespace dil {
 
 class BreakableBlock;
+class SwitchBlock;
 
 class Fragment {
  public:
@@ -120,6 +121,8 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitForInStatement(ForInStatement* node);
   virtual void VisitLabeledStatement(LabeledStatement* node);
   virtual void VisitBreakStatement(BreakStatement* node);
+  virtual void VisitSwitchStatement(SwitchStatement* node);
+  virtual void VisitContinueSwitchStatement(ContinueSwitchStatement* node);
 
   void AdjustTemporaries(int base);
 
@@ -193,6 +196,7 @@ class FlowGraphBuilder : public TreeVisitor {
       Member* target, const dart::String& method_name);
 
   LocalVariable* MakeTemporary();
+  LocalVariable* MakeNonTemporary(const dart::String& symbol);
 
   void AddVariable(VariableDeclaration* declaration, LocalVariable* variable);
   void AddParameter(VariableDeclaration* declaration,
@@ -235,7 +239,12 @@ class FlowGraphBuilder : public TreeVisitor {
   // [BreakableBlock] class.
   BreakableBlock* breakable_block_;
 
+  // A chained list of switch blocks. Chaining and lookup is done by the
+  // [SwitchBlock] class.
+  SwitchBlock* switch_block_;
+
   friend class BreakableBlock;
+  friend class SwitchBlock;
   friend class DartTypeTranslator;
 };
 
