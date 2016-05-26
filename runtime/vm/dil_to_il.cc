@@ -52,9 +52,7 @@ class BreakableBlock {
  private:
   JoinEntryInstr* EnsureDestination() {
     if (destination_ == NULL) {
-      destination_ = new(builder_->zone_) JoinEntryInstr(
-          builder_->AllocateBlockId(),
-          CatchClauseNode::kInvalidTryIndex);
+      destination_ = builder_->BuildJoinEntry();
     }
     return destination_;
   }
@@ -109,9 +107,7 @@ class SwitchBlock {
   JoinEntryInstr* EnsureDestination(SwitchCase* switch_case) {
     DestinationMap::iterator entry = destinations_.find(switch_case);
     if (entry == destinations_.end()) {
-      JoinEntryInstr* inst = new(builder_->zone_) JoinEntryInstr(
-          builder_->AllocateBlockId(),
-          CatchClauseNode::kInvalidTryIndex);
+      JoinEntryInstr* inst = builder_->BuildJoinEntry();
       destinations_[switch_case] = inst;
       return inst;
     }
@@ -160,6 +156,60 @@ class TryFinallyBlock {
   FlowGraphBuilder* builder_;
   TryFinallyBlock* outer_;
   Statement* finalizer_;
+};
+
+
+class TryCatchBlock {
+ public:
+  explicit TryCatchBlock(FlowGraphBuilder* builder, int try_handler_index = -1)
+    : builder_(builder) {
+    if (try_handler_index == -1) {
+      try_handler_index = builder_->AllocateTryIndex();
+    }
+    outer_ = builder->try_catch_block_;
+    builder->try_catch_block_ = this;
+    try_index_ = try_handler_index;
+  }
+  ~TryCatchBlock() {
+    builder_->try_catch_block_ = outer_;
+  }
+
+  intptr_t TryIndex() { return try_index_; }
+
+ private:
+  FlowGraphBuilder* builder_;
+  TryCatchBlock* outer_;
+  intptr_t try_index_;
+};
+
+
+class CatchBlock {
+ public:
+  CatchBlock(FlowGraphBuilder* builder,
+             LocalVariable* exception_var,
+             LocalVariable* stack_trace_var,
+             intptr_t catch_try_index)
+    : builder_(builder),
+      exception_var_(exception_var),
+      stack_trace_var_(stack_trace_var),
+      catch_try_index_(catch_try_index) {
+    outer_ = builder_->catch_block_;
+    builder_->catch_block_ = this;
+  }
+  ~CatchBlock() {
+    builder_->catch_block_ = outer_;
+  }
+
+  LocalVariable* exception_var() { return exception_var_; }
+  LocalVariable* stack_trace_var() { return stack_trace_var_; }
+  intptr_t catch_try_index() { return catch_try_index_; }
+
+ private:
+  FlowGraphBuilder* builder_;
+  CatchBlock* outer_;
+  LocalVariable* exception_var_;
+  LocalVariable* stack_trace_var_;
+  intptr_t catch_try_index_;
 };
 
 
@@ -340,10 +390,14 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     loop_depth_(0),
     stack_(NULL),
     pending_argument_count_(0),
+    graph_entry_(NULL),
     this_variable_(NULL),
     breakable_block_(NULL),
     switch_block_(NULL),
-    try_finally_block_(NULL) {
+    try_finally_block_(NULL),
+    try_catch_block_(NULL),
+    next_used_try_index_(0),
+    catch_block_(NULL) {
 }
 
 
@@ -418,12 +472,8 @@ Fragment FlowGraphBuilder::Branch(TargetEntryInstr** then_entry,
                                 constant_value,
                                 false);
   BranchInstr* branch = new(Z) BranchInstr(compare);
-  *then_entry = *branch->true_successor_address() =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
-  *otherwise_entry = *branch->false_successor_address() =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
+  *then_entry = *branch->true_successor_address() = BuildTargetEntry();
+  *otherwise_entry = *branch->false_successor_address() = BuildTargetEntry();
   return (instructions << branch).closed();
 }
 
@@ -439,13 +489,58 @@ Fragment FlowGraphBuilder::BranchIfNull(TargetEntryInstr** then_entry,
                                 constant_value,
                                 false);
   BranchInstr* branch = new(Z) BranchInstr(compare);
-  *then_entry = *branch->true_successor_address() =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
-  *otherwise_entry = *branch->false_successor_address() =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
+  *then_entry = *branch->true_successor_address() = BuildTargetEntry();
+  *otherwise_entry = *branch->false_successor_address() = BuildTargetEntry();
   return (instructions << branch).closed();
+}
+
+
+Fragment FlowGraphBuilder::TryCatch(const Array& handler_types,
+                                    int* try_handler_index,
+                                    JoinEntryInstr** body,
+                                    CatchBlockEntryInstr** catch_body,
+                                    JoinEntryInstr** after_try,
+                                    LocalVariable** exception_var,
+                                    LocalVariable** stack_trace_var) {
+  const dart::String& exception_symbol = H.DartSymbol(":exception");
+  const dart::String& stack_trace_symbol = H.DartSymbol(":stack_trace");
+  *exception_var = scope_->LocalLookupVariable(exception_symbol);
+  *stack_trace_var = scope_->LocalLookupVariable(stack_trace_symbol);
+  if (*exception_var == NULL) {
+    *exception_var = MakeNonTemporary(exception_symbol);
+  }
+  if (*stack_trace_var == NULL) {
+    *stack_trace_var = MakeNonTemporary(stack_trace_symbol);
+  }
+
+  // The body of the try needs to have it's own block in order to get a new try
+  // index.
+  //
+  // => We therefore create a block for the body (fresh try index) and another
+  //    join block (with current try index).
+
+  Fragment before;
+  *try_handler_index = AllocateTryIndex();
+  *body = new(Z) JoinEntryInstr(AllocateBlockId(), *try_handler_index);
+  // TODO(kustermann): With closure support, we need to save the context
+  // variable before jumping.
+  before += Goto(*body);
+
+  *catch_body = new(Z) CatchBlockEntryInstr(AllocateBlockId(),
+                                            CurrentTryIndex(),
+                                            graph_entry_,
+                                            handler_types,
+                                            *try_handler_index,
+                                            **exception_var,
+                                            **stack_trace_var,
+                                            true);
+  graph_entry_->AddCatchEntry(*catch_body);
+
+  *after_try = BuildJoinEntry();
+  // TODO(kustermann): With closure support, we need to restore the context
+  // variable here.
+
+  return Fragment(before.entry, *after_try);
 }
 
 
@@ -506,6 +601,31 @@ Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
           ic_data_array_);
   Push(call);
   return Fragment(call);
+}
+
+
+Fragment FlowGraphBuilder::ThrowException() {
+  Fragment instructions;
+  instructions += Drop();
+  instructions +=
+      Fragment(new(Z) ThrowInstr(TokenPosition::kNoSource)).closed();
+  // Use it's side effect of leaving a constant on the stack (does not change
+  // the graph).
+  NullConstant();
+  return instructions;
+}
+
+
+Fragment FlowGraphBuilder::RethrowException(int catch_try_index) {
+  Fragment instructions;
+  instructions += Drop();
+  instructions += Drop();
+  instructions += Fragment(new(Z) ReThrowInstr(
+      TokenPosition::kNoSource, catch_try_index)).closed();
+  // Use it's side effect of leaving a constant on the stack (does not change
+  // the graph).
+  NullConstant();
+  return instructions;
 }
 
 
@@ -762,6 +882,15 @@ LocalVariable* FlowGraphBuilder::MakeNonTemporary(const dart::String& symbol) {
 }
 
 
+intptr_t FlowGraphBuilder::CurrentTryIndex() {
+  if (try_catch_block_ == NULL) {
+    return CatchClauseNode::kInvalidTryIndex;
+  } else {
+    return try_catch_block_->TryIndex();
+  }
+}
+
+
 void FlowGraphBuilder::AddVariable(VariableDeclaration* declaration,
                                    LocalVariable* variable) {
   ASSERT(variable != NULL);
@@ -876,10 +1005,8 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
 
 FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
                                                   Constructor* constructor) {
-  TargetEntryInstr* normal_entry =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
-  GraphEntryInstr* graph_entry =
+  TargetEntryInstr* normal_entry = BuildTargetEntry();
+  graph_entry_ =
       new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
 
@@ -975,7 +1102,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     body += Return();
   }
 
-  return new(Z) FlowGraph(*parsed_function_, graph_entry, next_block_id_ - 1);
+  return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
 }
 
 
@@ -987,10 +1114,8 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(Field* dil_field) {
   dart::Field& field =
       dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
 
-  TargetEntryInstr* normal_entry =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
-  GraphEntryInstr* graph_entry =
+  TargetEntryInstr* normal_entry = BuildTargetEntry();
+  graph_entry_ =
       new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
 
@@ -1049,7 +1174,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(Field* dil_field) {
     body += Return();
   }
 
-  return new(Z) FlowGraph(*parsed_function_, graph_entry, next_block_id_ - 1);
+  return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
 }
 
 
@@ -1062,10 +1187,8 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
   dart::Field& field =
       dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
 
-  TargetEntryInstr* normal_entry =
-      new(Z) TargetEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
-  GraphEntryInstr* graph_entry =
+  TargetEntryInstr* normal_entry = BuildTargetEntry();
+  graph_entry_ =
       new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
 
@@ -1078,7 +1201,17 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
 
   body += Return();
 
-  return new(Z) FlowGraph(*parsed_function_, graph_entry, next_block_id_ - 1);
+  return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
+}
+
+
+TargetEntryInstr* FlowGraphBuilder::BuildTargetEntry() {
+  return new(Z) TargetEntryInstr(AllocateBlockId(), CurrentTryIndex());
+}
+
+
+JoinEntryInstr* FlowGraphBuilder::BuildJoinEntry() {
+  return new(Z) JoinEntryInstr(AllocateBlockId(), CurrentTryIndex());
 }
 
 
@@ -1537,9 +1670,7 @@ void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
   otherwise_fragment += StoreLocal(parsed_function_->expression_temp_var());
   otherwise_fragment += Drop();
 
-  JoinEntryInstr* join =
-      new(Z) JoinEntryInstr(AllocateBlockId(),
-                            CatchClauseNode::kInvalidTryIndex);
+  JoinEntryInstr* join = BuildJoinEntry();
   then_fragment += Goto(join);
   otherwise_fragment += Goto(join);
 
@@ -1575,9 +1706,7 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
     constant_fragment += StoreLocal(parsed_function_->expression_temp_var());
     constant_fragment += Drop();
 
-    JoinEntryInstr* join =
-        new(Z) JoinEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
+    JoinEntryInstr* join = BuildJoinEntry();
     right_fragment += Goto(join);
     constant_fragment += Goto(join);
 
@@ -1588,9 +1717,7 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
 
     TargetEntryInstr* null_entry;
     TargetEntryInstr* nonnull_entry;
-    JoinEntryInstr* join =
-        new(Z) JoinEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
+    JoinEntryInstr* join = BuildJoinEntry();
 
     // Evaluate `left` of `left ?? right` and compare it to null.
     Fragment instructions = TranslateExpression(node->left());
@@ -1746,6 +1873,31 @@ void FlowGraphBuilder::VisitLet(Let* node) {
 }
 
 
+void FlowGraphBuilder::VisitThrow(Throw* node) {
+  Fragment instructions;
+
+  instructions += TranslateExpression(node->expression());
+  instructions += PushArgument();
+  instructions += ThrowException();
+  ASSERT(instructions.is_closed());
+
+  fragment_ = instructions;
+}
+
+
+void FlowGraphBuilder::VisitRethrow(Rethrow* node) {
+  Fragment instructions;
+
+  instructions += LoadLocal(catch_block_->exception_var());
+  instructions += PushArgument();
+  instructions += LoadLocal(catch_block_->stack_trace_var());
+  instructions += PushArgument();
+  instructions += RethrowException(catch_block_->catch_try_index());
+
+  fragment_ = instructions;
+}
+
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               Array* argument_names) {
   if (node->types().length() != 0) {
@@ -1817,7 +1969,8 @@ void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
 
 void FlowGraphBuilder::VisitExpressionStatement(ExpressionStatement* node) {
   Fragment instructions = TranslateExpression(node->expression());
-  fragment_ = instructions + Drop();
+  instructions += Drop();
+  fragment_ = instructions;
 }
 
 
@@ -1832,7 +1985,8 @@ void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
       ? NullConstant()
       : TranslateExpression(node->initializer());
   instructions += StoreLocal(local);
-  fragment_ = instructions + Drop();
+  instructions += Drop();
+  fragment_ = instructions;
 }
 
 
@@ -1850,9 +2004,7 @@ void FlowGraphBuilder::VisitIfStatement(IfStatement* node) {
 
   if (then_fragment.is_open()) {
     if (otherwise_fragment.is_open()) {
-      JoinEntryInstr* join =
-          new(Z) JoinEntryInstr(AllocateBlockId(),
-                                CatchClauseNode::kInvalidTryIndex);
+      JoinEntryInstr* join = BuildJoinEntry();
       then_fragment += Goto(join);
       otherwise_fragment += Goto(join);
       fragment_ = Fragment(instructions.entry, join);
@@ -1879,9 +2031,7 @@ void FlowGraphBuilder::VisitWhileStatement(WhileStatement* node) {
 
   Instruction* entry;
   if (body.is_open()) {
-    JoinEntryInstr* join =
-        new(Z) JoinEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
+    JoinEntryInstr* join = BuildJoinEntry();
     body += Goto(join);
 
     Fragment loop(join);
@@ -1908,9 +2058,7 @@ void FlowGraphBuilder::VisitDoStatement(DoStatement* node) {
     return;
   }
 
-  JoinEntryInstr* join =
-      new(Z) JoinEntryInstr(AllocateBlockId(),
-                            CatchClauseNode::kInvalidTryIndex);
+  JoinEntryInstr* join = BuildJoinEntry();
   Fragment loop(join);
   loop += CheckStackOverflow();
   loop += body;
@@ -1950,9 +2098,7 @@ void FlowGraphBuilder::VisitForStatement(ForStatement* node) {
       body += TranslateExpression(updates[i]);
       body += Drop();
     }
-    JoinEntryInstr* join =
-        new(Z) JoinEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
+    JoinEntryInstr* join = BuildJoinEntry();
     declarations += Goto(join);
     body += Goto(join);
 
@@ -2003,9 +2149,7 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   body += TranslateStatement(node->body());
 
   if (body.is_open()) {
-    JoinEntryInstr* join =
-        new(Z) JoinEntryInstr(AllocateBlockId(),
-                              CatchClauseNode::kInvalidTryIndex);
+    JoinEntryInstr* join = BuildJoinEntry();
     instructions += Goto(join);
     body += Goto(join);
 
@@ -2167,34 +2311,203 @@ void FlowGraphBuilder::VisitContinueSwitchStatement(
 
 
 void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
-  Fragment instructions;
-
+  // There are 5 different cases where we need to execute the finally block:
+  //
+  //  a) 1/2/3th case: Special control flow going out of `node->body()`:
+  //
+  //   * [BreakStatement] transfers control to a [LabledStatement]
+  //   * [ContinueSwitchStatement] transfers control to a [SwitchCase]
+  //   * [ReturnStatement] returns a value
+  //
+  //   => All three cases will automatically append all finally blocks
+  //      between the branching point and the destination (so we don't need to
+  //      do anything here).
+  //
+  //  b) 4th case: Translating the body resulted in an open fragment (i.e. body
+  //               executes without any control flow out of it)
+  //
+  //   => We are responsible for jumping out of the body to a new block (with
+  //      different try index) and execute the finalizer.
+  //
+  //  c) 5th case: An exception occured inside the body.
+  //
+  //   => We are responsible for catching it, executing the finally block and
+  //      rethrowing the exception.
+  Fragment try_catch;
   {
-    TryFinallyBlock block(this, node->finalizer());
+    LocalVariable* exception_var;
+    LocalVariable* stack_trace_var;
+    JoinEntryInstr* body_entry;
+    CatchBlockEntryInstr* finally_entry;
+    JoinEntryInstr* after_try;
+    int try_handler_index = -1;
 
-    // There are 3 kinds of control flow instructions inside `node->body()`
-    // which potentially require executing the finalizer block:
-    //
-    //   * [BreakStatement] transfers control to a [LabledStatement]
-    //   * [ContinueSwitchStatement] transfers control to a [SwitchCase] block
-    //   * [ReturnStatement] returns a value
-    //
-    // => All three cases will automatically append all finally blocks between
-    //    the branching point and the destination.
-    instructions += TranslateStatement(node->body());
+    // Build scaffolding with TryEntry, CatchEntry, After blocks.
+    const Array& handler_types =
+        Array::ZoneHandle(Z, Array::New(1, Heap::kOld));
+    handler_types.SetAt(0, Object::dynamic_type());
+    try_catch = TryCatch(
+        handler_types, &try_handler_index, &body_entry, &finally_entry,
+        &after_try, &exception_var, &stack_trace_var);
+
+    {
+      // Fill in the body of the try.
+      Fragment try_body(body_entry);
+      {
+        TryCatchBlock tcb(this, try_handler_index);
+        TryFinallyBlock tfb(this, node->finalizer());
+        try_body += TranslateStatement(node->body());
+      }
+
+      if (try_body.is_open()) {
+        // Please note: The try index will be on level out of this block,
+        // thereby ensuring if there's an exception in the finally block we
+        // won't run it twice.
+        JoinEntryInstr* finally_entry = BuildJoinEntry();
+
+        try_body += Goto(finally_entry);
+
+        Fragment finally_body(finally_entry);
+        finally_body += TranslateStatement(node->finalizer());
+        finally_body += Goto(after_try);
+      } else {
+        try_body += Goto(after_try);
+      }
+    }
+
+    // Fill in the body of the catch.
+    Fragment finally_body(finally_entry);
+    finally_body += TranslateStatement(node->finalizer());
+    if (finally_body.is_open()) {
+      finally_body += LoadLocal(exception_var);
+      finally_body += PushArgument();
+      finally_body += LoadLocal(stack_trace_var);
+      finally_body += PushArgument();
+      finally_body += RethrowException(try_handler_index);
+      Drop();
+    }
   }
 
-  // The 4th case is when translating the body results in an open fragment, then
-  // we take care of appending the finally block here.
-  if (instructions.is_open()) {
-    instructions += TranslateStatement(node->finalizer());
+  fragment_ = try_catch;
+}
+
+
+void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
+  LocalVariable* exception_var;
+  LocalVariable* stack_trace_var;
+  JoinEntryInstr* body_entry;
+  CatchBlockEntryInstr* catch_entry;
+  JoinEntryInstr* after_try;
+  int try_handler_index = -1;
+
+  // Build guard type array.
+  const Array& handler_types =
+      Array::ZoneHandle(Z, Array::New(node->catches().length(), Heap::kOld));
+  for (int i = 0; i < node->catches().length(); i++) {
+    Catch* catch_clause = node->catches()[i];
+    if (catch_clause->guard() != NULL) {
+      DartTypeTranslator translator(this);
+      catch_clause->guard()->AcceptDartTypeVisitor(&translator);
+      handler_types.SetAt(i, translator.result());
+    } else {
+      handler_types.SetAt(i, Object::dynamic_type());
+    }
   }
 
-  // TODO(kustermann): The 5th case is when an exception occurs we need to run
-  // the finalizer block as well. Once we implement exceptions we should make
-  // sure to support that.
+  // Build scaffolding with TryEntry, CatchEntry, After blocks.
+  Fragment try_catch = TryCatch(
+      handler_types, &try_handler_index,
+      &body_entry, &catch_entry, &after_try, &exception_var, &stack_trace_var);
 
-  fragment_ = instructions;
+  // Fill in the body of the try.
+  {
+    TryCatchBlock block(this, try_handler_index);
+    Fragment body(body_entry);
+    body += TranslateStatement(node->body());
+    body += Goto(after_try);
+  }
+
+  // Fill in the body of the catch.
+  Fragment catch_body(catch_entry);
+  for (int i = 0; i < node->catches().length(); i++) {
+    scope_ = new LocalScope(scope_, 0, loop_depth_);
+    Catch* catch_clause = node->catches()[i];
+
+    Fragment catch_handler_body;
+
+    // Make user-defined `LocalVariable`s for exception/stack_trace
+    // (if necessary) and fill them with the global values.
+    if (catch_clause->exception() != NULL) {
+      AddVariable(
+          catch_clause->exception(),
+          MakeNonTemporary(H.DartSymbol(catch_clause->exception()->name())));
+      catch_handler_body += LoadLocal(exception_var);
+      catch_handler_body +=
+          StoreLocal(LookupVariable(catch_clause->exception()));
+      catch_handler_body += Drop();
+    }
+    if (catch_clause->stack_trace() != NULL) {
+      AddVariable(
+          catch_clause->stack_trace(),
+          MakeNonTemporary(H.DartSymbol(catch_clause->stack_trace()->name())));
+      catch_handler_body += LoadLocal(stack_trace_var);
+      catch_handler_body +=
+          StoreLocal(LookupVariable(catch_clause->stack_trace()));
+      catch_handler_body += Drop();
+    }
+
+    {
+      CatchBlock block(this, exception_var, stack_trace_var, try_handler_index);
+
+      catch_handler_body += TranslateStatement(catch_clause->body());
+      if (catch_handler_body.is_open()) {
+        catch_handler_body += Goto(after_try);
+      }
+    }
+
+    if (catch_clause->guard() != NULL) {
+      const dart::Type& guard_type =
+          dart::Type::Cast(dart::Object::ZoneHandle(Z, handler_types.At(i)));
+
+      catch_body += LoadLocal(exception_var);
+      catch_body += PushArgument();  // exception
+      catch_body += NullConstant();
+      catch_body += PushArgument();  // type arguments
+      catch_body += Constant(guard_type);
+      catch_body += PushArgument();  // guard type
+      catch_body += Constant(Object::bool_false());
+      catch_body += PushArgument();  // negate
+      catch_body += InstanceCall(
+          dart::Library::PrivateCoreLibName(Symbols::_instanceOf()),
+          Token::kIS,
+          4);
+
+      TargetEntryInstr* catch_entry;
+      TargetEntryInstr* next_catch_entry;
+      catch_body += Branch(&catch_entry, &next_catch_entry);
+
+      Fragment(catch_entry) + catch_handler_body;
+      catch_body = Fragment(next_catch_entry);
+    } else {
+      catch_body += catch_handler_body;
+    }
+
+    scope_ = scope_->parent();
+  }
+
+  // In case the last catch body was not handling the exception and branching to
+  // after the try block, we will rethrow the exception (i.e. no default catch
+  // handler).
+  if (catch_body.is_open()) {
+    catch_body += LoadLocal(exception_var);
+    catch_body += PushArgument();
+    catch_body += LoadLocal(stack_trace_var);
+    catch_body += PushArgument();
+    catch_body += RethrowException(try_handler_index);
+    Drop();
+  }
+
+  fragment_ = try_catch;
 }
 
 

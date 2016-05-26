@@ -16,7 +16,9 @@ namespace dart {
 namespace dil {
 
 class BreakableBlock;
+class CatchBlock;
 class SwitchBlock;
+class TryCatchBlock;
 class TryFinallyBlock;
 
 class Fragment {
@@ -109,6 +111,8 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitListLiteral(ListLiteral* node);
   virtual void VisitMapLiteral(MapLiteral* node);
   virtual void VisitLet(Let* node);
+  virtual void VisitThrow(Throw* node);
+  virtual void VisitRethrow(Rethrow* node);
 
   virtual void VisitEmptyStatement(EmptyStatement* node);
   virtual void VisitBlock(Block* node);
@@ -125,6 +129,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitSwitchStatement(SwitchStatement* node);
   virtual void VisitContinueSwitchStatement(ContinueSwitchStatement* node);
   virtual void VisitTryFinally(TryFinally* node);
+  virtual void VisitTryCatch(TryCatch* node);
 
   void AdjustTemporaries(int base);
 
@@ -133,6 +138,9 @@ class FlowGraphBuilder : public TreeVisitor {
                                   Constructor* constructor = NULL);
   FlowGraph* BuildGraphOfFieldAccessor(Field* node);
   FlowGraph* BuildGraphOfStaticFieldInitializer(Field* node);
+
+  TargetEntryInstr* BuildTargetEntry();
+  JoinEntryInstr* BuildJoinEntry();
 
   Fragment TranslateArguments(Arguments* node, Array* argument_names);
   ArgumentArray GetArguments(int count);
@@ -147,7 +155,6 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Fragment TranslateExpression(Expression* expression) {
     expression->AcceptExpressionVisitor(this);
-    ASSERT(fragment_.is_open());
     return fragment_;
   }
 
@@ -160,6 +167,13 @@ class FlowGraphBuilder : public TreeVisitor {
                   TargetEntryInstr** otherwise_entry);
   Fragment BranchIfNull(TargetEntryInstr** then_entry,
                         TargetEntryInstr** otherwise_entry);
+  Fragment TryCatch(const Array& handler_types,
+                    int* try_handler_index,
+                    JoinEntryInstr** body,
+                    CatchBlockEntryInstr** catch_body,
+                    JoinEntryInstr** after_try,
+                    LocalVariable** exception_var,
+                    LocalVariable** stack_trace_var);
   Fragment CheckStackOverflow();
   Fragment Constant(const Object& value);
   Fragment CreateArray();
@@ -172,6 +186,8 @@ class FlowGraphBuilder : public TreeVisitor {
                         Token::Kind kind,
                         int argument_count,
                         const Array& argument_names);
+  Fragment ThrowException();
+  Fragment RethrowException(int catch_try_index);
   Fragment LoadField(const dart::Field& field);
   Fragment LoadLocal(LocalVariable* variable);
   Fragment InitStaticField(const dart::Field& field);
@@ -201,6 +217,9 @@ class FlowGraphBuilder : public TreeVisitor {
 
   LocalVariable* MakeTemporary();
   LocalVariable* MakeNonTemporary(const dart::String& symbol);
+
+  intptr_t CurrentTryIndex();
+  intptr_t AllocateTryIndex() { return next_used_try_index_++; }
 
   void AddVariable(VariableDeclaration* declaration, LocalVariable* variable);
   void AddParameter(VariableDeclaration* declaration,
@@ -236,6 +255,8 @@ class FlowGraphBuilder : public TreeVisitor {
   Value* stack_;
   int pending_argument_count_;
 
+  GraphEntryInstr* graph_entry_;
+
   // Only non-NULL for instance functions.
   LocalVariable* this_variable_;
 
@@ -251,9 +272,20 @@ class FlowGraphBuilder : public TreeVisitor {
   // [TryFinallyBlock] class.
   TryFinallyBlock* try_finally_block_;
 
+  // A chained list of try-catch blocks. Chaining and lookup is done by the
+  // [TryCatchBlock] class.
+  TryCatchBlock* try_catch_block_;
+  int next_used_try_index_;
+
+  // A chained list of catch blocks. Chaining and lookup is done by the
+  // [CatchBlock] class.
+  CatchBlock* catch_block_;
+
   friend class BreakableBlock;
-  friend class SwitchBlock;
+  friend class CatchBlock;
   friend class DartTypeTranslator;
+  friend class SwitchBlock;
+  friend class TryCatchBlock;
   friend class TryFinallyBlock;
 };
 
