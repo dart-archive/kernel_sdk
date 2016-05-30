@@ -745,7 +745,7 @@ void FlowGraphCompiler::EmitInstructionEpilogue(Instruction* instr) {
     return;
   }
   Definition* defn = instr->AsDefinition();
-  if ((defn != NULL) && defn->HasTemp() && !defn->IsPushTemp()) {
+  if ((defn != NULL) && defn->HasTemp()) {
     Location value = defn->locs()->out(0);
     if (value.IsRegister()) {
       __ pushq(value.reg());

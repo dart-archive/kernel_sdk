@@ -945,7 +945,9 @@ Fragment FlowGraphBuilder::Drop() {
   ASSERT(stack_ != NULL);
   Fragment instructions;
   Definition* definition = stack_->definition();
-  if (definition->HasSSATemp()) {
+  // The SSA renaming implementation doesn't like [LoadLocal]s without a
+  // tempindex.
+  if (definition->HasSSATemp() || definition->IsLoadLocal()) {
     instructions <<= new(Z) DropTempsInstr(1, NULL);
   } else {
     definition->ClearTempIndex();
