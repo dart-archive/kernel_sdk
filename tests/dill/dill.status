@@ -2679,6 +2679,5 @@ unsorted/klass_test: Crash
 unsorted/load_store_test: Crash
 unsorted/rethrow_test: Crash
 unsorted/superclass_test: Crash
-unsorted/switch_case_test: Crash
 unsorted/throw_try_catch_test: Crash
 unsorted/try_finally_test: Crash

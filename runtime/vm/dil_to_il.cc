@@ -2257,7 +2257,18 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
     if (switch_case->is_default()) {
       ASSERT(i == (node->cases().length() - 1));
       ASSERT(switch_case->expressions().length() == 0);
-      current_instructions += body_fragments[i];
+
+      if (block.HadJumper(switch_case)) {
+        // There are several branches to the body, so we will make a goto to
+        // the join block (and prepend a join instruction to the real body).
+        JoinEntryInstr* join = block.Destination(switch_case, NULL);
+        current_instructions += Goto(join);
+
+        current_instructions = Fragment(current_instructions.entry, join);
+        current_instructions += body_fragments[i];
+      } else {
+        current_instructions += body_fragments[i];
+      }
     } else {
       for (int j = 0; j < switch_case->expressions().length(); j++) {
         TargetEntryInstr* then;
