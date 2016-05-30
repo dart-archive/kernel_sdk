@@ -2671,32 +2671,14 @@ co19/LibTest/typed_data/Uint8List/where_A03_t01_test: Crash
 
 
 [ $compiler == precompiler && $runtime == dart_precompiled ]
-unsorted/load_store_test: Crash
-unsorted/superclass_test: Crash
-unsorted/rethrow_test: Crash
-unsorted/throw_try_catch_test: Crash
-unsorted/try_finally_test: Crash
-unsorted/invocation_test: Crash
 unsorted/block_scope_test: Crash
 unsorted/factory_regression_test: Crash
-unsorted/klass_test: Crash
-unsorted/as_is_test: Crash
 unsorted/global_field_initializer_test: Crash
 unsorted/global_function_test: Crash
-unsorted/switch_case_test: Crash
-unsorted/loop_test: Crash
+unsorted/klass_test: Crash
 unsorted/load_store_test: Crash
-unsorted/superclass_test: Crash
 unsorted/rethrow_test: Crash
+unsorted/superclass_test: Crash
+unsorted/switch_case_test: Crash
 unsorted/throw_try_catch_test: Crash
 unsorted/try_finally_test: Crash
-unsorted/invocation_test: Crash
-unsorted/block_scope_test: Crash
-unsorted/factory_regression_test: Crash
-unsorted/klass_test: Crash
-unsorted/as_is_test: Crash
-unsorted/global_field_initializer_test: Crash
-unsorted/global_function_test: Crash
-unsorted/switch_case_test: Crash
-unsorted/loop_test: RuntimeError
-

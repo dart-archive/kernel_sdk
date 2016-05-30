@@ -1304,10 +1304,11 @@ void FlowGraphBuilder::AdjustTemporaries(int base) {
 ArgumentArray FlowGraphBuilder::GetArguments(int count) {
   ArgumentArray arguments =
       new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, count);
+  arguments->SetLength(count);
   for (int i = count - 1; i >= 0; --i) {
     ASSERT(stack_->definition()->IsPushArgument());
     ASSERT(!stack_->definition()->HasSSATemp());
-    arguments->Add(stack_->definition()->AsPushArgument());
+    arguments->data()[i] = stack_->definition()->AsPushArgument();
     Drop();
   }
   pending_argument_count_ -= count;
