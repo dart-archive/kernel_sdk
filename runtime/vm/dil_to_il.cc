@@ -21,7 +21,7 @@ namespace dil {
 
 class ScopeBuilder : public RecursiveVisitor {
  public:
-  ScopeBuilder(FlowGraphBuilder* builder)
+  explicit ScopeBuilder(FlowGraphBuilder* builder)
       : builder_(builder),
         zone_(builder->zone_),
         translation_helper_(builder->translation_helper_),
@@ -711,6 +711,12 @@ const dart::String& TranslationHelper::DartSetterName(String* content) {
 const dart::String& TranslationHelper::DartGetterName(String* content) {
   return dart::String::ZoneHandle(Z,
       dart::Field::GetterSymbol(DartString(content)));
+}
+
+
+const dart::String& TranslationHelper::DartInitializerName(String* content) {
+  return dart::String::Handle(Z,
+      Symbols::FromConcat(Symbols::InitPrefix(), DartSymbol(content)));
 }
 
 

@@ -1458,11 +1458,24 @@ RawObject* Compiler::EvaluateStaticInitializer(const Field& field) {
     // it now, but don't bother remembering it because it won't be used again.
     ASSERT(!field.HasPrecompiledInitializer());
     Thread* const thread = Thread::Current();
-    StackZone zone(thread);
-    ParsedFunction* parsed_function =
-        Parser::ParseStaticFieldInitializer(field);
+    StackZone _(thread);
+    Zone* zone = thread->zone();
+    ParsedFunction* parsed_function;
 
-    parsed_function->AllocateVariables();
+    const Class& klass = Class::Handle(zone, field.Owner());
+    const String& init_name = String::Handle(
+        zone,
+        Symbols::FromConcat(Symbols::InitPrefix(),
+        String::Handle(zone, field.name())));
+    const Function& initializer_fun = Function::ZoneHandle(zone,
+        klass.LookupFunctionAllowPrivate(init_name));
+    if (!initializer_fun.IsNull() && initializer_fun.dil_function() != 0) {
+      parsed_function = new(zone) ParsedFunction(thread, initializer_fun);
+    } else {
+      parsed_function = Parser::ParseStaticFieldInitializer(field);
+      parsed_function->AllocateVariables();
+    }
+
     // Non-optimized code generator.
     DartCompilationPipeline pipeline;
     CompileParsedFunctionHelper helper(parsed_function, false, kNoOSRDeoptId);

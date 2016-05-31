@@ -64,6 +64,7 @@ class TranslationHelper {
 
   const dart::String& DartSetterName(String* content);
   const dart::String& DartGetterName(String* content);
+  const dart::String& DartInitializerName(String* content);
   const dart::String& DartFactoryName(String* klass_name, String* method_name);
 
  private:

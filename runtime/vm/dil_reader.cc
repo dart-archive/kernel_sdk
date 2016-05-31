@@ -20,6 +20,7 @@ namespace dil {
 // FIXME(kustermann): We should add support for type conversion to annotate
 // fields/parameters/variables with proper types.
 
+
 class SimpleExpressionConverter : public ExpressionVisitor {
  public:
   explicit SimpleExpressionConverter(Zone* zone)
@@ -70,7 +71,6 @@ class SimpleExpressionConverter : public ExpressionVisitor {
   bool is_simple_;
   const dart::Instance* simple_value_;
 };
-
 
 Object& DilReader::ReadProgram() {
   Program* program = ReadPrecompiledDilFromBuffer(buffer_, buffer_length_);
@@ -248,7 +248,6 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     function.set_dil_function(reinterpret_cast<intptr_t>(dil_constructor));
     function.set_result_type(klass_type);
     SetupFunctionParameters(klass, function, dil_constructor->function(), true);
-    library.AddObject(function, name);
   }
 
   for (int i = 0; i < dil_klass->procedures().length(); i++) {
@@ -418,14 +417,14 @@ void DilReader::GenerateStaticFieldInitializer(const dart::Field& field,
     if (converter.IsSimple(initializer)) {
       field.SetStaticValue(converter.SimpleValue(), true);
     } else {
-      field.SetStaticValue(Object::null_instance(), true);
+      field.SetStaticValue(Object::sentinel(), true);
 
       // Create a static final getter.
       dart::Class& owner = dart::Class::Handle(Z, field.Owner());
-      const dart::String& getter_name =
-          H.DartGetterName(dil_field->name()->string());  // NOLINT
-      dart::Function& getter = dart::Function::Handle(Z,
-          dart::Function::New(getter_name,
+      const dart::String& initializer_name =
+          H.DartInitializerName(dil_field->name()->string());  // NOLINT
+      dart::Function& initializer = dart::Function::Handle(Z,
+          dart::Function::New(initializer_name,
                               RawFunction::kImplicitStaticFinalGetter,
                               true,  // is_static
                               false,  // is_const
@@ -434,11 +433,11 @@ void DilReader::GenerateStaticFieldInitializer(const dart::Field& field,
                               false,  // is_native
                               owner,
                               TokenPosition::kNoSource));
-      getter.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
-      getter.set_result_type(AbstractType::dynamic_type());
-      getter.set_is_debuggable(false);
-      getter.set_is_reflectable(false);
-      owner.AddFunction(getter);
+      initializer.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
+      initializer.set_result_type(AbstractType::dynamic_type());
+      initializer.set_is_debuggable(false);
+      initializer.set_is_reflectable(false);
+      owner.AddFunction(initializer);
     }
   }
 }
