@@ -2,20 +2,24 @@
 
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SDK_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )"
-DILC=$SDK_ROOT/third_party/kernel/bin/dartk.dart
+RASTA_ROOT=$SDK_ROOT/third_party/rasta
+DILC=bin/rastak
 DART_SDK="$(dirname $(dirname $(which dart)))";
 FILE=$1
 OUTPUT_FILE=$2
 
 function compile {
-  dartfile=$1
-  dillfile=$2
-  if [ -z "$dillfile" ]; then
+  dartfile=$(realpath $1)
+  if [ -z "$2" ]; then
     dillfile=${dartfile%.dart}.dill
+  else
+    dillfile=$(realpath $2)
   fi
 
   echo "Compiling $dartfile to $dillfile"
-  dart $DILC $dartfile --format=bin --link --sdk="$DART_SDK" --out=$dillfile
+  pushd $RASTA_ROOT
+  $DILC $dartfile $dillfile
+  popd
 }
 
 if [ -f "$FILE" ]; then

@@ -47,6 +47,7 @@ vars = {
   "dart_style_tag": "@0.2.4",
   "dev_compiler_rev": "@0c5dd2d1e999c421d978a478e267aac6279e087a",
   "kernel_rev": "@02604e988e296758656034a7c64203c479a78382",
+  "rasta_rev": "@9d1f0dc1bb81b3d98377335b82c63daab803e877",
   "glob_rev": "@704cf75e4f26b417505c5c611bdaacd8808467dd",
   "html_tag" : "@0.12.1+1",
   "http_tag" : "@0.11.3+3",
@@ -177,6 +178,8 @@ deps = {
       (Var("github_mirror") % "dartdoc") + Var("dartdoc_tag"),
   Var("dart_root") + "/third_party/kernel":
       ("https://github.com/dart-lang/kernel.git") + Var("kernel_rev"),
+  Var("dart_root") + "/third_party/rasta":
+      ("https://github.com/dart-lang/rasta.git") + Var("rasta_rev"),
   Var("dart_root") + "/third_party/pkg/dev_compiler":
       (Var("github_mirror") % "dev_compiler") + Var("dev_compiler_rev"),
   Var("dart_root") + "/third_party/pkg/glob":
@@ -315,6 +318,15 @@ deps_os = {
 # TODO(iposva): Move the necessary tools so that hooks can be run
 # without the runtime being available.
 hooks = [
+  {
+    'name': 'sync_rasta_submodules',
+    'pattern': '.',
+    'action': [
+      'python',
+      Var('dart_root') + '/tools/git_submodules_sync.py',
+      Var('dart_root') + '/third_party/rasta',
+    ],
+  },
   {
     'name': 'd8_testing_binaries',
     'pattern': '.',
