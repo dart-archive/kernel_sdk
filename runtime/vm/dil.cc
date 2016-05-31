@@ -46,7 +46,7 @@ void NormalClass::AcceptReferenceVisitor(ClassReferenceVisitor* visitor) {
 }
 void NormalClass::VisitChildren(Visitor* visitor) {
   VisitList(type_parameters(), visitor);
-  visitor->VisitInterfaceType(super_class());
+  if (super_class() != NULL) visitor->VisitInterfaceType(super_class());
   VisitList(implemented_classes(), visitor);
   VisitList(constructors(), visitor);
   VisitList(procedures(), visitor);
@@ -83,7 +83,7 @@ void Field::AcceptReferenceVisitor(MemberReferenceVisitor* visitor) {
 void Field::VisitChildren(Visitor* visitor) {
   type()->AcceptDartTypeVisitor(visitor);
   visitor->VisitName(name());
-  initializer()->AcceptExpressionVisitor(visitor);
+  if (initializer() != NULL) initializer()->AcceptExpressionVisitor(visitor);
 }
 
 Constructor::~Constructor() {}
@@ -108,7 +108,7 @@ void Procedure::AcceptReferenceVisitor(MemberReferenceVisitor* visitor) {
 }
 void Procedure::VisitChildren(Visitor* visitor) {
   visitor->VisitName(name());
-  visitor->VisitFunctionNode(function());
+  if (function() != NULL) visitor->VisitFunctionNode(function());
 }
 
 Initializer::~Initializer() {}
@@ -157,6 +157,8 @@ void FunctionNode::VisitChildren(Visitor* visitor) {
   VisitList(type_parameters(), visitor);
   VisitList(positional_parameters(), visitor);
   VisitList(named_parameters(), visitor);
+  if (return_type() != NULL) return_type()->AcceptDartTypeVisitor(visitor);
+  if (body() != NULL) body()->AcceptStatementVisitor(visitor);
 }
 
 Expression::~Expression() {}
@@ -504,7 +506,7 @@ void AssertStatement::AcceptStatementVisitor(StatementVisitor* visitor) {
 }
 void AssertStatement::VisitChildren(Visitor* visitor) {
   condition()->AcceptExpressionVisitor(visitor);
-  message()->AcceptExpressionVisitor(visitor);
+  if (message() != NULL) message()->AcceptExpressionVisitor(visitor);
 }
 
 LabeledStatement::~LabeledStatement() {}
@@ -545,7 +547,7 @@ void ForStatement::AcceptStatementVisitor(StatementVisitor* visitor) {
 }
 void ForStatement::VisitChildren(Visitor* visitor) {
   VisitList(variables(), visitor);
-  condition()->AcceptExpressionVisitor(visitor);
+  if (condition() != NULL) condition()->AcceptExpressionVisitor(visitor);
   VisitList(updates(), visitor);
   body()->AcceptStatementVisitor(visitor);
 }
@@ -599,7 +601,7 @@ void ReturnStatement::AcceptStatementVisitor(StatementVisitor* visitor) {
   visitor->VisitReturnStatement(this);
 }
 void ReturnStatement::VisitChildren(Visitor* visitor) {
-  expression()->AcceptExpressionVisitor(visitor);
+  if (expression() != NULL) expression()->AcceptExpressionVisitor(visitor);
 }
 
 TryCatch::~TryCatch() {}
@@ -616,8 +618,8 @@ void Catch::AcceptTreeVisitor(TreeVisitor* visitor) {
   visitor->VisitCatch(this);
 }
 void Catch::VisitChildren(Visitor* visitor) {
-  visitor->VisitVariableDeclaration(exception());
-  visitor->VisitVariableDeclaration(stack_trace());
+  if (exception() != NULL) visitor->VisitVariableDeclaration(exception());
+  if (stack_trace() != NULL) visitor->VisitVariableDeclaration(stack_trace());
   body()->AcceptStatementVisitor(visitor);
 }
 
@@ -643,8 +645,8 @@ void VariableDeclaration::AcceptStatementVisitor(StatementVisitor* visitor) {
   visitor->VisitVariableDeclaration(this);
 }
 void VariableDeclaration::VisitChildren(Visitor* visitor) {
-  type()->AcceptDartTypeVisitor(visitor);
-  initializer()->AcceptExpressionVisitor(visitor);
+  if (type() != NULL) type()->AcceptDartTypeVisitor(visitor);
+  if (initializer() != NULL) initializer()->AcceptExpressionVisitor(visitor);
 }
 
 FunctionDeclaration::~FunctionDeclaration() {}

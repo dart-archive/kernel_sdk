@@ -261,6 +261,8 @@ class String {
   uint8_t* buffer() { return buffer_; }
   int size() { return size_; }
 
+  bool is_empty() { return size_ == 0; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(String);
 
@@ -2520,6 +2522,19 @@ class Visitor : public TreeVisitor,
   virtual void VisitDefaultMemberReference(Member* node) {
     VisitDefaultNode(node);
   }
+};
+
+
+class RecursiveVisitor : public Visitor {
+ public:
+  virtual ~RecursiveVisitor() {}
+
+  virtual void VisitDefaultNode(Node* node) {
+    node->VisitChildren(this);
+  }
+
+  virtual void VisitDefaultClassReference(Class* node) {}
+  virtual void VisitDefaultMemberReference(Member* node) {}
 };
 
 

@@ -97,13 +97,7 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
     dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(dil_node);
     dil::FlowGraphBuilder builder(node, parsed_function);
     FlowGraph* graph = builder.BuildGraph();
-    if (graph != NULL) {
-      parsed_function->AllocateVariables();
-      builder.AdjustTemporaries(
-          parsed_function->first_stack_local_index() -
-          parsed_function->num_stack_locals());
-      return graph;
-    }
+    if (graph != NULL) return graph;
   }
   FlowGraphBuilder builder(*parsed_function,
                            ic_data_array,

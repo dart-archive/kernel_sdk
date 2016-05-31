@@ -897,7 +897,7 @@ Class* Class::ReadFrom(Reader* reader) {
 
 void Class::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteBool(is_abstract_);  
+  writer->WriteBool(is_abstract_);
   name_->WriteTo(writer);
 }
 
@@ -2270,11 +2270,11 @@ VariableDeclaration* VariableDeclaration::ReadFrom(Reader* reader) {
 VariableDeclaration* VariableDeclaration::ReadFromImpl(Reader* reader) {
   TRACE_READ_OFFSET();
   VariableDeclaration* decl = new VariableDeclaration();
-  reader->helper()->variables().Push(decl);
   decl->flags_ = reader->ReadFlags();
   decl->name_ = Reference::ReadStringFrom(reader);
   decl->type_ = reader->ReadOptional<DartType>();
   decl->initializer_ = reader->ReadOptional<Expression>();
+  reader->helper()->variables().Push(decl);
   return decl;
 }
 
@@ -2286,11 +2286,11 @@ void VariableDeclaration::WriteTo(Writer* writer) {
 
 void VariableDeclaration::WriteToImpl(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->helper()->variables().Push(this);
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
   writer->WriteOptional<DartType>(type_);
   writer->WriteOptional<Expression>(initializer_);
+  writer->helper()->variables().Push(this);
 }
 
 FunctionDeclaration* FunctionDeclaration::ReadFrom(Reader* reader) {

@@ -54,8 +54,8 @@ class TranslationHelper {
 
   const dart::String& DartString(const char* content);
   dart::String& DartString(String* content, Heap::Space space = Heap::kNew);
-  const dart::String& DartSymbol(const char* content);
-  const dart::String& DartSymbol(String* content);
+  const dart::String& DartSymbol(const char* content) const;
+  const dart::String& DartSymbol(String* content) const;
 
   const dart::String& DartClassName(Class* dil_klass);
 
@@ -131,12 +131,11 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitTryFinally(TryFinally* node);
   virtual void VisitTryCatch(TryCatch* node);
 
-  void AdjustTemporaries(int base);
-
  private:
   FlowGraph* BuildGraphOfFunction(FunctionNode* node,
                                   Constructor* constructor = NULL);
-  FlowGraph* BuildGraphOfFieldAccessor(Field* node);
+  FlowGraph* BuildGraphOfFieldAccessor(Field* node,
+                                       LocalVariable* setter_value);
   FlowGraph* BuildGraphOfStaticFieldInitializer(Field* node);
 
   TargetEntryInstr* BuildTargetEntry();
@@ -167,13 +166,8 @@ class FlowGraphBuilder : public TreeVisitor {
                   TargetEntryInstr** otherwise_entry);
   Fragment BranchIfNull(TargetEntryInstr** then_entry,
                         TargetEntryInstr** otherwise_entry);
-  Fragment TryCatch(const Array& handler_types,
-                    int* try_handler_index,
-                    JoinEntryInstr** body,
-                    CatchBlockEntryInstr** catch_body,
-                    JoinEntryInstr** after_try,
-                    LocalVariable** exception_var,
-                    LocalVariable** stack_trace_var);
+  Fragment CatchBlockEntry(const Array& handler_types, int handler_index);
+  Fragment TryCatch(int try_handler_index);
   Fragment CheckStackOverflow();
   Fragment Constant(const Object& value);
   Fragment CreateArray();
@@ -247,10 +241,9 @@ class FlowGraphBuilder : public TreeVisitor {
   int AllocateBlockId() { return next_block_id_++; }
 
   std::map<VariableDeclaration*, LocalVariable*> locals_;
-  std::vector<LocalVariable*> temporaries_;
 
-  LocalScope* scope_;
   int loop_depth_;
+  unsigned handler_depth_;
   Fragment fragment_;
   Value* stack_;
   int pending_argument_count_;
@@ -259,6 +252,22 @@ class FlowGraphBuilder : public TreeVisitor {
 
   // Only non-NULL for instance functions.
   LocalVariable* this_variable_;
+
+  // Non-NULL when the function contains a switch statement.
+  LocalVariable* switch_variable_;
+
+  // Non-NULL when the function contains a return inside a finally block.
+  LocalVariable* finally_return_variable_;
+
+  std::vector<LocalVariable*> exception_variables_;
+  std::vector<LocalVariable*> stack_trace_variables_;
+
+  LocalVariable* CurrentException() {
+    return exception_variables_[handler_depth_ - 1];
+  }
+  LocalVariable* CurrentStackTrace() {
+    return stack_trace_variables_[handler_depth_ - 1];
+  }
 
   // A chained list of breakable blocks. Chaining and lookup is done by the
   // [BreakableBlock] class.
@@ -284,6 +293,7 @@ class FlowGraphBuilder : public TreeVisitor {
   friend class BreakableBlock;
   friend class CatchBlock;
   friend class DartTypeTranslator;
+  friend class ScopeBuilder;
   friend class SwitchBlock;
   friend class TryCatchBlock;
   friend class TryFinallyBlock;
