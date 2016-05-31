@@ -72,8 +72,6 @@ co19/Language/Enums/declaration_equivalent_t05_test: Crash
 co19/Language/Enums/declaration_equivalent_t06_test: Crash
 co19/Language/Enums/declaration_equivalent_t08_test: Crash
 co19/Language/Enums/declaration_equivalent_t09_test: Crash
-co19/Language/Enums/syntax_t01_test: RuntimeError
-co19/Language/Enums/syntax_t03_test: RuntimeError
 co19/Language/Expressions/Additive_Expressions/syntax_t01_test: Crash
 co19/Language/Expressions/Additive_Expressions/syntax_t11_test: Crash
 co19/Language/Expressions/Additive_Expressions/syntax_t12_test: Crash
@@ -239,7 +237,6 @@ co19/Language/Expressions/Identifier_Reference/evaluation_function_t01_test: Run
 co19/Language/Expressions/Identifier_Reference/evaluation_function_t02_test: Crash
 co19/Language/Expressions/Identifier_Reference/evaluation_function_t03_test: Crash
 co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t01_test: RuntimeError
-co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t02_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t03_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_property_extraction_t01_test: Crash
 co19/Language/Expressions/Identifier_Reference/evaluation_property_extraction_t03_test: RuntimeError
@@ -447,7 +444,6 @@ co19/Language/Expressions/Object_Identity/constant_lists_t02_test: Crash
 co19/Language/Expressions/Object_Identity/constant_maps_t01_test: Crash
 co19/Language/Expressions/Object_Identity/constant_maps_t02_test: Crash
 co19/Language/Expressions/Object_Identity/constant_objects_t01_test: RuntimeError
-co19/Language/Expressions/Object_Identity/object_t01_test: RuntimeError
 co19/Language/Expressions/Object_Identity/string_t01_test: RuntimeError
 co19/Language/Expressions/Postfix_Expressions/syntax_t01_test: Crash
 co19/Language/Expressions/Postfix_Expressions/syntax_t02_test: Crash
@@ -995,7 +991,6 @@ co19/Language/Types/Type_dynamic/dynamic_t03_test: Crash
 co19/Language/Types/Type_dynamic/dynamic_t04_test: Crash
 co19/Language/Types/Type_dynamic/dynamic_t05_test: Crash
 co19/Language/Variables/Evaluation_of_Implicit_Variable_Getters/definition_t02_test: Crash
-co19/Language/Variables/Evaluation_of_Implicit_Variable_Getters/definition_t05_test: RuntimeError
 co19/Language/Variables/constant_initialization_t03_test: Crash
 co19/Language/Variables/constant_variable_t01_test: Crash
 co19/Language/Variables/constant_variable_t02_test: Crash
@@ -1013,7 +1008,6 @@ co19/Language/Variables/implicit_setter_void_t02_test: Crash
 co19/Language/Variables/implicit_setter_void_t03_test: Crash
 co19/Language/Variables/implicit_setter_void_t05_test: Crash
 co19/Language/Variables/implicit_setter_void_t06_test: Crash
-co19/Language/Variables/implicit_setter_void_t07_test: RuntimeError
 co19/Language/Variables/local_variable_t03_test: Crash
 co19/Language/Variables/local_variable_t06_test: Crash
 co19/Language/Variables/static_variable_initialization_t01_test: Crash

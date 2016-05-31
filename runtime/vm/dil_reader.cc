@@ -309,6 +309,10 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
       klass,
       pos));
   klass.AddFunction(getter);
+  if (klass.IsTopLevel()) {
+    dart::Library& library = dart::Library::Handle(Z, klass.library());
+    library.AddObject(getter, getter_name);
+  }
   getter.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
   getter.set_result_type(AbstractType::dynamic_type());
   getter.set_is_debuggable(false);
