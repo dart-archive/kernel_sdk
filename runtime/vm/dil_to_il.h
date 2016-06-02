@@ -53,6 +53,8 @@ class TranslationHelper {
  public:
   explicit TranslationHelper(dart::Zone* zone) : zone_(zone) {}
 
+  Zone* zone() { return zone_; }
+
   const dart::String& DartString(const char* content);
   dart::String& DartString(String* content, Heap::Space space = Heap::kNew);
   const dart::String& DartSymbol(const char* content) const;
@@ -152,6 +154,12 @@ class ConstantEvaluator : public ExpressionVisitor {
 };
 
 
+struct FunctionScope {
+  FunctionNode* function;
+  LocalScope* scope;
+};
+
+
 class FlowGraphBuilder : public TreeVisitor {
  public:
   FlowGraphBuilder(TreeNode* node,
@@ -192,6 +200,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitStringConcatenation(StringConcatenation* node);
   virtual void VisitListLiteral(ListLiteral* node);
   virtual void VisitMapLiteral(MapLiteral* node);
+  virtual void VisitFunctionExpression(FunctionExpression* node);
   virtual void VisitLet(Let* node);
   virtual void VisitThrow(Throw* node);
   virtual void VisitRethrow(Rethrow* node);
@@ -201,6 +210,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitReturnStatement(ReturnStatement* node);
   virtual void VisitExpressionStatement(ExpressionStatement* node);
   virtual void VisitVariableDeclaration(VariableDeclaration* node);
+  virtual void VisitFunctionDeclaration(FunctionDeclaration* node);
   virtual void VisitIfStatement(IfStatement* node);
   virtual void VisitWhileStatement(WhileStatement* node);
   virtual void VisitDoStatement(DoStatement* node);
@@ -241,7 +251,12 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Fragment TranslateFinallyFinalizers(TryFinallyBlock* outer_finally);
 
+  Fragment TranslateFunctionNode(FunctionNode* node, TreeNode* parent);
+
+  Fragment AllocateContext(int size);
   Fragment AllocateObject(const dart::Class& klass);
+  Fragment AllocateObject(const dart::Class& klass,
+                          const Function& closure_function);
   Fragment BooleanNegate();
   Fragment Boolify();
   Fragment Branch(TargetEntryInstr** then_entry,
@@ -265,6 +280,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment ThrowException();
   Fragment RethrowException(int catch_try_index);
   Fragment LoadField(const dart::Field& field);
+  Fragment LoadField(intptr_t offset);
   Fragment LoadLocal(LocalVariable* variable);
   Fragment InitStaticField(const dart::Field& field);
   Fragment LoadStaticField();
@@ -277,6 +293,7 @@ class FlowGraphBuilder : public TreeVisitor {
                       const Array& argument_names);
   Fragment StoreIndexed(intptr_t class_id);
   Fragment StoreInstanceField(const dart::Field& field);
+  Fragment StoreInstanceField(intptr_t offset);
   Fragment StoreLocal(LocalVariable* variable);
   Fragment StoreStaticField(const dart::Field& field);
 
@@ -315,8 +332,14 @@ class FlowGraphBuilder : public TreeVisitor {
   int next_block_id_;
   int AllocateBlockId() { return next_block_id_++; }
 
-  std::map<VariableDeclaration*, LocalVariable*> locals_;
+  int next_function_id_;
+  int AllocateFunctionId() { return next_function_id_++; }
 
+  std::map<VariableDeclaration*, LocalVariable*> locals_;
+  std::map<TreeNode*, LocalScope*> scopes_;
+  std::vector<FunctionScope> function_scopes_;
+
+  int context_depth_;
   int loop_depth_;
   unsigned handler_depth_;
   Fragment fragment_;

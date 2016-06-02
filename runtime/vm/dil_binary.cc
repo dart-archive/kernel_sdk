@@ -1112,7 +1112,7 @@ Constructor* Constructor::ReadFrom(Reader* reader) {
   Tag tag = reader->ReadTag();
   ASSERT(tag == kConstructor);
 
-  VariableScope<ReaderHelper> vars(reader->helper());
+  VariableScope<ReaderHelper> parameters(reader->helper());
   flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
   function_ = FunctionNode::ReadFrom(reader);
@@ -1124,7 +1124,7 @@ void Constructor::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kConstructor);
 
-  VariableScope<WriterHelper> vars(writer->helper());
+  VariableScope<WriterHelper> parameters(writer->helper());
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
   function_->WriteTo(writer);
@@ -1136,7 +1136,7 @@ Procedure* Procedure::ReadFrom(Reader* reader) {
   Tag tag = reader->ReadTag();
   ASSERT(tag == kProcedure);
 
-  VariableScope<ReaderHelper> vars(reader->helper());
+  VariableScope<ReaderHelper> parameters(reader->helper());
   kind_ = static_cast<ProcedureKind>(reader->ReadByte());
   flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
@@ -1148,7 +1148,7 @@ void Procedure::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kProcedure);
 
-  VariableScope<WriterHelper> vars(writer->helper());
+  VariableScope<WriterHelper> parameters(writer->helper());
   writer->WriteByte(kind_);
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
@@ -1862,6 +1862,7 @@ void AwaitExpression::WriteTo(Writer* writer) {
 
 FunctionExpression* FunctionExpression::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
+  VariableScope<ReaderHelper> parameters(reader->helper());
   FunctionExpression* expr = new FunctionExpression();
   expr->function_ = FunctionNode::ReadFrom(reader);
   return expr;
@@ -1869,6 +1870,7 @@ FunctionExpression* FunctionExpression::ReadFrom(Reader* reader) {
 
 void FunctionExpression::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
+  VariableScope<WriterHelper> parameters(writer->helper());
   writer->WriteTag(kFunctionExpression);
   function_->WriteTo(writer);
 }
@@ -2195,7 +2197,6 @@ void ReturnStatement::WriteTo(Writer* writer) {
 
 TryCatch* TryCatch::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  VariableScope<ReaderHelper> vars(reader->helper());
   TryCatch* tc = new TryCatch();
   tc->body_ = Statement::ReadFrom(reader);
   tc->catches_.ReadFromStatic<Catch>(reader);
@@ -2204,7 +2205,6 @@ TryCatch* TryCatch::ReadFrom(Reader* reader) {
 
 void TryCatch::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  VariableScope<WriterHelper> vars(writer->helper());
   writer->WriteTag(kTryCatch);
   body_->WriteTo(writer);
   catches_.WriteTo(writer);
@@ -2297,6 +2297,7 @@ FunctionDeclaration* FunctionDeclaration::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   FunctionDeclaration* decl = new FunctionDeclaration();
   decl->variable_ = VariableDeclaration::ReadFromImpl(reader);
+  VariableScope<ReaderHelper> parameters(reader->helper());
   decl->function_ = FunctionNode::ReadFrom(reader);
   return decl;
 }
@@ -2305,6 +2306,7 @@ void FunctionDeclaration::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kFunctionDeclaration);
   variable_->WriteToImpl(writer);
+  VariableScope<WriterHelper> parameters(writer->helper());
   function_->WriteTo(writer);
 }
 

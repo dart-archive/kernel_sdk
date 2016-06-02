@@ -5,8 +5,10 @@
 #include <map>
 #include <set>
 
-#include "vm/compiler.h"
 #include "vm/dil_to_il.h"
+
+#include "vm/compiler.h"
+#include "vm/dil_reader.h"
 #include "vm/intermediate_language.h"
 #include "vm/object_store.h"
 #include "vm/report.h"
@@ -65,9 +67,13 @@ class ScopeBuilder : public RecursiveVisitor {
 
   virtual void VisitName(Name* node) { /* NOP */ }
 
+  virtual void VisitVariableGet(VariableGet* node);
+  virtual void VisitVariableSet(VariableSet* node);
+  virtual void VisitFunctionExpression(FunctionExpression* node);
   virtual void VisitLet(Let* node);
   virtual void VisitBlock(Block* node);
   virtual void VisitVariableDeclaration(VariableDeclaration* node);
+  virtual void VisitFunctionDeclaration(FunctionDeclaration* node);
   virtual void VisitWhileStatement(WhileStatement* node);
   virtual void VisitDoStatement(DoStatement* node);
   virtual void VisitForStatement(ForStatement* node);
@@ -80,19 +86,27 @@ class ScopeBuilder : public RecursiveVisitor {
   virtual void VisitFunctionNode(FunctionNode* node);
 
  private:
-  void EnterScope();
+  void EnterScope(TreeNode* node);
   void ExitScope();
 
   LocalVariable* MakeVariable(const dart::String& name);
   LocalVariable* MakeVariable(const dart::String& name, const Type& type);
 
+  void AddParameters(FunctionNode* function, int pos = 0);
   void AddParameter(VariableDeclaration* declaration, int pos);
   void AddVariable(VariableDeclaration* declaration);
   void AddExceptionVariables();
 
+  // Record an assignment or reference to a variable.  If the occurrence is
+  // in a nested function, ensure that the variable is handled properly as a
+  // captured variable.
+  void LookupVariable(VariableDeclaration* declaration);
+
   const dart::String& GenerateName();
 
   const dart::String& GenerateHandlerName(const char* base);
+
+  void HandleLocalFunction(TreeNode* parent, FunctionNode* function);
 
   FlowGraphBuilder* builder_;
   Zone* zone_;
@@ -111,8 +125,9 @@ class ScopeBuilder : public RecursiveVisitor {
 };
 
 
-void ScopeBuilder::EnterScope() {
-  scope_ = new LocalScope(scope_, function_depth_, loop_depth_);
+void ScopeBuilder::EnterScope(TreeNode* node) {
+  scope_ = new(Z) LocalScope(scope_, function_depth_, loop_depth_);
+  builder_->scopes_[node] = scope_;
 }
 
 
@@ -134,7 +149,20 @@ LocalVariable* ScopeBuilder::MakeVariable(const dart::String& name,
 }
 
 
+void ScopeBuilder::AddParameters(FunctionNode* function, int pos) {
+  List<VariableDeclaration>& positional = function->positional_parameters();
+  for (int i = 0; i < positional.length(); ++i) {
+    AddParameter(positional[i], pos++);
+  }
+  List<VariableDeclaration>& named = function->named_parameters();
+  for (int i = 0; i < named.length(); ++i) {
+    AddParameter(named[i], pos++);
+  }
+}
+
+
 void ScopeBuilder::AddParameter(VariableDeclaration* declaration, int pos) {
+  // TODO(kmillikin): Handle final.
   LocalVariable* variable = MakeVariable(H.DartSymbol(declaration->name()));
   scope_->InsertParameterAt(pos, variable);
   builder_->locals_[declaration] = variable;
@@ -157,6 +185,26 @@ void ScopeBuilder::AddExceptionVariables() {
 }
 
 
+void ScopeBuilder::LookupVariable(VariableDeclaration* declaration) {
+  LocalVariable* variable = builder_->locals_[declaration];
+  if (variable == NULL) {
+    // We have not seen a declaration of the variable, so it must be the
+    // case that we are compiling a nested function and the variable is
+    // declared in an outer scope.  In that case, look it up in the scope by
+    // name and add it to the variable map to simplify later lookup.
+    ASSERT(function_scope_->parent() != NULL);
+    const dart::String& name = H.DartSymbol(declaration->name());
+    variable = function_scope_->parent()->LookupVariable(name, true);
+    ASSERT(variable != NULL);
+    builder_->locals_[declaration] = variable;
+  } else if (variable->owner()->function_level() < scope_->function_level()) {
+    scope_->CaptureVariable(variable);
+  } else {
+    ASSERT(variable->owner()->function_level() == scope_->function_level());
+  }
+}
+
+
 const dart::String& ScopeBuilder::GenerateName() {
   char name[64];
   OS::SNPrint(name, 64, ":var%d", name_index_++);
@@ -172,6 +220,7 @@ const dart::String& ScopeBuilder::GenerateHandlerName(const char* base) {
 
 
 void ScopeBuilder::AddVariable(VariableDeclaration* declaration) {
+  // TODO(kmillikin): Handle final and const, including function declarations.
   const dart::String& name = declaration->name()->is_empty()
       ? GenerateName()
       : H.DartSymbol(declaration->name());
@@ -185,43 +234,46 @@ void ScopeBuilder::BuildScopes() {
   ASSERT(scope_ == NULL && loop_depth_ == 0 && function_depth_ == 0);
 
   ParsedFunction* parsed_function = builder_->parsed_function_;
-  function_scope_ = scope_ = new LocalScope(NULL, 0, 0);
+  const dart::Function& function = parsed_function->function();
+
+  LocalScope* enclosing_scope = NULL;
+  if (function.IsLocalFunction()) {
+    enclosing_scope = LocalScope::RestoreOuterScope(
+        ContextScope::Handle(Z, function.context_scope()));
+  }
+  function_scope_ = scope_ = new(Z) LocalScope(enclosing_scope, 0, 0);
   scope_->AddVariable(parsed_function->EnsureExpressionTemp());
   scope_->AddVariable(parsed_function->current_context_var());
   parsed_function->SetNodeSequence(
       new SequenceNode(TokenPosition::kNoSource, scope_));
 
-  const dart::Function& function = parsed_function->function();
   switch (function.kind()) {
     case RawFunction::kClosureFunction:
     case RawFunction::kRegularFunction:
     case RawFunction::kGetterFunction:
     case RawFunction::kSetterFunction:
     case RawFunction::kConstructor: {
-      ASSERT(builder_->node_->IsProcedure() ||
-             builder_->node_->IsConstructor());
-      FunctionNode* node = builder_->node_->IsProcedure()
-          ? Procedure::Cast(builder_->node_)->function()
-          : Constructor::Cast(builder_->node_)->function();
-      bool is_method = !function.IsStaticFunction();
+      FunctionNode* node;
+      if (builder_->node_->IsProcedure()) {
+        node = Procedure::Cast(builder_->node_)->function();
+      } else if (builder_->node_->IsConstructor()) {
+        node = Constructor::Cast(builder_->node_)->function();
+      } else {
+        node = FunctionNode::Cast(builder_->node_);
+      }
       int pos = 0;
-      if (is_method) {
+      if (function.IsClosureFunction()) {
+        LocalVariable* variable = MakeVariable(Symbols::ClosureParameter());
+        scope_->InsertParameterAt(pos++, variable);
+      } else if (!function.IsStaticFunction()) {
         dart::Class& klass = dart::Class::Handle(Z, function.Owner());
         Type& klass_type =
             Type::ZoneHandle(Z, Type::NewNonParameterizedType(klass));
-        LocalVariable* variable =
-            MakeVariable(H.DartSymbol("this"), klass_type);
+        LocalVariable* variable = MakeVariable(Symbols::This(), klass_type);
         scope_->InsertParameterAt(pos++, variable);
         builder_->this_variable_ = variable;
       }
-      List<VariableDeclaration>& positional = node->positional_parameters();
-      for (int i = 0; i < positional.length(); ++i) {
-        AddParameter(positional[i], pos++);
-      }
-      List<VariableDeclaration>& named = node->named_parameters();
-      for (int i = 0; i < named.length(); ++i) {
-        AddParameter(named[i], pos++);
-      }
+      AddParameters(node, pos);
       break;
     }
     case RawFunction::kImplicitGetter:
@@ -234,13 +286,12 @@ void ScopeBuilder::BuildScopes() {
         dart::Class& klass = dart::Class::Handle(Z, function.Owner());
         Type& klass_type =
             Type::ZoneHandle(Z, Type::NewNonParameterizedType(klass));
-        LocalVariable* variable =
-            MakeVariable(H.DartSymbol("this"), klass_type);
+        LocalVariable* variable = MakeVariable(Symbols::This(), klass_type);
         scope_->InsertParameterAt(pos++, variable);
         builder_->this_variable_ = variable;
       }
       if (is_setter) {
-        setter_value_ = MakeVariable(H.DartSymbol("value"));
+        setter_value_ = MakeVariable(Symbols::Value());
         scope_->InsertParameterAt(pos++, setter_value_);
       }
       break;
@@ -257,15 +308,53 @@ void ScopeBuilder::BuildScopes() {
 }
 
 
+void ScopeBuilder::VisitVariableGet(VariableGet* node) {
+  LookupVariable(node->variable());
+}
+
+
+void ScopeBuilder::VisitVariableSet(VariableSet* node) {
+  LookupVariable(node->variable());
+  node->VisitChildren(this);
+}
+
+
+void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
+                                       FunctionNode* function) {
+  int saved_loop_depth = loop_depth_;
+  int saved_handler_depth = handler_depth_;
+  int saved_finally_depth = finally_depth_;
+  loop_depth_ = handler_depth_ = finally_depth_ = 0;
+  ++function_depth_;
+  EnterScope(parent);
+  if (function_depth_ == 1) {
+    FunctionScope function_scope = { function, scope_ };
+    builder_->function_scopes_.push_back(function_scope);
+  }
+  AddParameters(function);
+  VisitFunctionNode(function);
+  ExitScope();
+  --function_depth_;
+  loop_depth_ = saved_loop_depth;
+  handler_depth_ = saved_handler_depth;
+  finally_depth_ = saved_finally_depth;
+}
+
+
+void ScopeBuilder::VisitFunctionExpression(FunctionExpression* node) {
+  HandleLocalFunction(node, node->function());
+}
+
+
 void ScopeBuilder::VisitLet(Let* node) {
-  EnterScope();
+  EnterScope(node);
   node->VisitChildren(this);
   ExitScope();
 }
 
 
 void ScopeBuilder::VisitBlock(Block* node) {
-  EnterScope();
+  EnterScope(node);
   node->VisitChildren(this);
   ExitScope();
 }
@@ -274,6 +363,12 @@ void ScopeBuilder::VisitBlock(Block* node) {
 void ScopeBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
   AddVariable(node);
   node->VisitChildren(this);
+}
+
+
+void ScopeBuilder::VisitFunctionDeclaration(FunctionDeclaration* node) {
+  VisitVariableDeclaration(node->variable());
+  HandleLocalFunction(node, node->function());
 }
 
 
@@ -292,7 +387,7 @@ void ScopeBuilder::VisitDoStatement(DoStatement* node) {
 
 
 void ScopeBuilder::VisitForStatement(ForStatement* node) {
-  EnterScope();
+  EnterScope(node);
   List<VariableDeclaration>& variables = node->variables();
   for (int i = 0; i < variables.length(); ++i) {
     VisitVariableDeclaration(variables[i]);
@@ -312,7 +407,7 @@ void ScopeBuilder::VisitForStatement(ForStatement* node) {
 void ScopeBuilder::VisitForInStatement(ForInStatement* node) {
   node->iterable()->AcceptExpressionVisitor(this);
   ++loop_depth_;
-  EnterScope();
+  EnterScope(node);
   VisitVariableDeclaration(node->variable());
   node->body()->AcceptStatementVisitor(this);
   ExitScope();
@@ -321,7 +416,7 @@ void ScopeBuilder::VisitForInStatement(ForInStatement* node) {
 
 
 void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
-  if (!function_scope_->LocalLookupVariable(Symbols::SwitchExpr())) {
+  if (builder_->switch_variable_ == NULL) {
     LocalVariable* variable = MakeVariable(Symbols::SwitchExpr());
     function_scope_->AddVariable(variable);
     builder_->switch_variable_ = variable;
@@ -331,13 +426,11 @@ void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
 
 
 void ScopeBuilder::VisitReturnStatement(ReturnStatement* node) {
-  if (finally_depth_ > 0) {
+  if (finally_depth_ > 0 && builder_->finally_return_variable_ == NULL) {
     const dart::String& name = H.DartSymbol(":try_finally_return_value");
-    if (!function_scope_->LocalLookupVariable(name)) {
-      LocalVariable* variable = MakeVariable(name);
-      function_scope_->AddVariable(variable);
-      builder_->finally_return_variable_ = variable;
-    }
+    LocalVariable* variable = MakeVariable(name);
+    function_scope_->AddVariable(variable);
+    builder_->finally_return_variable_ = variable;
   }
   node->VisitChildren(this);
 }
@@ -350,8 +443,8 @@ void ScopeBuilder::VisitTryCatch(TryCatch* node) {
   AddExceptionVariables();
   List<Catch>& catches = node->catches();
   for (int i = 0; i < catches.length(); ++i) {
-    EnterScope();
     Catch* ketch = catches[i];
+    EnterScope(ketch);
     if (ketch->exception() != NULL) {
       VisitVariableDeclaration(ketch->exception());
     }
@@ -1136,6 +1229,8 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     parsed_function_(parsed_function),
     ic_data_array_(Z, 0),
     next_block_id_(first_block_id),
+    next_function_id_(0),
+    context_depth_(0),
     loop_depth_(0),
     handler_depth_(0),
     stack_(NULL),
@@ -1183,10 +1278,29 @@ Fragment FlowGraphBuilder::TranslateFinallyFinalizers(
 }
 
 
+Fragment FlowGraphBuilder::AllocateContext(int size) {
+  AllocateContextInstr* allocate =
+      new(Z) AllocateContextInstr(TokenPosition::kNoSource, size);
+  Push(allocate);
+  return Fragment(allocate);
+}
+
+
 Fragment FlowGraphBuilder::AllocateObject(const dart::Class& klass) {
   ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
   AllocateObjectInstr* allocate =
       new(Z) AllocateObjectInstr(TokenPosition::kNoSource, klass, arguments);
+  Push(allocate);
+  return Fragment(allocate);
+}
+
+
+Fragment FlowGraphBuilder::AllocateObject(const dart::Class& klass,
+                                          const Function& closure_function) {
+  ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
+  AllocateObjectInstr* allocate =
+      new(Z) AllocateObjectInstr(TokenPosition::kNoSource, klass, arguments);
+  allocate->set_closure_function(closure_function);
   Push(allocate);
   return Fragment(allocate);
 }
@@ -1376,11 +1490,34 @@ Fragment FlowGraphBuilder::LoadField(const dart::Field& field) {
 }
 
 
-Fragment FlowGraphBuilder::LoadLocal(LocalVariable* variable) {
-  LoadLocalInstr* load =
-      new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
+Fragment FlowGraphBuilder::LoadField(intptr_t offset) {
+  LoadFieldInstr* load =
+      new(Z) LoadFieldInstr(Pop(),
+                            offset,
+                            AbstractType::ZoneHandle(Z),
+                            TokenPosition::kNoSource);
   Push(load);
   return Fragment(load);
+}
+
+
+Fragment FlowGraphBuilder::LoadLocal(LocalVariable* variable) {
+  Fragment instructions;
+  if (variable->is_captured()) {
+    int delta = context_depth_ - variable->owner()->context_level();
+    ASSERT(delta >= 0);
+    instructions += LoadLocal(parsed_function_->current_context_var());
+    while (delta-- > 0) {
+      instructions += LoadField(Context::parent_offset());
+    }
+    instructions += LoadField(Context::variable_offset(variable->index()));
+  } else {
+    LoadLocalInstr* load =
+        new(Z) LoadLocalInstr(*variable, TokenPosition::kNoSource);
+    instructions <<= load;
+    Push(load);
+  }
+  return instructions;
 }
 
 
@@ -1446,7 +1583,7 @@ Fragment FlowGraphBuilder::StoreIndexed(intptr_t class_id) {
   Value* value = Pop();
   Value* index = Pop();
   // TODO(kmillikin): Omit store barrier when possible (e.g., storing
-  // constants).
+  // some constants).
   StoreIndexedInstr* store =
       new(Z) StoreIndexedInstr(Pop(),  // Array.
                                index,
@@ -1463,6 +1600,8 @@ Fragment FlowGraphBuilder::StoreIndexed(intptr_t class_id) {
 
 Fragment FlowGraphBuilder::StoreInstanceField(const dart::Field& field) {
   Value* value = Pop();
+  // TODO(kmillikin): Omit store barrier when possible (e.g., storing
+  // some constants).
   StoreInstanceFieldInstr* store =
       new(Z) StoreInstanceFieldInstr(field,
                                      Pop(),
@@ -1473,11 +1612,38 @@ Fragment FlowGraphBuilder::StoreInstanceField(const dart::Field& field) {
 }
 
 
-Fragment FlowGraphBuilder::StoreLocal(LocalVariable* variable) {
-  StoreLocalInstr* store =
-      new(Z) StoreLocalInstr(*variable, Pop(), TokenPosition::kNoSource);
-  Push(store);
+Fragment FlowGraphBuilder::StoreInstanceField(intptr_t offset) {
+  Value* value = Pop();
+  StoreInstanceFieldInstr* store =
+      new(Z) StoreInstanceFieldInstr(offset,
+                                     Pop(),
+                                     value,
+                                     kEmitStoreBarrier,
+                                     TokenPosition::kNoSource);
   return Fragment(store);
+}
+
+
+Fragment FlowGraphBuilder::StoreLocal(LocalVariable* variable) {
+  Fragment instructions;
+  if (variable->is_captured()) {
+    LocalVariable* value = MakeTemporary();
+    int delta = context_depth_ - variable->owner()->context_level();
+    ASSERT(delta >= 0);
+    instructions += LoadLocal(parsed_function_->current_context_var());
+    while (delta-- > 0) {
+      instructions += LoadField(Context::parent_offset());
+    }
+    instructions += LoadLocal(value);
+    instructions +=
+        StoreInstanceField(Context::variable_offset(variable->index()));
+  } else {
+    StoreLocalInstr* store =
+        new(Z) StoreLocalInstr(*variable, Pop(), TokenPosition::kNoSource);
+    instructions <<= store;
+    Push(store);
+  }
+  return instructions;
 }
 
 
@@ -1503,10 +1669,12 @@ LocalVariable* FlowGraphBuilder::MakeTemporary() {
   char name[64];
   intptr_t index = stack_->definition()->temp_index();
   OS::SNPrint(name, 64, ":temp%" Pd, index);
+  // TODO(kmillikin): When types are supported we will need to support
+  // closure signature types.
   LocalVariable* variable =
       new(Z) LocalVariable(TokenPosition::kNoSource,
                            H.DartSymbol(name),
-                           *stack_->Type()->ToAbstractType());
+                           Object::dynamic_type());
   // Set the index relative to the base of the expression stack including
   // outgoing arguments.
   variable->set_index(parsed_function_->first_stack_local_index()
@@ -1601,8 +1769,9 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
     case RawFunction::kRegularFunction:
     case RawFunction::kGetterFunction:
     case RawFunction::kSetterFunction: {
-      ASSERT(node_->IsProcedure());
-      return BuildGraphOfFunction(Procedure::Cast(node_)->function());
+      return BuildGraphOfFunction(node_->IsProcedure()
+          ? Procedure::Cast(node_)->function()
+          : FunctionNode::Cast(node_));
     }
     case RawFunction::kConstructor: {
       ASSERT(node_->IsConstructor());
@@ -1675,6 +1844,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
 
   Fragment body(normal_entry);
   body += CheckStackOverflow();
+  // TODO(kmillikin): Allocate a context and copy parameters into it.
   if (constructor != NULL) {
     Class* dil_klass = Class::Cast(constructor->parent());
     body += TranslateInitializers(dil_klass, &constructor->initializers());
@@ -2409,6 +2579,11 @@ void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
 }
 
 
+void FlowGraphBuilder::VisitFunctionExpression(FunctionExpression* node) {
+  fragment_ = TranslateFunctionNode(node->function(), node);
+}
+
+
 void FlowGraphBuilder::VisitLet(Let* node) {
   Fragment instructions = TranslateStatement(node->variable());
   ASSERT(instructions.is_open());
@@ -2478,9 +2653,30 @@ void FlowGraphBuilder::VisitEmptyStatement(EmptyStatement* node) {
 
 void FlowGraphBuilder::VisitBlock(Block* node) {
   Fragment instructions;
+
+  int context_size = scopes_[node]->num_context_variables();
+  if (context_size > 0) {
+    instructions += AllocateContext(context_size);
+    LocalVariable* context = MakeTemporary();
+    instructions += LoadLocal(context);
+    instructions += LoadLocal(parsed_function_->current_context_var());
+    instructions += StoreInstanceField(Context::parent_offset());
+    instructions += StoreLocal(parsed_function_->current_context_var());
+    instructions += Drop();
+    ++context_depth_;
+  }
+
   List<Statement>& statements = node->statements();
   for (int i = 0; i < statements.length(); ++i) {
     instructions += TranslateStatement(statements[i]);
+  }
+
+  if (instructions.is_open() && context_size > 0) {
+    instructions += LoadLocal(parsed_function_->current_context_var());
+    instructions += LoadField(Context::parent_offset());
+    instructions += StoreLocal(parsed_function_->current_context_var());
+    instructions += Drop();
+    --context_depth_;
   }
   fragment_ = instructions;
 }
@@ -2533,6 +2729,14 @@ void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
     }
   }
   instructions += StoreLocal(variable);
+  instructions += Drop();
+  fragment_ = instructions;
+}
+
+
+void FlowGraphBuilder::VisitFunctionDeclaration(FunctionDeclaration* node) {
+  Fragment instructions = TranslateFunctionNode(node->function(), node);
+  instructions += StoreLocal(LookupVariable(node->variable()));
   instructions += Drop();
   fragment_ = instructions;
 }
@@ -3021,6 +3225,68 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
   --handler_depth_;
 
   fragment_ = Fragment(try_body.entry, after_try);
+}
+
+
+Fragment FlowGraphBuilder::TranslateFunctionNode(FunctionNode* node,
+                                                 TreeNode* parent) {
+  // The VM has a per-isolate table of functions indexed by the enclosing
+  // function and token position.  We don't have token positions, so we've
+  // simply numbered the immediately-nested functions with respect to the
+  // parent.
+  Function& function = Function::ZoneHandle(Z);
+  for (unsigned i = 0; i < function_scopes_.size(); ++i) {
+    if (function_scopes_[i].function != node) continue;
+
+    function = I->LookupClosureFunction(parsed_function_->function(),
+                                        TokenPosition(i));
+    if (function.IsNull()) {
+      const dart::String* name;
+      if (parent->IsFunctionExpression()) {
+        name = &Symbols::AnonymousClosure();
+      } else {
+        ASSERT(parent->IsFunctionDeclaration());
+        name = &H.DartSymbol(
+            FunctionDeclaration::Cast(parent)->variable()->name());
+      }
+      function = Function::NewClosureFunction(*name,
+                                              parsed_function_->function(),
+                                              TokenPosition(i));
+      const ContextScope& context_scope = ContextScope::Handle(Z,
+          function_scopes_[i].scope->PreserveOuterScope(context_depth_));
+      function.set_context_scope(context_scope);
+      function.set_dil_function(reinterpret_cast<intptr_t>(node));
+      function.set_result_type(Object::dynamic_type());
+      function.set_is_debuggable(false);
+      DilReader::SetupFunctionParameters(H,
+                                         dart::Class::Handle(Z),
+                                         function,
+                                         node,
+                                         false,  // is_method
+                                         true);  // is_closure
+      I->AddClosureFunction(function);
+    }
+    break;
+  }
+
+  const dart::Class& closure_class =
+      dart::Class::ZoneHandle(Z, I->object_store()->closure_class());
+  ASSERT(!closure_class.IsNull());
+  Fragment instructions = AllocateObject(closure_class, function);
+  LocalVariable* closure = MakeTemporary();
+
+  // TODO(kmillikin): Generic closures need type arguments.
+
+  // Store the function and the context in the closure.
+  instructions += LoadLocal(closure);
+  instructions += Constant(function);
+  instructions += StoreInstanceField(Closure::function_offset());
+
+  instructions += LoadLocal(closure);
+  instructions += LoadLocal(parsed_function_->current_context_var());
+  instructions += StoreInstanceField(Closure::context_offset());
+
+  return instructions;
 }
 
 

@@ -247,7 +247,9 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     klass.AddFunction(function);
     function.set_dil_function(reinterpret_cast<intptr_t>(dil_constructor));
     function.set_result_type(klass_type);
-    SetupFunctionParameters(klass, function, dil_constructor->function(), true);
+    SetupFunctionParameters(H, klass, function, dil_constructor->function(),
+                            true,  // is_method
+                            false); // is_clousre
   }
 
   for (int i = 0; i < dil_klass->procedures().length(); i++) {
@@ -278,8 +280,9 @@ void DilReader::ReadProcedure(const dart::Library& library,
   function.set_result_type(AbstractType::dynamic_type());
   function.set_is_debuggable(false);
 
-  SetupFunctionParameters(
-      owner, function, dil_procedure->function(), is_method);
+  SetupFunctionParameters(H, owner, function, dil_procedure->function(),
+                          is_method,
+                          false);  // is_closure
 
   if (dil_klass == NULL) {
     library.AddObject(function, name);
@@ -339,14 +342,17 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
   }
 }
 
-void DilReader::SetupFunctionParameters(const dart::Class& klass,
+void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
+                                        const dart::Class& klass,
                                         const dart::Function& function,
                                         FunctionNode* node,
-                                        bool is_method) {
-  int this_parameter = is_method ? 1 : 0;
+                                        bool is_method,
+                                        bool is_closure) {
+  ASSERT(!(is_method && is_closure));
+  int extra_parameters = is_method || is_closure ? 1 : 0;
 
   function.set_num_fixed_parameters(
-      this_parameter + node->required_parameter_count());
+      extra_parameters + node->required_parameter_count());
   if (node->named_parameters().length() > 0) {
     function.SetNumOptionalParameters(
         node->named_parameters().length(), false);
@@ -357,18 +363,25 @@ void DilReader::SetupFunctionParameters(const dart::Class& klass,
         true);
   }
   int num_parameters =
-      this_parameter +
+      extra_parameters +
       node->positional_parameters().length() +
       node->named_parameters().length();
   function.set_parameter_types(
       Array::Handle(Array::New(num_parameters, Heap::kOld)));
   function.set_parameter_names(
       Array::Handle(Array::New(num_parameters, Heap::kOld)));
-  Type& klass_type = Type::Handle(Type::NewNonParameterizedType(klass));
+  Type& klass_type = Type::Handle(H.zone());
+  if (!klass.IsNull()) {
+    klass_type ^= Type::NewNonParameterizedType(klass);
+  }
   int pos = 0;
   if (is_method) {
     function.SetParameterTypeAt(pos, klass_type);
-    function.SetParameterNameAt(pos, H.DartSymbol("this"));
+    function.SetParameterNameAt(pos, Symbols::This());
+    pos++;
+  } else if (is_closure) {
+    function.SetParameterTypeAt(pos, Object::dynamic_type());
+    function.SetParameterNameAt(pos, Symbols::ClosureParameter());
     pos++;
   }
   for (int i = 0; i < node->positional_parameters().length(); i++, pos++) {
@@ -401,12 +414,12 @@ void DilReader::SetupFieldAccessorFunction(const dart::Class& klass,
   int pos = 0;
   if (is_method) {
     function.SetParameterTypeAt(pos, klass_type);
-    function.SetParameterNameAt(pos, H.DartSymbol("this"));
+    function.SetParameterNameAt(pos, Symbols::This());
     pos++;
   }
   if (is_setter) {
     function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
-    function.SetParameterNameAt(pos, H.DartSymbol("value"));
+    function.SetParameterNameAt(pos, Symbols::Value());
     pos++;
   }
 }

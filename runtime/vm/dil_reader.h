@@ -47,6 +47,13 @@ class DilReader {
   // Returns either a library or a failure object.
   dart::Object& ReadProgram();
 
+  static void SetupFunctionParameters(TranslationHelper translation_helper_,
+                                      const dart::Class& owner,
+                                      const dart::Function& function,
+                                      FunctionNode* dil_function,
+                                      bool is_method,
+                                      bool is_closure);
+
  private:
   void ReadLibrary(Library* dil_library);
   void ReadPreliminaryClass(dart::Class* klass, Class* dil_klass);
@@ -59,11 +66,6 @@ class DilReader {
   void GenerateFieldAccessors(const dart::Class& klass,
                               const dart::Field& field,
                               Field* dil_field);
-
-  void SetupFunctionParameters(const dart::Class& owner,
-                               const dart::Function& function,
-                               FunctionNode* dil_function,
-                               bool is_method);
 
   void SetupFieldAccessorFunction(const dart::Class& klass,
                                   const dart::Function& function);
