@@ -2079,6 +2079,11 @@ class YieldStatement : public Statement {
 
 class VariableDeclaration : public Statement {
  public:
+  enum Flags {
+    kFlagFinal = 1 << 0,
+    kFlagConst = 1 << 1,
+  };
+
   static VariableDeclaration* ReadFrom(Reader* reader);
   static VariableDeclaration* ReadFromImpl(Reader* reader);
   virtual void WriteTo(Writer* writer);
@@ -2091,7 +2096,9 @@ class VariableDeclaration : public Statement {
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
 
-  word flags() { return flags_; }
+  bool IsConst() { return (flags_ & kFlagConst) == kFlagConst; }
+  bool IsFinal() { return (flags_ & kFlagFinal) == kFlagFinal; }
+
   String* name() { return name_; }
   DartType* type() { return type_; }
   Expression* initializer() { return initializer_; }

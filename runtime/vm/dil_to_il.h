@@ -17,6 +17,7 @@ namespace dil {
 
 class BreakableBlock;
 class CatchBlock;
+class FlowGraphBuilder;
 class SwitchBlock;
 class TryCatchBlock;
 class TryFinallyBlock;
@@ -67,9 +68,89 @@ class TranslationHelper {
   const dart::String& DartInitializerName(String* content);
   const dart::String& DartFactoryName(String* klass_name, String* method_name);
 
+  RawLibrary* LookupLibraryByDilLibrary(Library* library);
+  RawClass* LookupClassByDilClass(Class* klass);
+  RawField* LookupFieldByDilField(Field* field);
+  RawFunction* LookupStaticMethodByDilProcedure(Procedure* procedure);
+  RawFunction* LookupConstructorByDilConstructor(Constructor* constructor);
+  dart::RawFunction* LookupConstructorByDilConstructor(
+      const dart::Class& owner, Constructor* constructor);
+
+  void ReportError(const char* format, ...);
+  void ReportError(const Error& prev_error, const char* format, ...);
+
  private:
   dart::Zone* zone_;
 };
+
+
+// There are several cases when we are compiling constant expressions:
+//
+//   * constant field initializers:
+//      const FieldName = <expr>;
+//
+//   * constant expressions:
+//      const [<expr>, ...]
+//      const {<expr> : <expr>, ...}
+//      const Constructor(<expr>, ...)
+//
+//   * constant default parameters:
+//      f(a, [b = <expr>])
+//      f(a, {b: <expr>})
+//
+//   * constant values to compare in a [SwitchCase]
+//      case <expr>:
+//
+// In all cases `<expr>` must be recursively evaluated and canonicalized at
+// compile-time.
+class ConstantEvaluator : public ExpressionVisitor {
+ public:
+  ConstantEvaluator(FlowGraphBuilder* builder, Zone* zone, TranslationHelper* h)
+      : builder_(builder),
+        isolate_(Isolate::Current()),
+        zone_(zone),
+        translation_helper_(*h),
+        result_(dart::Instance::Handle(zone)) {}
+  virtual ~ConstantEvaluator() {}
+
+  Instance& EvaluateExpression(Expression* node);
+  Instance& EvaluateConstructorInvocation(ConstructorInvocation* node);
+  Instance& EvaluateListLiteral(ListLiteral* node);
+  Instance& EvaluateMapLiteral(MapLiteral* node);
+
+  virtual void VisitDefaultExpression(Expression* node) { UNREACHABLE(); }
+
+  // virtual void VisitBigintLiteral(BigintLiteral* node);
+  virtual void VisitBoolLiteral(BoolLiteral* node);
+  virtual void VisitDoubleLiteral(DoubleLiteral* node);
+  virtual void VisitIntLiteral(IntLiteral* node);
+  virtual void VisitNullLiteral(NullLiteral* node);
+  virtual void VisitStringLiteral(StringLiteral* node);
+
+  virtual void VisitListLiteral(ListLiteral* node);
+  virtual void VisitMapLiteral(MapLiteral* node);
+
+  virtual void VisitConstructorInvocation(ConstructorInvocation* node);
+  virtual void VisitMethodInvocation(MethodInvocation* node);
+  virtual void VisitStaticGet(StaticGet* node);
+  virtual void VisitVariableGet(VariableGet* node);
+
+  // TODO(kustermann): Figure out what else we need here.
+
+ private:
+  RawInstance* Canonicalize(const Instance& instance);
+
+  const Object& RunFunction(const Function& function,
+                            const Array& arguments,
+                            const Array& names);
+
+  FlowGraphBuilder* builder_;
+  Isolate* isolate_;
+  Zone* zone_;
+  TranslationHelper& translation_helper_;
+  Instance& result_;
+};
+
 
 class FlowGraphBuilder : public TreeVisitor {
  public:
@@ -199,14 +280,6 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment StoreLocal(LocalVariable* variable);
   Fragment StoreStaticField(const dart::Field& field);
 
-  dart::RawLibrary* LookupLibraryByDilLibrary(Library* library);
-  dart::RawClass* LookupClassByDilClass(Class* klass);
-  dart::RawField* LookupFieldByDilField(Field* field);
-  dart::RawFunction* LookupStaticMethodByDilProcedure(Procedure* procedure);
-  dart::RawFunction* LookupConstructorByDilConstructor(
-      const dart::Class& owner, Constructor* constructor);
-  dart::RawFunction* LookupConstructorByDilConstructor(
-      Constructor* constructor);
   dart::RawFunction* LookupMethodByMember(
       Member* target, const dart::String& method_name);
 
@@ -230,6 +303,7 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Zone* zone_;
   TranslationHelper translation_helper_;
+  ConstantEvaluator constant_evaluator_;
 
   // The node we are currently compiling (e.g. FunctionNode, Constructor,
   // Field)
@@ -293,6 +367,7 @@ class FlowGraphBuilder : public TreeVisitor {
 
   friend class BreakableBlock;
   friend class CatchBlock;
+  friend class ConstantEvaluator;
   friend class DartTypeTranslator;
   friend class ScopeBuilder;
   friend class SwitchBlock;

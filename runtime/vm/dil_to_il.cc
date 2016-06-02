@@ -9,6 +9,7 @@
 #include "vm/dil_to_il.h"
 #include "vm/intermediate_language.h"
 #include "vm/object_store.h"
+#include "vm/report.h"
 #include "vm/stack_frame.h"
 
 namespace dart {
@@ -17,6 +18,27 @@ namespace dil {
 #define Z (zone_)
 #define H (translation_helper_)
 #define I Isolate::Current()
+
+
+class DartTypeTranslator : public DartTypeVisitor {
+ public:
+    explicit DartTypeTranslator(FlowGraphBuilder* owner)
+      : owner_(owner),
+        zone_(owner->zone_),
+        result_(AbstractType::ZoneHandle(Z)) {
+  }
+
+  AbstractType& result() { return result_; }
+
+  void VisitDefaultDartType(DartType* node) { UNREACHABLE(); }
+
+  void VisitInterfaceType(InterfaceType* node);
+
+ private:
+  FlowGraphBuilder* owner_;
+  Zone* zone_;
+  AbstractType& result_;
+};
 
 
 class ScopeBuilder : public RecursiveVisitor {
@@ -40,6 +62,8 @@ class ScopeBuilder : public RecursiveVisitor {
   LocalVariable* setter_value() { return setter_value_; }
 
   void BuildScopes();
+
+  virtual void VisitName(Name* node) { /* NOP */ }
 
   virtual void VisitLet(Let* node);
   virtual void VisitBlock(Block* node);
@@ -730,11 +754,384 @@ const dart::String& TranslationHelper::DartFactoryName(String* klass_name,
 }
 
 
+dart::RawLibrary* TranslationHelper::LookupLibraryByDilLibrary(
+    Library* dil_library) {
+  const dart::String& library_name = DartSymbol(dil_library->import_uri());
+  ASSERT(!library_name.IsNull());
+  dart::RawLibrary* library = dart::Library::LookupLibrary(library_name);
+  ASSERT(library != Object::null());
+  return library;
+}
+
+
+dart::RawClass* TranslationHelper::LookupClassByDilClass(Class* dil_klass) {
+  dart::RawClass* klass = NULL;
+
+  const dart::String& class_name = DartString(dil_klass->name());
+  Library* dil_library = Library::Cast(dil_klass->parent());
+  dart::Library& library = dart::Library::Handle(Z,
+      LookupLibraryByDilLibrary(dil_library));
+  klass = library.LookupClassAllowPrivate(class_name);
+
+  ASSERT(klass != Object::null());
+  return klass;
+}
+
+
+dart::RawField* TranslationHelper::LookupFieldByDilField(Field* dil_field) {
+  TreeNode* node = dil_field->parent();
+
+  dart::Class& klass = dart::Class::Handle(Z);
+  if (node->IsClass()) {
+    klass ^= LookupClassByDilClass(Class::Cast(node));
+  } else {
+    ASSERT(node->IsLibrary());
+    dart::Library& library = dart::Library::Handle(
+        Z, LookupLibraryByDilLibrary(Library::Cast(node)));
+    klass = library.toplevel_class();
+  }
+  dart::RawField* field = klass.LookupFieldAllowPrivate(
+      DartSymbol(dil_field->name()->string()));
+  ASSERT(field != Object::null());
+  return field;
+}
+
+
+dart::RawFunction* TranslationHelper::LookupStaticMethodByDilProcedure(
+    Procedure* procedure) {
+  ASSERT(procedure->IsStatic());
+  const dart::String& procedure_name = DartProcedureName(procedure);
+
+  // The parent is either a library or a class (in which case the procedure is a
+  // static method).
+  TreeNode* parent = procedure->parent();
+  if (parent->IsClass()) {
+    dart::Class& klass = dart::Class::Handle(Z,
+        LookupClassByDilClass(Class::Cast(parent)));
+    dart::RawFunction* function =
+        klass.LookupFunctionAllowPrivate(procedure_name);
+    ASSERT(function != Object::null());
+    return function;
+  } else {
+    ASSERT(parent->IsLibrary());
+    dart::Library& library = dart::Library::Handle(Z,
+        LookupLibraryByDilLibrary(Library::Cast(parent)));
+    dart::RawFunction* function =
+        library.LookupFunctionAllowPrivate(procedure_name);
+    ASSERT(function != Object::null());
+    return function;
+  }
+}
+
+
+dart::RawFunction* TranslationHelper::LookupConstructorByDilConstructor(
+    Constructor* constructor) {
+  Class* dil_klass = Class::Cast(constructor->parent());
+  dart::Class& klass = dart::Class::Handle(Z, LookupClassByDilClass(dil_klass));
+  return LookupConstructorByDilConstructor(klass, constructor);
+}
+
+
+dart::RawFunction* TranslationHelper::LookupConstructorByDilConstructor(
+    const dart::Class& owner, Constructor* constructor) {
+  dart::RawFunction* function =
+      owner.LookupConstructorAllowPrivate(DartConstructorName(constructor));
+  ASSERT(function != Object::null());
+  return function;
+}
+
+
+void TranslationHelper::ReportError(const char* format, ...) {
+  const Script& null_script = Script::Handle(Z);
+
+  va_list args;
+  va_start(args, format);
+  Report::MessageV(
+      Report::kError, null_script, TokenPosition::kNoSource,
+      Report::AtLocation, format, args);
+  va_end(args);
+  UNREACHABLE();
+}
+
+
+void TranslationHelper::ReportError(const Error& prev_error,
+                                    const char* format, ...) {
+  const Script& null_script = Script::Handle(Z);
+
+  va_list args;
+  va_start(args, format);
+  Report::LongJumpV(
+      prev_error, null_script, TokenPosition::kNoSource, format, args);
+  va_end(args);
+  UNREACHABLE();
+}
+
+
+Instance& ConstantEvaluator::EvaluateExpression(Expression* expression) {
+  expression->AcceptExpressionVisitor(this);
+  // We return a new `ZoneHandle` here on purpose: The intermediate language
+  // instructions do not make a copy of the handle, so we do it.
+  return dart::Instance::ZoneHandle(Z, result_.raw());
+}
+
+
+Instance& ConstantEvaluator::EvaluateConstructorInvocation(
+    ConstructorInvocation* node) {
+  VisitConstructorInvocation(node);
+  // We return a new `ZoneHandle` here on purpose: The intermediate language
+  // instructions do not make a copy of the handle, so we do it.
+  return dart::Instance::ZoneHandle(Z, result_.raw());
+}
+
+
+Instance& ConstantEvaluator::EvaluateListLiteral(ListLiteral* node) {
+  VisitListLiteral(node);
+  // We return a new `ZoneHandle` here on purpose: The intermediate language
+  // instructions do not make a copy of the handle, so we do it.
+  return dart::Instance::ZoneHandle(Z, result_.raw());
+}
+
+
+Instance& ConstantEvaluator::EvaluateMapLiteral(MapLiteral* node) {
+  VisitMapLiteral(node);
+  // We return a new `ZoneHandle` here on purpose: The intermediate language
+  // instructions do not make a copy of the handle, so we do it.
+  return dart::Instance::ZoneHandle(Z, result_.raw());
+}
+
+
+void ConstantEvaluator::VisitBoolLiteral(BoolLiteral* node) {
+  result_ ^= dart::Bool::Get(node->value()).raw();
+}
+
+
+void ConstantEvaluator::VisitDoubleLiteral(DoubleLiteral* node) {
+  result_ ^= dart::Double::New(H.DartString(node->value()), Heap::kOld);
+  result_ ^= Canonicalize(result_);
+}
+
+
+void ConstantEvaluator::VisitIntLiteral(IntLiteral* node) {
+  result_ ^= dart::Integer::New(node->value(), Heap::kOld);
+  result_ ^= Canonicalize(result_);
+}
+
+
+void ConstantEvaluator::VisitNullLiteral(NullLiteral* node) {
+  result_ ^= dart::Instance::null();
+}
+
+
+void ConstantEvaluator::VisitStringLiteral(StringLiteral* node) {
+  result_ ^= H.DartString(node->value(), Heap::kOld).raw();
+  result_ ^= Canonicalize(result_);
+}
+
+
+void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
+  // TODO(kustermann): Set the correct type.
+
+  int length = node->expressions().length();
+  Array& const_list = Array::ZoneHandle(Z, Array::New(length, Heap::kOld));
+  const_list.SetTypeArguments(TypeArguments::Handle(Z, TypeArguments::null()));
+  for (int i = 0; i < length; i++) {
+    const Instance& expression = EvaluateExpression(node->expressions()[i]);
+    const_list.SetAt(i, expression);
+  }
+  const_list.MakeImmutable();
+  result_ ^= Canonicalize(const_list);
+}
+
+
+void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
+  // TODO(kustermann): Set the correct type/type-arguments.
+  int length = node->entries().length();
+
+  Array& const_kv_array =
+      Array::ZoneHandle(Z, Array::New(2 * length, Heap::kOld));
+  for (int i = 0; i < length; i++) {
+    const_kv_array.SetAt(
+        2*i + 0, EvaluateExpression(node->entries()[i]->key()));
+    const_kv_array.SetAt(
+        2*i + 1, EvaluateExpression(node->entries()[i]->value()));
+  }
+
+  const_kv_array.MakeImmutable();
+  const_kv_array ^= Canonicalize(const_kv_array);
+
+  const dart::Class& map_class = dart::Class::Handle(Z,
+      dart::Library::LookupCoreClass(Symbols::ImmutableMap()));
+  ASSERT(!map_class.IsNull());
+  ASSERT(map_class.NumTypeArguments() == 2);
+
+  const dart::Field& field = dart::Field::Handle(Z,
+      map_class.LookupInstanceFieldAllowPrivate(H.DartSymbol("_kvPairs")));
+  ASSERT(!field.IsNull());
+
+  // NOTE: This needs to be kept in sync with `runtime/lib/immutable_map.dart`!
+  result_ ^= Instance::New(map_class, Heap::kOld);
+  ASSERT(!result_.IsNull());
+
+  result_.SetTypeArguments(TypeArguments::Handle(Z, TypeArguments::null()));
+  result_.SetField(field, const_kv_array);
+  result_ ^= Canonicalize(result_);
+}
+
+
+void ConstantEvaluator::VisitConstructorInvocation(
+    ConstructorInvocation* node) {
+  // TODO(kustermann): Set correct type/type-arguments
+  Arguments* dil_arguments = node->arguments();
+
+  const Function& constructor =
+      Function::Handle(Z, H.LookupConstructorByDilConstructor(node->target()));
+
+  // Build up arguments.
+  Instance& receiver = Instance::Handle(Z);
+  Array& arguments = Array::ZoneHandle(Z,
+      Array::New(1 + dil_arguments->count(), Heap::kOld));
+  Array& names = Array::ZoneHandle(Z,
+      Array::New(dil_arguments->named().length(), Heap::kOld));
+  int pos = 0;
+  if (constructor.IsFactory()) {
+    const TypeArguments& type_arguments =
+        TypeArguments::ZoneHandle(Z, TypeArguments::null());
+    arguments.SetAt(pos++, type_arguments);
+  } else {
+    const dart::Class& klass = dart::Class::Handle(Z, constructor.Owner());
+    receiver ^= Instance::New(klass, Heap::kOld);
+    arguments.SetAt(pos++, receiver);
+  }
+  for (int i = 0; i < dil_arguments->positional().length(); i++) {
+    EvaluateExpression(dil_arguments->positional()[i]);
+    arguments.SetAt(pos++, result_);
+  }
+  for (int i = 0; i < dil_arguments->named().length(); i++) {
+    NamedExpression* named_expression = dil_arguments->named()[i];
+    EvaluateExpression(named_expression->expression());
+    arguments.SetAt(pos++, result_);
+    names.SetAt(i, H.DartSymbol(named_expression->name()));
+  }
+
+  // Run the constructor and canonicalize the result.
+  const Object& result = RunFunction(constructor, arguments, names);
+  if (constructor.IsFactory()) {
+    // Factories return the new object.
+    result_ ^= result.raw();
+    result_ ^= Canonicalize(result_);
+  } else {
+    ASSERT(!receiver.IsNull());
+    result_ ^= Canonicalize(receiver);
+  }
+}
+
+
+void ConstantEvaluator::VisitMethodInvocation(MethodInvocation* node) {
+  // TODO(kustermann): Set correct type/type-arguments
+  Arguments* dil_arguments = node->arguments();
+
+  const dart::Instance& receiver = EvaluateExpression(node->receiver());
+  dart::Class& klass = dart::Class::Handle(Z,
+      isolate_->class_table()->At(receiver.GetClassId()));
+  ASSERT(!klass.IsNull());
+
+  dart::Function& function = dart::Function::Handle(Z);
+  while (!klass.IsNull()) {
+    function ^= klass.LookupDynamicFunctionAllowPrivate(
+        H.DartSymbol(node->name()->string()));
+    if (!function.IsNull()) break;
+    klass ^= klass.SuperClass();
+  }
+  ASSERT(!function.IsNull());
+
+  // Build up arguments.
+  Array& arguments = Array::ZoneHandle(Z,
+      Array::New(1 + dil_arguments->count(), Heap::kOld));
+  Array& names = Array::ZoneHandle(Z,
+      Array::New(dil_arguments->named().length(), Heap::kOld));
+  int pos = 0;
+  arguments.SetAt(pos++, receiver);
+  for (int i = 0; i < dil_arguments->positional().length(); i++) {
+    EvaluateExpression(dil_arguments->positional()[i]);
+    arguments.SetAt(pos++ + i, result_);
+  }
+  for (int i = 0; i < dil_arguments->named().length(); i++) {
+    NamedExpression* named_expression = dil_arguments->named()[i];
+    EvaluateExpression(named_expression->expression());
+    arguments.SetAt(pos++ + i, result_);
+    names.SetAt(i, H.DartSymbol(named_expression->name()));
+  }
+
+  // Run the constructor and canonicalize the result.
+  const Object& result = RunFunction(function, arguments, names);
+  result_ ^= result.raw();
+  result_ ^= Canonicalize(result_);
+}
+
+
+void ConstantEvaluator::VisitStaticGet(StaticGet* node) {
+  Member* member = node->target();
+  ASSERT(member->IsField());
+  Field* dil_field = Field::Cast(member);
+  const dart::Field& field = dart::Field::Handle(Z,
+      H.LookupFieldByDilField(dil_field));
+  if (field.StaticValue() == Object::sentinel().raw() ||
+      field.StaticValue() == Object::transition_sentinel().raw()) {
+    field.EvaluateInitializer();
+    result_ ^= field.StaticValue();
+    result_ ^= Canonicalize(result_);
+    field.SetStaticValue(result_, true);
+  } else {
+    result_ ^= field.StaticValue();
+  }
+}
+
+
+void ConstantEvaluator::VisitVariableGet(VariableGet* node) {
+  // When we see a [VariableGet] the corresponding [VariableDeclaration] must've
+  // been executed already. It therefore must have a constant object associated
+  // with it.
+  LocalVariable* variable = builder_->LookupVariable(node->variable());
+  ASSERT(variable->IsConst());
+  result_ ^= variable->ConstValue()->raw();
+}
+
+
+RawInstance* ConstantEvaluator::Canonicalize(const Instance& instance) {
+  ASSERT(instance.IsInstance() || instance.IsNull());
+  if (instance.IsNull()) {
+    return instance.raw();
+  } else {
+    const char* error_str = NULL;
+    RawInstance* result = instance.CheckAndCanonicalize(&error_str);
+    if (result == Object::null()) {
+      H.ReportError("Invalid const object %s", error_str);
+    }
+    return result;
+  }
+}
+
+
+const Object& ConstantEvaluator::RunFunction(const Function& function,
+                                             const Array& arguments,
+                                             const Array& names) {
+  const Array& args_descriptor = Array::Handle(Z,
+      ArgumentsDescriptor::New(arguments.Length(), names));
+  const Object& result = Object::Handle(Z,
+      DartEntry::InvokeFunction(function, arguments, args_descriptor));
+  if (result.IsError()) {
+    H.ReportError(Error::Cast(result), "error evaluating constant constructor");
+  }
+  return result;
+}
+
+
 FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
                                    ParsedFunction* parsed_function,
                                    int first_block_id)
   : zone_(Thread::Current()->zone()),
     translation_helper_(zone_),
+    constant_evaluator_(this, zone_, &translation_helper_),
     node_(node),
     parsed_function_(parsed_function),
     ic_data_array_(Z, 0),
@@ -889,6 +1286,7 @@ Fragment FlowGraphBuilder::CheckStackOverflow() {
 
 
 Fragment FlowGraphBuilder::Constant(const Object& value) {
+  ASSERT(value.IsNotTemporaryScopedHandle());
   ConstantInstr* constant = new(Z) ConstantInstr(value);
   Push(constant);
   return Fragment(constant);
@@ -1089,97 +1487,11 @@ Fragment FlowGraphBuilder::StoreStaticField(const dart::Field& field) {
 }
 
 
-dart::RawLibrary* FlowGraphBuilder::LookupLibraryByDilLibrary(
-    Library* dil_library) {
-  const dart::String& library_name = H.DartSymbol(dil_library->import_uri());
-  ASSERT(!library_name.IsNull());
-  dart::RawLibrary* library = dart::Library::LookupLibrary(library_name);
-  ASSERT(library != Object::null());
-  return library;
-}
-
-
-dart::RawClass* FlowGraphBuilder::LookupClassByDilClass(Class* dil_klass) {
-  dart::RawClass* klass = NULL;
-
-  const dart::String& class_name = H.DartString(dil_klass->name());
-  Library* dil_library = Library::Cast(dil_klass->parent());
-  dart::Library& library = dart::Library::Handle(Z,
-      LookupLibraryByDilLibrary(dil_library));
-  klass = library.LookupClassAllowPrivate(class_name);
-
-  ASSERT(klass != Object::null());
-  return klass;
-}
-
-
-dart::RawField* FlowGraphBuilder::LookupFieldByDilField(Field* dil_field) {
-  TreeNode* node = dil_field->parent();
-
-  dart::Class& klass = dart::Class::Handle(Z);
-  if (node->IsClass()) {
-    klass ^= LookupClassByDilClass(Class::Cast(node));
-  } else {
-    ASSERT(node->IsLibrary());
-    dart::Library& library = dart::Library::Handle(
-        Z, LookupLibraryByDilLibrary(Library::Cast(node)));
-    klass = library.toplevel_class();
-  }
-  dart::RawField* field = klass.LookupFieldAllowPrivate(
-      H.DartSymbol(dil_field->name()->string()));
-  ASSERT(field != Object::null());
-  return field;
-}
-
-
-dart::RawFunction* FlowGraphBuilder::LookupStaticMethodByDilProcedure(
-    Procedure* procedure) {
-  ASSERT(procedure->IsStatic());
-  const dart::String& procedure_name = H.DartProcedureName(procedure);
-
-  // The parent is either a library or a class (in which case the procedure is a
-  // static method).
-  TreeNode* parent = procedure->parent();
-  if (parent->IsClass()) {
-    dart::Class& klass = dart::Class::Handle(Z,
-        LookupClassByDilClass(Class::Cast(parent)));
-    dart::RawFunction* function =
-        klass.LookupFunctionAllowPrivate(procedure_name);
-    ASSERT(function != Object::null());
-    return function;
-  } else {
-    ASSERT(parent->IsLibrary());
-    dart::Library& library = dart::Library::Handle(Z,
-        LookupLibraryByDilLibrary(Library::Cast(parent)));
-    dart::RawFunction* function =
-        library.LookupFunctionAllowPrivate(procedure_name);
-    ASSERT(function != Object::null());
-    return function;
-  }
-}
-
-
-dart::RawFunction* FlowGraphBuilder::LookupConstructorByDilConstructor(
-    const dart::Class& owner, Constructor* constructor) {
-  dart::RawFunction* function =
-      owner.LookupConstructorAllowPrivate(H.DartConstructorName(constructor));
-  ASSERT(function != Object::null());
-  return function;
-}
-
-
-dart::RawFunction* FlowGraphBuilder::LookupConstructorByDilConstructor(
-    Constructor* constructor) {
-  Class* dil_klass = Class::Cast(constructor->parent());
-  dart::Class& klass = dart::Class::Handle(Z, LookupClassByDilClass(dil_klass));
-  return LookupConstructorByDilConstructor(klass, constructor);
-}
-
-
 dart::RawFunction* FlowGraphBuilder::LookupMethodByMember(
     Member* target, const dart::String& method_name) {
   Class* dil_klass = Class::Cast(target->parent());
-  dart::Class& klass = dart::Class::Handle(Z, LookupClassByDilClass(dil_klass));
+  dart::Class& klass = dart::Class::Handle(Z,
+      H.LookupClassByDilClass(dil_klass));
 
   dart::RawFunction* function = klass.LookupFunctionAllowPrivate(method_name);
   ASSERT(function != Object::null());
@@ -1332,30 +1644,29 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     if (parsed_function_->function().HasOptionalNamedParameters()) {
       ASSERT(!parsed_function_->function().HasOptionalPositionalParameters());
       for (int i = 0; i < num_optional_parameters; i++) {
-        // FIXME(kustermann):
-        // We should evaluate the constant expression:
-        //
-        //     VariableDeclaration* variable =
-        //         procedure_->function()->named_parameters()[i];
-        //     default_value =
-        //         EvaluateConstantExpression(variable->initializer());
-        const Instance* default_value =
-            &Instance::ZoneHandle(Z, Instance::null());
+        VariableDeclaration* variable = function->named_parameters()[i];
+        Instance* default_value;
+        if (variable->initializer() != NULL) {
+           default_value =
+             &constant_evaluator_.EvaluateExpression(variable->initializer());
+        } else {
+           default_value = &Instance::ZoneHandle(Z, Instance::null());
+        }
         default_values->Add(default_value);
       }
     } else {
       ASSERT(parsed_function_->function().HasOptionalPositionalParameters());
-      // int required = procedure_->function()->required_parameter_count();
+      int required = function->required_parameter_count();
       for (int i = 0; i < num_optional_parameters; i++) {
-        // FIXME(kustermann):
-        // We should evaluate the constant expression:
-        //
-        //     VariableDeclaration* variable =
-        //         procedure_->function()->positional_parameters()[i];
-        //     default_value =
-        //         EvaluateConstantExpression(variable->initializer());
-        const Instance* default_value =
-            &Instance::ZoneHandle(Z, Instance::null());
+        VariableDeclaration* variable =
+            function->positional_parameters()[required + i];
+        Instance* default_value;
+        if (variable->initializer() != NULL) {
+           default_value =
+               &constant_evaluator_.EvaluateExpression(variable->initializer());
+        } else {
+           default_value = &Instance::ZoneHandle(Z, Instance::null());
+        }
         default_values->Add(default_value);
       }
     }
@@ -1389,7 +1700,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(
   bool is_setter = function.IsImplicitSetterFunction();
   bool is_method = !function.IsStaticFunction();
   dart::Field& field =
-      dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
+      dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
 
   TargetEntryInstr* normal_entry = BuildTargetEntry();
   graph_entry_ =
@@ -1435,7 +1746,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
   Expression* initializer = dil_field->initializer();
 
   dart::Field& field =
-      dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
+      dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
 
   TargetEntryInstr* normal_entry = BuildTargetEntry();
   graph_entry_ =
@@ -1443,7 +1754,11 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
                              Compiler::kNoOSRDeoptId);
 
   Fragment body(normal_entry);
-  body += TranslateExpression(initializer);
+  if (dil_field->IsConst()) {
+    body += Constant(constant_evaluator_.EvaluateExpression(initializer));
+  } else {
+    body += TranslateExpression(initializer);
+  }
 
   LocalVariable* field_value = MakeTemporary();
   body += LoadLocal(field_value);
@@ -1478,7 +1793,7 @@ Fragment FlowGraphBuilder::TranslateInitializers(
     Expression* init = dil_field->initializer();
     if (!dil_field->IsStatic() && init != NULL) {
       dart::Field& field =
-          dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
+          dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
 
       // TODO(kustermann): Support FLAG_use_field_guards.
       instructions += LoadLocal(this_variable_);
@@ -1498,7 +1813,7 @@ Fragment FlowGraphBuilder::TranslateInitializers(
     if (initializer->IsFieldInitializer()) {
       FieldInitializer* init = FieldInitializer::Cast(initializer);
       dart::Field& field =
-          dart::Field::ZoneHandle(Z, LookupFieldByDilField(init->field()));
+          dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(init->field()));
 
       // TODO(kustermann): Support FLAG_use_field_guards.
       instructions += LoadLocal(this_variable_);
@@ -1514,7 +1829,7 @@ Fragment FlowGraphBuilder::TranslateInitializers(
       instructions += TranslateArguments(init->arguments(), &argument_names);
 
       const Function& target = Function::ZoneHandle(Z,
-          LookupConstructorByDilConstructor(init->target()));
+          H.LookupConstructorByDilConstructor(init->target()));
       int argument_count = init->arguments()->count() + 1;
       instructions += StaticCall(target, argument_count, argument_names);
       instructions += Drop();
@@ -1528,7 +1843,7 @@ Fragment FlowGraphBuilder::TranslateInitializers(
       instructions += TranslateArguments(init->arguments(), &argument_names);
 
       const Function& target = Function::ZoneHandle(Z,
-          LookupConstructorByDilConstructor(init->target()));
+          H.LookupConstructorByDilConstructor(init->target()));
       int argument_count = init->arguments()->count() + 1;
       instructions += StaticCall(target, argument_count, argument_names);
       instructions += Drop();
@@ -1616,32 +1931,11 @@ void FlowGraphBuilder::VisitSymbolLiteral(SymbolLiteral* node) {
 }
 
 
-class DartTypeTranslator : public DartTypeVisitor {
- public:
-    explicit DartTypeTranslator(FlowGraphBuilder* owner)
-      : owner_(owner),
-        zone_(owner->zone_),
-        result_(AbstractType::ZoneHandle(Z)) {
-  }
-
-  AbstractType& result() { return result_; }
-
-  void VisitDefaultDartType(DartType* node) { UNREACHABLE(); }
-
-  void VisitInterfaceType(InterfaceType* node);
-
- private:
-  FlowGraphBuilder* owner_;
-  Zone* zone_;
-  AbstractType& result_;
-};
-
-
 void DartTypeTranslator::VisitInterfaceType(InterfaceType* node) {
   if (node->type_arguments().length() != 0) UNIMPLEMENTED();
 
-  const dart::Class& klass =
-      dart::Class::Handle(Z, owner_->LookupClassByDilClass(node->klass()));
+  const dart::Class& klass = dart::Class::Handle(Z,
+      owner_->translation_helper_.LookupClassByDilClass(node->klass()));
   result_ ^= klass.DeclarationType();
 }
 
@@ -1670,7 +1964,7 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
   if (target->IsField()) {
     Field* dil_field = Field::Cast(target);
     const dart::Field& field =
-        dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
+        dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
     const dart::Class& owner = dart::Class::Handle(Z, field.Owner());
     const dart::String& getter_name =
         H.DartGetterName(dil_field->name()->string());
@@ -1689,7 +1983,7 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
     // Invoke the getter function
     Procedure* procedure = Procedure::Cast(target);
     const Function& target = Function::ZoneHandle(Z,
-        LookupStaticMethodByDilProcedure(procedure));
+        H.LookupStaticMethodByDilProcedure(procedure));
 
     fragment_ = StaticCall(target, 0);
   }
@@ -1701,7 +1995,7 @@ void FlowGraphBuilder::VisitStaticSet(StaticSet* node) {
   if (target->IsField()) {
     Field* dil_field = Field::Cast(target);
     const dart::Field& field =
-        dart::Field::ZoneHandle(Z, LookupFieldByDilField(dil_field));
+        dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
     Fragment instructions = TranslateExpression(node->expression());
     LocalVariable* variable = MakeTemporary();
     instructions += LoadLocal(variable);
@@ -1720,7 +2014,7 @@ void FlowGraphBuilder::VisitStaticSet(StaticSet* node) {
     // Invoke the setter function.
     Procedure* procedure = Procedure::Cast(target);
     const Function& target = Function::ZoneHandle(Z,
-        LookupStaticMethodByDilProcedure(procedure));
+        H.LookupStaticMethodByDilProcedure(procedure));
     instructions += StaticCall(target, 1);
 
     // Drop the unused result & leave the stored value on the stack.
@@ -1787,7 +2081,7 @@ void FlowGraphBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
 
 void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   const Function& target = Function::ZoneHandle(Z,
-      LookupStaticMethodByDilProcedure(node->procedure()));
+      H.LookupStaticMethodByDilProcedure(node->procedure()));
   int argument_count = node->arguments()->count();
 
   Array& argument_names = Array::ZoneHandle(Z);
@@ -1838,8 +2132,14 @@ void FlowGraphBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
 
 
 void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
+  if (node->is_const()) {
+    fragment_ =
+        Constant(constant_evaluator_.EvaluateConstructorInvocation(node));
+    return;
+  }
+
   const dart::Class& klass = dart::Class::ZoneHandle(
-      Z, LookupClassByDilClass(Class::Cast(node->target()->parent())));
+      Z, H.LookupClassByDilClass(Class::Cast(node->target()->parent())));
   Fragment instructions = AllocateObject(klass);
   LocalVariable* variable = MakeTemporary();
 
@@ -1850,7 +2150,7 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
   instructions += TranslateArguments(node->arguments(), &argument_names);
 
   const Function& target = Function::ZoneHandle(Z,
-      LookupConstructorByDilConstructor(klass, node->target()));
+      H.LookupConstructorByDilConstructor(klass, node->target()));
   int argument_count = node->arguments()->count() + 1;
   instructions += StaticCall(target, argument_count, argument_names);
   fragment_ = instructions + Drop();
@@ -2032,7 +2332,8 @@ void FlowGraphBuilder::VisitStringConcatenation(StringConcatenation* node) {
 
 void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
   if (node->is_const() || !node->type()->IsDynamicType()) {
-    UNIMPLEMENTED();
+    fragment_ = Constant(constant_evaluator_.EvaluateListLiteral(node));
+    return;
   }
   // The type argument for the factory call.
   Fragment instructions = Constant(TypeArguments::ZoneHandle(Z));
@@ -2066,7 +2367,8 @@ void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
   if (node->is_const() ||
       !node->key_type()->IsDynamicType() ||
       !node->value_type()->IsDynamicType()) {
-    UNIMPLEMENTED();
+    fragment_ = Constant(constant_evaluator_.EvaluateMapLiteral(node));
+    return;
   }
 
   const dart::Class& map_class = dart::Class::Handle(Z,
@@ -2214,10 +2516,23 @@ void FlowGraphBuilder::VisitExpressionStatement(ExpressionStatement* node) {
 
 
 void FlowGraphBuilder::VisitVariableDeclaration(VariableDeclaration* node) {
-  Fragment instructions = node->initializer() == NULL
-      ? NullConstant()
-      : TranslateExpression(node->initializer());
-  instructions += StoreLocal(LookupVariable(node));
+  LocalVariable* variable = LookupVariable(node);
+  Expression* initializer = node->initializer();
+
+  Fragment instructions;
+  if (initializer == NULL) {
+    instructions += NullConstant();
+  } else {
+    if (node->IsConst()) {
+      const Instance& constant_value =
+          constant_evaluator_.EvaluateExpression(initializer);
+      variable->SetConstValue(constant_value);
+      instructions += Constant(constant_value);
+    } else {
+      instructions += TranslateExpression(initializer);
+    }
+  }
+  instructions += StoreLocal(variable);
   instructions += Drop();
   fragment_ = instructions;
 }
@@ -2493,8 +2808,8 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         TargetEntryInstr* then;
         TargetEntryInstr* otherwise;
 
-        current_instructions +=
-            TranslateExpression(switch_case->expressions()[j]);
+        current_instructions += Constant(constant_evaluator_.EvaluateExpression(
+            switch_case->expressions()[j]));
         current_instructions += PushArgument();
         current_instructions += LoadLocal(switch_variable_);
         current_instructions += PushArgument();
