@@ -296,6 +296,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment StoreInstanceField(intptr_t offset);
   Fragment StoreLocal(LocalVariable* variable);
   Fragment StoreStaticField(const dart::Field& field);
+  Fragment StringInterpolate();
 
   dart::RawFunction* LookupMethodByMember(
       Member* target, const dart::String& method_name);

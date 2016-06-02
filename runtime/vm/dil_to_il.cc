@@ -1653,6 +1653,15 @@ Fragment FlowGraphBuilder::StoreStaticField(const dart::Field& field) {
 }
 
 
+Fragment FlowGraphBuilder::StringInterpolate() {
+  Value* array = Pop();
+  StringInterpolateInstr* interpolate =
+      new (Z) StringInterpolateInstr(array, TokenPosition::kNoSource);
+  Push(interpolate);
+  return Fragment(interpolate);
+}
+
+
 dart::RawFunction* FlowGraphBuilder::LookupMethodByMember(
     Member* target, const dart::String& method_name) {
   Class* dil_klass = Class::Cast(target->parent());
@@ -2468,33 +2477,25 @@ void FlowGraphBuilder::VisitThisExpression(ThisExpression* node) {
 
 
 void FlowGraphBuilder::VisitStringConcatenation(StringConcatenation* node) {
-  dart::Library& core = dart::Library::Handle(Z,
-      dart::Library::LookupLibrary(H.DartSymbol("dart:core")));
-  dart::Class& sb_klass = dart::Class::Handle(Z,
-      core.LookupClassAllowPrivate(H.DartSymbol("StringBuffer")));
-  dart::Function& sb_const = dart::Function::ZoneHandle(Z,
-      sb_klass.LookupConstructor(H.DartSymbol("StringBuffer.")));
+  List<Expression>& expressions = node->expressions();
 
   Fragment instructions;
-  instructions += AllocateObject(sb_klass);
-  LocalVariable* sb = MakeTemporary();
 
-  instructions += LoadLocal(sb);
-  instructions += PushArgument();
-  instructions += StaticCall(sb_const, 1);
-  instructions += Drop();
+  // The type arguments for CreateArray.
+  instructions += Constant(TypeArguments::ZoneHandle(Z));
+  instructions += IntConstant(expressions.length());
+  instructions += CreateArray();
+  LocalVariable* array = MakeTemporary();
 
   for (int i = 0; i < node->expressions().length(); i++) {
-    instructions += LoadLocal(sb);
-    instructions += PushArgument();
+    instructions += LoadLocal(array);
+    instructions += IntConstant(i);
     instructions += TranslateExpression(node->expressions()[i]);
-    instructions += PushArgument();
-    instructions += InstanceCall(H.DartSymbol("write"), Token::kILLEGAL, 2);
+    instructions += StoreIndexed(kArrayCid);
     instructions += Drop();
   }
 
-  instructions += PushArgument();
-  instructions += InstanceCall(H.DartSymbol("toString"), Token::kILLEGAL, 1);
+  instructions += StringInterpolate();
 
   fragment_ = instructions;
 }
