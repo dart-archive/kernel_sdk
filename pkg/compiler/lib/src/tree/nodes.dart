@@ -2976,16 +2976,17 @@ class CatchBlock extends Node {
 
   Node get exception {
     if (formals == null || formals.nodes.isEmpty) return null;
-    VariableDefinitions declarations = formals.nodes.head;
-    return declarations.definitions.nodes.head;
+    VariableDefinitions declarations =
+        formals.nodes.head.asVariableDefinitions();
+    return declarations?.definitions?.nodes?.head;
   }
 
   Node get trace {
     if (formals == null || formals.nodes.isEmpty) return null;
     Link<Node> declarations = formals.nodes.tail;
     if (declarations.isEmpty) return null;
-    VariableDefinitions head = declarations.head;
-    return head.definitions.nodes.head;
+    VariableDefinitions head = declarations.head.asVariableDefinitions();
+    return head?.definitions?.nodes?.head;
   }
 
   visitChildren(Visitor visitor) {

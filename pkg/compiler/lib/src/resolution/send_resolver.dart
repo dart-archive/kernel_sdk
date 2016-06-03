@@ -224,12 +224,15 @@ abstract class DeclarationResolverMixin {
     bool constructorInvocationSeen = false;
     if (list != null) {
       for (Node initializer in list) {
-        InitializerStructure structure =
-            computeInitializerStructure(initializer);
-        if (structure.isConstructorInvoke) {
-          constructorInvocationSeen = true;
+        if (elements[initializer] != null) {
+          // TODO(ahe): Create erroneous structure.
+          InitializerStructure structure =
+              computeInitializerStructure(initializer);
+          if (structure.isConstructorInvoke) {
+            constructorInvocationSeen = true;
+          }
+          initializers.add(structure);
         }
-        initializers.add(structure);
       }
     }
     if (!constructorInvocationSeen) {

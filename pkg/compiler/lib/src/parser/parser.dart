@@ -1732,7 +1732,19 @@ class Parser {
     return token;
   }
 
+  int statementDepth = 0;
   Token parseStatement(Token token) {
+    if (statementDepth++ > 500) {
+      listener.reportError(
+          token, MessageKind.GENERIC, {'text': 'Stack overflow'});
+      return listener.skipToEof(token);
+    }
+    Token result = parseStatementX(token);
+    statementDepth--;
+    return result;
+  }
+
+  Token parseStatementX(Token token) {
     final value = token.stringValue;
     if (identical(token.kind, IDENTIFIER_TOKEN)) {
       return parseExpressionStatementOrDeclaration(token);
@@ -1932,10 +1944,18 @@ class Parser {
     return expectSemicolon(token);
   }
 
+  int expressionDepth = 0;
   Token parseExpression(Token token) {
-    return optional('throw', token)
+    if (expressionDepth++ > 500) {
+      listener.reportError(
+          token, MessageKind.GENERIC, {'text': 'Stack overflow'});
+      return token.next;
+    }
+    Token result = optional('throw', token)
         ? parseThrowExpression(token, true)
         : parsePrecedenceExpression(token, ASSIGNMENT_PRECEDENCE, true);
+    expressionDepth--;
+    return result;
   }
 
   Token parseExpressionWithoutCascade(Token token) {

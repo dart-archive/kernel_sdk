@@ -453,7 +453,7 @@ class ResolverTask extends CompilerTask {
       seen.add(target);
       target = nextTarget;
     }
-    if (!target.hasFunctionSignature) {
+    if (!target.isMalformed && !target.hasFunctionSignature) {
       target.computeType(resolution);
     }
 
