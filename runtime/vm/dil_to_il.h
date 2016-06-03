@@ -239,19 +239,19 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment TranslateInitializers(Class* dil_klass,
                                  List<Initializer>* initialiers);
 
-  Fragment TranslateStatement(Statement* statement) {
-    statement->AcceptStatementVisitor(this);
-    return fragment_;
-  }
+  Fragment TranslateStatement(Statement* statement);
+  Fragment TranslateExpression(Expression* expression);
 
-  Fragment TranslateExpression(Expression* expression) {
-    expression->AcceptExpressionVisitor(this);
-    return fragment_;
-  }
-
-  Fragment TranslateFinallyFinalizers(TryFinallyBlock* outer_finally);
+  Fragment TranslateFinallyFinalizers(TryFinallyBlock* outer_finally,
+                                      int target_context_depth);
 
   Fragment TranslateFunctionNode(FunctionNode* node, TreeNode* parent);
+
+  Fragment LoadContextAt(int depth);
+  Fragment AdjustContextTo(int depth);
+
+  Fragment PushContext(int size);
+  Fragment PopContext();
 
   Fragment AllocateContext(int size);
   Fragment AllocateObject(const dart::Class& klass);

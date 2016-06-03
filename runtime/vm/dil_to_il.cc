@@ -489,9 +489,10 @@ class BreakableBlock {
                  LabeledStatement* statement)
       : builder_(builder),
         labeled_statement_(statement),
+        outer_(builder->breakable_block_),
         destination_(NULL),
-        outer_finally_(builder->try_finally_block_) {
-    outer_ = builder_->breakable_block_;
+        outer_finally_(builder->try_finally_block_),
+        context_depth_(builder->context_depth_) {
     builder_->breakable_block_ = this;
   }
   ~BreakableBlock() {
@@ -503,13 +504,15 @@ class BreakableBlock {
   JoinEntryInstr* destination() { return destination_; }
 
   JoinEntryInstr* BreakDestination(LabeledStatement* label,
-                                   TryFinallyBlock** out_finally) {
+                                   TryFinallyBlock** outer_finally,
+                                   int* context_depth) {
     BreakableBlock* block = builder_->breakable_block_;
     while (block->labeled_statement_ != label) {
       block = block->outer_;
     }
     ASSERT(block != NULL);
-    *out_finally = block->outer_finally_;
+    *outer_finally = block->outer_finally_;
+    *context_depth = block->context_depth_;
     return block->EnsureDestination();
   }
 
@@ -526,6 +529,7 @@ class BreakableBlock {
   BreakableBlock* outer_;
   JoinEntryInstr* destination_;
   TryFinallyBlock* outer_finally_;
+  int context_depth_;
 };
 
 
@@ -533,9 +537,10 @@ class SwitchBlock {
  public:
   SwitchBlock(FlowGraphBuilder* builder, SwitchStatement* switch_stmt)
       : builder_(builder),
+        outer_(builder->switch_block_),
         outer_finally_(builder->try_finally_block_),
-        switch_statement_(switch_stmt) {
-    outer_ = builder_->switch_block_;
+        switch_statement_(switch_stmt),
+        context_depth_(builder->context_depth_) {
     builder_->switch_block_ = this;
   }
   ~SwitchBlock() {
@@ -547,7 +552,8 @@ class SwitchBlock {
   }
 
   JoinEntryInstr* Destination(SwitchCase* label,
-                              TryFinallyBlock** outer_finally) {
+                              TryFinallyBlock** outer_finally = NULL,
+                              int* context_depth = NULL) {
     // Find corresponding [SwitchStatement].
     SwitchBlock* block = this;
     while (true) {
@@ -558,6 +564,7 @@ class SwitchBlock {
     // Set the outer finally block.
     if (outer_finally != NULL) {
       *outer_finally = block->outer_finally_;
+      *context_depth = block->context_depth_;
     }
 
     // Ensure there's [JoinEntryInstr] for that [SwitchCase].
@@ -599,14 +606,17 @@ class SwitchBlock {
 
   TryFinallyBlock* outer_finally_;
   SwitchStatement* switch_statement_;
+  int context_depth_;
 };
 
 
 class TryFinallyBlock {
  public:
   TryFinallyBlock(FlowGraphBuilder* builder, Statement* finalizer)
-      : builder_(builder), finalizer_(finalizer) {
-    outer_ = builder_->try_finally_block_;
+      : builder_(builder),
+        outer_(builder->try_finally_block_),
+        finalizer_(finalizer),
+        context_depth_(builder->context_depth_) {
     builder_->try_finally_block_ = this;
   }
   ~TryFinallyBlock() {
@@ -614,25 +624,25 @@ class TryFinallyBlock {
   }
 
   Statement* finalizer() { return finalizer_; }
+  int context_depth() { return context_depth_; }
   TryFinallyBlock* outer() { return outer_; }
 
  private:
   FlowGraphBuilder* builder_;
   TryFinallyBlock* outer_;
   Statement* finalizer_;
+  int context_depth_;
 };
 
 
 class TryCatchBlock {
  public:
   explicit TryCatchBlock(FlowGraphBuilder* builder, int try_handler_index = -1)
-    : builder_(builder) {
-    if (try_handler_index == -1) {
-      try_handler_index = builder_->AllocateTryIndex();
-    }
-    outer_ = builder->try_catch_block_;
+      : builder_(builder),
+        outer_(builder->try_catch_block_),
+        try_index_(try_handler_index) {
+    if (try_index_ == -1) try_index_ = builder->AllocateTryIndex();
     builder->try_catch_block_ = this;
-    try_index_ = try_handler_index;
   }
   ~TryCatchBlock() {
     builder_->try_catch_block_ = outer_;
@@ -654,10 +664,10 @@ class CatchBlock {
              LocalVariable* stack_trace_var,
              intptr_t catch_try_index)
     : builder_(builder),
+      outer_(builder->catch_block_),
       exception_var_(exception_var),
       stack_trace_var_(stack_trace_var),
       catch_try_index_(catch_try_index) {
-    outer_ = builder_->catch_block_;
     builder_->catch_block_ = this;
   }
   ~CatchBlock() {
@@ -1252,14 +1262,20 @@ FlowGraphBuilder::~FlowGraphBuilder() { }
 
 
 Fragment FlowGraphBuilder::TranslateFinallyFinalizers(
-    TryFinallyBlock* outer_finally) {
-  TryFinallyBlock* saved = try_finally_block_;
+    TryFinallyBlock* outer_finally,
+    int target_context_depth) {
+  TryFinallyBlock* saved_block = try_finally_block_;
+  int saved_depth = context_depth_;
 
   Fragment instructions;
 
   // While translating the body of a finalizer we need to set the try-finally
   // block which is active when translating the body.
   while (try_finally_block_ != outer_finally) {
+    // Potentially restore the context to what is expected for the finally
+    // block.
+    instructions += AdjustContextTo(try_finally_block_->context_depth());
+
     Statement* finalizer = try_finally_block_->finalizer();
     try_finally_block_ = try_finally_block_->outer();
 
@@ -1272,9 +1288,59 @@ Fragment FlowGraphBuilder::TranslateFinallyFinalizers(
     if (!instructions.is_open()) break;
   }
 
-  try_finally_block_ = saved;
+  if (instructions.is_open() && target_context_depth != -1) {
+    // A target context depth of -1 indicates that we the code after this
+    // will not care about the context chain so we can leave it any way we
+    // want after the last finalizer.  That is used when returning.
+    instructions += AdjustContextTo(target_context_depth);
+  }
+
+  try_finally_block_ = saved_block;
+  context_depth_ = saved_depth;
 
   return instructions;
+}
+
+
+Fragment FlowGraphBuilder::LoadContextAt(int depth) {
+  int delta = context_depth_ - depth;
+  ASSERT(delta >= 0);
+  Fragment instructions = LoadLocal(parsed_function_->current_context_var());
+  while (delta-- > 0) {
+    instructions += LoadField(Context::parent_offset());
+  }
+  return instructions;
+}
+
+
+Fragment FlowGraphBuilder::AdjustContextTo(int depth) {
+  ASSERT(depth <= context_depth_ && depth >= 0);
+  Fragment instructions;
+  if (depth < context_depth_) {
+    instructions += LoadContextAt(depth);
+    instructions += StoreLocal(parsed_function_->current_context_var());
+    instructions += Drop();
+    context_depth_ = depth;
+  }
+  return instructions;
+}
+
+
+Fragment FlowGraphBuilder::PushContext(int size) {
+  ASSERT(size > 0);
+  Fragment instructions = AllocateContext(size);
+  LocalVariable* context = MakeTemporary();
+  instructions += LoadLocal(context);
+  instructions += LoadLocal(parsed_function_->current_context_var());
+  instructions += StoreInstanceField(Context::parent_offset());
+  instructions += StoreLocal(parsed_function_->current_context_var());
+  ++context_depth_;
+  return instructions;
+}
+
+
+Fragment FlowGraphBuilder::PopContext() {
+  return AdjustContextTo(context_depth_ - 1);
 }
 
 
@@ -1504,12 +1570,7 @@ Fragment FlowGraphBuilder::LoadField(intptr_t offset) {
 Fragment FlowGraphBuilder::LoadLocal(LocalVariable* variable) {
   Fragment instructions;
   if (variable->is_captured()) {
-    int delta = context_depth_ - variable->owner()->context_level();
-    ASSERT(delta >= 0);
-    instructions += LoadLocal(parsed_function_->current_context_var());
-    while (delta-- > 0) {
-      instructions += LoadField(Context::parent_offset());
-    }
+    instructions += LoadContextAt(variable->owner()->context_level());
     instructions += LoadField(Context::variable_offset(variable->index()));
   } else {
     LoadLocalInstr* load =
@@ -1628,12 +1689,7 @@ Fragment FlowGraphBuilder::StoreLocal(LocalVariable* variable) {
   Fragment instructions;
   if (variable->is_captured()) {
     LocalVariable* value = MakeTemporary();
-    int delta = context_depth_ - variable->owner()->context_level();
-    ASSERT(delta >= 0);
-    instructions += LoadLocal(parsed_function_->current_context_var());
-    while (delta-- > 0) {
-      instructions += LoadField(Context::parent_offset());
-    }
+    instructions += LoadContextAt(variable->owner()->context_level());
     instructions += LoadLocal(value);
     instructions +=
         StoreInstanceField(Context::variable_offset(variable->index()));
@@ -1853,7 +1909,43 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
 
   Fragment body(normal_entry);
   body += CheckStackOverflow();
-  // TODO(kmillikin): Allocate a context and copy parameters into it.
+  int context_size =
+      parsed_function_->node_sequence()->scope()->num_context_variables();
+  if (context_size > 0) {
+    body += PushContext(context_size);
+    LocalVariable* context = MakeTemporary();
+
+    // Copy captured parameters from the stack into the context.
+    LocalScope* scope = parsed_function_->node_sequence()->scope();
+    int parameter_count = parsed_function_->function().NumParameters();
+    int index = parsed_function_->first_parameter_index();
+    for (int i = 0; i < parameter_count; ++i) {
+      LocalVariable* variable = scope->VariableAt(i);
+      if (variable->is_captured()) {
+        // There is no LocalVariable describing the on-stack parameter so
+        // create one directly.
+        LocalVariable* parameter =
+            new(Z) LocalVariable(TokenPosition::kNoSource,
+                                 Symbols::TempParam(),
+                                 Object::dynamic_type());
+        parameter->set_index(index++);
+        // Mark the stack variable so it will be ignored by the code for
+        // try/catch.
+        parameter->set_is_captured_parameter(true);
+
+        // Copy the parameter from the stack to the context.  Overwrite it
+        // with a null constant on the stack so the original value is
+        // eligible for garbage collection.
+        body += LoadLocal(context);
+        body += LoadLocal(parameter);
+        body += StoreInstanceField(Context::variable_offset(variable->index()));
+        body += NullConstant();
+        body += StoreLocal(parameter);
+        body += Drop();
+      }
+    }
+    body += Drop();  // The context.
+  }
   if (constructor != NULL) {
     Class* dil_klass = Class::Cast(constructor->parent());
     body += TranslateInitializers(dil_klass, &constructor->initializers());
@@ -2031,6 +2123,22 @@ Fragment FlowGraphBuilder::TranslateInitializers(
     }
   }
   return instructions;
+}
+
+
+Fragment FlowGraphBuilder::TranslateStatement(Statement* statement) {
+#ifdef DEBUG
+  int depth = context_depth_;
+#endif
+  statement->AcceptStatementVisitor(this);
+  DEBUG_ASSERT(context_depth_ == depth);
+  return fragment_;
+}
+
+
+Fragment FlowGraphBuilder::TranslateExpression(Expression* expression)  {
+  expression->AcceptExpressionVisitor(this);
+  return fragment_;
 }
 
 
@@ -2657,14 +2765,8 @@ void FlowGraphBuilder::VisitBlock(Block* node) {
 
   int context_size = scopes_[node]->num_context_variables();
   if (context_size > 0) {
-    instructions += AllocateContext(context_size);
-    LocalVariable* context = MakeTemporary();
-    instructions += LoadLocal(context);
-    instructions += LoadLocal(parsed_function_->current_context_var());
-    instructions += StoreInstanceField(Context::parent_offset());
-    instructions += StoreLocal(parsed_function_->current_context_var());
+    instructions += PushContext(context_size);
     instructions += Drop();
-    ++context_depth_;
   }
 
   List<Statement>& statements = node->statements();
@@ -2672,12 +2774,12 @@ void FlowGraphBuilder::VisitBlock(Block* node) {
     instructions += TranslateStatement(statements[i]);
   }
 
-  if (instructions.is_open() && context_size > 0) {
-    instructions += LoadLocal(parsed_function_->current_context_var());
-    instructions += LoadField(Context::parent_offset());
-    instructions += StoreLocal(parsed_function_->current_context_var());
-    instructions += Drop();
-    --context_depth_;
+  if (context_size > 0) {
+    if (instructions.is_open()) {
+      instructions += PopContext();
+    } else {
+      --context_depth_;
+    }
   }
   fragment_ = instructions;
 }
@@ -2693,7 +2795,7 @@ void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
     ASSERT(finally_return_variable_ != NULL);
     instructions += StoreLocal(finally_return_variable_);
     instructions += Drop();
-    instructions += TranslateFinallyFinalizers(NULL);
+    instructions += TranslateFinallyFinalizers(NULL, -1);
     if (instructions.is_open()) {
       instructions += LoadLocal(finally_return_variable_);
       instructions += Return();
@@ -2884,6 +2986,11 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   condition += Branch(&body_entry, &loop_exit);
 
   Fragment body(body_entry);
+  int context_size = scopes_[node]->num_context_variables();
+  if (context_size > 0) {
+    body += PushContext(context_size);
+    body += Drop();
+  }
   body += LoadLocal(iterator);
   body += PushArgument();
   const dart::String& current_getter = dart::String::ZoneHandle(Z,
@@ -2892,6 +2999,14 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   body += StoreLocal(LookupVariable(node->variable()));
   body += Drop();
   body += TranslateStatement(node->body());
+
+  if (context_size > 0) {
+    if (body.is_open()) {
+      body += PopContext();
+    } else {
+      --context_depth_;
+    }
+  }
 
   if (body.is_open()) {
     JoinEntryInstr* join = BuildJoinEntry();
@@ -2937,11 +3052,15 @@ void FlowGraphBuilder::VisitLabeledStatement(LabeledStatement* node) {
 
 void FlowGraphBuilder::VisitBreakStatement(BreakStatement* node) {
   TryFinallyBlock* outer_finally = NULL;
+  int target_context_depth = -1;
   JoinEntryInstr* destination =
-      breakable_block_->BreakDestination(node->target(), &outer_finally);
+      breakable_block_->BreakDestination(node->target(),
+                                         &outer_finally,
+                                         &target_context_depth);
 
   Fragment instructions;
-  instructions += TranslateFinallyFinalizers(outer_finally);
+  instructions +=
+      TranslateFinallyFinalizers(outer_finally, target_context_depth);
   if (instructions.is_open()) {
     instructions += Goto(destination);
   }
@@ -2980,7 +3099,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
     // from `a == expr` and one from `a != expr && b == expr`). The
     // `block.Destination()` records the additional jump.
     if (switch_case->expressions().length() > 1) {
-      block.Destination(switch_case, NULL);
+      block.Destination(switch_case);
     }
 
     ASSERT(i == (node->cases().length() - 1) || body_fragments[i].is_closed());
@@ -3000,7 +3119,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
       if (block.HadJumper(switch_case)) {
         // There are several branches to the body, so we will make a goto to
         // the join block (and prepend a join instruction to the real body).
-        JoinEntryInstr* join = block.Destination(switch_case, NULL);
+        JoinEntryInstr* join = block.Destination(switch_case);
         current_instructions += Goto(join);
 
         current_instructions = Fragment(current_instructions.entry, join);
@@ -3027,7 +3146,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         if (block.HadJumper(switch_case)) {
           // There are several branches to the body, so we will make a goto to
           // the join block (and prepend a join instruction to the real body).
-          JoinEntryInstr* join = block.Destination(switch_case, NULL);
+          JoinEntryInstr* join = block.Destination(switch_case);
           then_fragment += Goto(join);
           Fragment real_body(join);
           real_body += body_fragments[i];
@@ -3051,11 +3170,15 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
 void FlowGraphBuilder::VisitContinueSwitchStatement(
     ContinueSwitchStatement* node) {
   TryFinallyBlock* outer_finally = NULL;
+  int target_context_depth = -1;
   JoinEntryInstr* entry =
-      switch_block_->Destination(node->target(), &outer_finally);
+      switch_block_->Destination(node->target(),
+                                 &outer_finally,
+                                 &target_context_depth);
 
   Fragment instructions;
-  instructions += TranslateFinallyFinalizers(outer_finally);
+  instructions +=
+      TranslateFinallyFinalizers(outer_finally, target_context_depth);
   if (instructions.is_open()) {
     instructions += Goto(entry);
   }
