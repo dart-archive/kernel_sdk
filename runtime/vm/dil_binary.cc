@@ -910,7 +910,8 @@ NormalClass* NormalClass::ReadFrom(Reader* reader) {
   DartType* type = reader->ReadOptional<DartType>();
 
   super_class_ = InterfaceType::Cast(type);
-  implemented_classes_.ReadFromStatic<DowncastReader<DartType, InterfaceType> >(reader);
+  implemented_classes_.ReadFromStatic<DowncastReader<DartType, InterfaceType> >(
+      reader);
   fields_.ReadFrom<Field>(reader, this);
   constructors_.ReadFrom<Constructor>(reader, this);
   procedures_.ReadFrom<Procedure>(reader, this);
@@ -941,7 +942,8 @@ MixinClass* MixinClass::ReadFrom(Reader* reader) {
   type_parameters_.ReadFromStatic<TypeParameter>(reader);
   first_ = InterfaceType::Cast(DartType::ReadFrom(reader));
   second_ = InterfaceType::Cast(DartType::ReadFrom(reader));
-  implemented_classes_.ReadFromStatic<InterfaceType>(reader);
+  implemented_classes_.ReadFromStatic<DowncastReader<DartType, InterfaceType> >(
+      reader);
   constructors_.ReadFrom<Constructor>(reader, this);
   return this;
 }
