@@ -24,7 +24,7 @@ namespace dil {
 
 class DartTypeTranslator : public DartTypeVisitor {
  public:
-    explicit DartTypeTranslator(FlowGraphBuilder* owner)
+  explicit DartTypeTranslator(FlowGraphBuilder* owner)
       : owner_(owner),
         zone_(owner->zone_),
         result_(AbstractType::ZoneHandle(Z)) {
@@ -35,6 +35,10 @@ class DartTypeTranslator : public DartTypeVisitor {
   void VisitDefaultDartType(DartType* node) { UNREACHABLE(); }
 
   void VisitInterfaceType(InterfaceType* node);
+
+  void VisitDynamicType(DynamicType* node);
+
+  void VisitVoidType(VoidType* node);
 
  private:
   FlowGraphBuilder* owner_;
@@ -2233,6 +2237,16 @@ void DartTypeTranslator::VisitInterfaceType(InterfaceType* node) {
 }
 
 
+void DartTypeTranslator::VisitDynamicType(DynamicType* node) {
+  result_ ^= Object::dynamic_type().raw();
+}
+
+
+void DartTypeTranslator::VisitVoidType(VoidType* node) {
+  result_ ^= Object::void_type().raw();
+}
+
+
 void FlowGraphBuilder::VisitTypeLiteral(TypeLiteral* node) {
   DartTypeTranslator translator(this);
   node->type()->AcceptDartTypeVisitor(&translator);
@@ -3299,7 +3313,8 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
       catch_handler_body += Drop();
     }
     DartTypeTranslator type_translator(this);
-    if (catch_clause->guard() != NULL) {
+    if (catch_clause->guard() != NULL &&
+        !catch_clause->guard()->IsDynamicType()) {
       catch_clause->guard()->AcceptDartTypeVisitor(&type_translator);
       handler_types.SetAt(i, type_translator.result());
     } else {

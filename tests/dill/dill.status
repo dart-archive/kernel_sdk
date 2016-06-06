@@ -759,7 +759,6 @@ co19/Language/Types/Type_Declarations/self_reference_t05_test: Crash
 co19/Language/Types/Type_Declarations/self_reference_t06_test: Crash
 co19/Language/Types/Type_Declarations/self_reference_t07_test: Crash
 co19/Language/Types/Type_dynamic/dynamic_t02_test: Crash
-co19/Language/Types/Type_dynamic/dynamic_t05_test: Crash
 co19/Language/Variables/constant_initialization_t03_test: RuntimeError
 co19/Language/Variables/constant_variable_t01_test: Crash
 co19/Language/Variables/constant_variable_t02_test: Crash
