@@ -1528,6 +1528,9 @@ Fragment FlowGraphBuilder::ThrowException() {
   // Use it's side effect of leaving a constant on the stack (does not change
   // the graph).
   NullConstant();
+
+  pending_argument_count_ -= 1;
+
   return instructions;
 }
 
@@ -1541,6 +1544,9 @@ Fragment FlowGraphBuilder::RethrowException(int catch_try_index) {
   // Use it's side effect of leaving a constant on the stack (does not change
   // the graph).
   NullConstant();
+
+  pending_argument_count_ -= 2;
+
   return instructions;
 }
 
