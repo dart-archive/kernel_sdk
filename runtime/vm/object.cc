@@ -2645,6 +2645,7 @@ RawFunction* Function::CreateMethodExtractor(const String& getter_name) const {
   extractor.set_parameter_types(Object::extractor_parameter_types());
   extractor.set_parameter_names(Object::extractor_parameter_names());
   extractor.set_result_type(Object::dynamic_type());
+  extractor.set_dil_function(dil_function());
 
   extractor.set_extracted_method_closure(closure_function);
   extractor.set_is_debuggable(false);

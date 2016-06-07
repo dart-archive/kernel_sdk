@@ -229,6 +229,7 @@ class FlowGraphBuilder : public TreeVisitor {
   FlowGraph* BuildGraphOfFieldAccessor(Field* node,
                                        LocalVariable* setter_value);
   FlowGraph* BuildGraphOfStaticFieldInitializer(Field* node);
+  FlowGraph* BuildGraphOfMethodExtractor(const Function& method);
 
   TargetEntryInstr* BuildTargetEntry();
   JoinEntryInstr* BuildJoinEntry();
@@ -344,6 +345,7 @@ class FlowGraphBuilder : public TreeVisitor {
   int context_depth_;
   int loop_depth_;
   unsigned handler_depth_;
+  unsigned for_in_depth_;
   Fragment fragment_;
   Value* stack_;
   int pending_argument_count_;
@@ -359,9 +361,14 @@ class FlowGraphBuilder : public TreeVisitor {
   // Non-NULL when the function contains a return inside a finally block.
   LocalVariable* finally_return_variable_;
 
+  // Variables used in exception handlers, one per exception handler nesting
+  // level.
   std::vector<LocalVariable*> exception_variables_;
   std::vector<LocalVariable*> stack_trace_variables_;
   std::vector<LocalVariable*> catch_context_variables_;
+
+  // For-in iterators, one per for-in nesting level.
+  std::vector<LocalVariable*> iterator_variables_;
 
   LocalVariable* CurrentException() {
     return exception_variables_[handler_depth_ - 1];

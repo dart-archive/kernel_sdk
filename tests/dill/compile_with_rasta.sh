@@ -13,7 +13,7 @@ function compile {
   if [ -z "$2" ]; then
     dillfile=${dartfile%.dart}.dill
   else
-    dillfile=$(realpath $2)
+    dillfile=$2
   fi
 
   echo "Compiling $dartfile to $dillfile"

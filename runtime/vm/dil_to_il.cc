@@ -59,6 +59,7 @@ class ScopeBuilder : public RecursiveVisitor {
         function_depth_(0),
         handler_depth_(0),
         finally_depth_(0),
+        for_in_depth_(0),
         name_index_(0),
         setter_value_(NULL) {
   }
@@ -100,6 +101,7 @@ class ScopeBuilder : public RecursiveVisitor {
   void AddParameter(VariableDeclaration* declaration, int pos);
   void AddVariable(VariableDeclaration* declaration);
   void AddExceptionVariables();
+  void AddIteratorVariable();
 
   // Record an assignment or reference to a variable.  If the occurrence is
   // in a nested function, ensure that the variable is handled properly as a
@@ -107,8 +109,8 @@ class ScopeBuilder : public RecursiveVisitor {
   void LookupVariable(VariableDeclaration* declaration);
 
   const dart::String& GenerateName();
-
   const dart::String& GenerateHandlerName(const char* base);
+  const dart::String& GenerateIteratorName();
 
   void HandleLocalFunction(TreeNode* parent, FunctionNode* function);
 
@@ -122,6 +124,7 @@ class ScopeBuilder : public RecursiveVisitor {
   int function_depth_;
   unsigned handler_depth_;
   int finally_depth_;
+  unsigned for_in_depth_;
 
   int name_index_;
 
@@ -179,6 +182,8 @@ void ScopeBuilder::AddExceptionVariables() {
   ASSERT(builder_->exception_variables_.size() == handler_depth_ - 1);
   ASSERT(builder_->exception_variables_.size() ==
          builder_->stack_trace_variables_.size());
+  ASSERT(builder_->exception_variables_.size() ==
+         builder_->catch_context_variables_.size());
   LocalVariable* exception = MakeVariable(GenerateHandlerName(":exception"));
   LocalVariable* stack_trace =
       MakeVariable(GenerateHandlerName(":stack_trace"));
@@ -190,6 +195,16 @@ void ScopeBuilder::AddExceptionVariables() {
   builder_->exception_variables_.push_back(exception);
   builder_->stack_trace_variables_.push_back(stack_trace);
   builder_->catch_context_variables_.push_back(catch_context);
+}
+
+
+void ScopeBuilder::AddIteratorVariable() {
+  if (builder_->iterator_variables_.size() >= for_in_depth_) return;
+
+  ASSERT(builder_->iterator_variables_.size() == for_in_depth_ - 1);
+  LocalVariable* iterator = MakeVariable(GenerateIteratorName());
+  function_scope_->AddVariable(iterator);
+  builder_->iterator_variables_.push_back(iterator);
 }
 
 
@@ -223,6 +238,13 @@ const dart::String& ScopeBuilder::GenerateName() {
 const dart::String& ScopeBuilder::GenerateHandlerName(const char* base) {
   char name[64];
   OS::SNPrint(name, 64, "%s%d", base, handler_depth_ - 1);
+  return H.DartSymbol(name);
+}
+
+
+const dart::String& ScopeBuilder::GenerateIteratorName() {
+  char name[64];
+  OS::SNPrint(name, 64, ":iterator%d", for_in_depth_ - 1);
   return H.DartSymbol(name);
 }
 
@@ -282,6 +304,7 @@ void ScopeBuilder::BuildScopes() {
         builder_->this_variable_ = variable;
       }
       AddParameters(node, pos);
+      builder_->node_->AcceptVisitor(this);
       break;
     }
     case RawFunction::kImplicitGetter:
@@ -305,13 +328,26 @@ void ScopeBuilder::BuildScopes() {
       break;
     }
     case RawFunction::kImplicitStaticFinalGetter:
+      builder_->node_->AcceptVisitor(this);
       break;
+    case RawFunction::kMethodExtractor: {
+      // Add a receiver parameter.  Though it is captured, we emit code to
+      // explicitly copy it to a fixed offset in a freshly-allocated context
+      // instead of using the generic code for regular functions.
+      // Therefore, it isn't necessary to mark it as captured here.
+      dart::Class& klass = dart::Class::Handle(Z, function.Owner());
+      Type& klass_type =
+          Type::ZoneHandle(Z, Type::NewNonParameterizedType(klass));
+      LocalVariable* variable = MakeVariable(Symbols::This(), klass_type);
+      scope_->InsertParameterAt(0, variable);
+      builder_->this_variable_ = variable;
+      break;
+    }
     default:
       UNREACHABLE();
       break;
   }
 
-  builder_->node_->AcceptVisitor(this);
   parsed_function->AllocateVariables();
 }
 
@@ -416,12 +452,15 @@ void ScopeBuilder::VisitForStatement(ForStatement* node) {
 
 void ScopeBuilder::VisitForInStatement(ForInStatement* node) {
   node->iterable()->AcceptExpressionVisitor(this);
+  ++for_in_depth_;
+  AddIteratorVariable();
   ++loop_depth_;
   EnterScope(node);
   VisitVariableDeclaration(node->variable());
   node->body()->AcceptStatementVisitor(this);
   ExitScope();
   --loop_depth_;
+  --for_in_depth_;
 }
 
 
@@ -1253,6 +1292,7 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     context_depth_(0),
     loop_depth_(0),
     handler_depth_(0),
+    for_in_depth_(0),
     stack_(NULL),
     pending_argument_count_(0),
     graph_entry_(NULL),
@@ -1881,6 +1921,8 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       ASSERT(node_->IsField());
       return BuildGraphOfStaticFieldInitializer(Field::Cast(node_));
     }
+    case RawFunction::kMethodExtractor:
+      return BuildGraphOfMethodExtractor(function);
     default: {
       UNREACHABLE();
       return NULL;
@@ -2063,6 +2105,50 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
   body += LoadLocal(field_value);
   body += StoreStaticField(field);
 
+  body += Return();
+
+  return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
+}
+
+
+FlowGraph* FlowGraphBuilder::BuildGraphOfMethodExtractor(
+    const Function& method) {
+  // A method extractor is the implicit getter for a method.
+  const Function& function = Function::ZoneHandle(Z,
+      method.extracted_method_closure());
+
+  TargetEntryInstr* normal_entry = BuildTargetEntry();
+  graph_entry_ = new(Z) GraphEntryInstr(*parsed_function_,
+                                        normal_entry,
+                                        Compiler::kNoOSRDeoptId);
+  Fragment body(normal_entry);
+  body += CheckStackOverflow();
+  // Allocate a closure.
+  const dart::Class& closure_class =
+      dart::Class::ZoneHandle(Z, I->object_store()->closure_class());
+  body += AllocateObject(closure_class, function);
+  LocalVariable* closure = MakeTemporary();
+
+  // Allocate a context that closes over `this`.
+  body += AllocateContext(1);
+  LocalVariable* context = MakeTemporary();
+
+  // Store the function and the context in the closure.
+  body += LoadLocal(closure);
+  body += Constant(function);
+  body += StoreInstanceField(Closure::function_offset());
+
+  body += LoadLocal(closure);
+  body += LoadLocal(context);
+  body += StoreInstanceField(Closure::context_offset());
+
+  // The context is on top of the operand stack.  Store `this`.  The context
+  // doesn't need a parent pointer because it doesn't close over anything
+  // else.
+  body += LoadLocal(this_variable_);
+  body += StoreInstanceField(Context::variable_offset(0));
+
+  // The closure is on top of the operand stack.
   body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
@@ -3018,8 +3104,11 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   const dart::String& iterator_getter = dart::String::ZoneHandle(Z,
       dart::Field::GetterSymbol(Symbols::Iterator()));
   instructions += InstanceCall(iterator_getter, Token::kGET, 1);
-  LocalVariable* iterator = MakeTemporary();
+  LocalVariable* iterator = iterator_variables_[for_in_depth_];
+  instructions += StoreLocal(iterator);
+  instructions += Drop();
 
+  ++for_in_depth_;
   ++loop_depth_;
   Fragment condition = LoadLocal(iterator);
   condition += PushArgument();
@@ -3063,8 +3152,9 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
     instructions += condition;
   }
 
-  fragment_ = Fragment(instructions.entry, loop_exit) + Drop();
+  fragment_ = Fragment(instructions.entry, loop_exit);
   --loop_depth_;
+  --for_in_depth_;
 }
 
 
