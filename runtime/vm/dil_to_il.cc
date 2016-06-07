@@ -182,10 +182,14 @@ void ScopeBuilder::AddExceptionVariables() {
   LocalVariable* exception = MakeVariable(GenerateHandlerName(":exception"));
   LocalVariable* stack_trace =
       MakeVariable(GenerateHandlerName(":stack_trace"));
+  LocalVariable* catch_context =
+      MakeVariable(GenerateHandlerName(":saved_try_context_var"));
   function_scope_->AddVariable(exception);
   function_scope_->AddVariable(stack_trace);
+  function_scope_->AddVariable(catch_context);
   builder_->exception_variables_.push_back(exception);
   builder_->stack_trace_variables_.push_back(stack_trace);
+  builder_->catch_context_variables_.push_back(catch_context);
 }
 
 
@@ -397,7 +401,9 @@ void ScopeBuilder::VisitForStatement(ForStatement* node) {
     VisitVariableDeclaration(variables[i]);
   }
   ++loop_depth_;
-  node->condition()->AcceptExpressionVisitor(this);
+  if (node->condition() != NULL) {
+    node->condition()->AcceptExpressionVisitor(this);
+  }
   node->body()->AcceptStatementVisitor(this);
   List<Expression>& updates = node->updates();
   for (int i = 0; i < updates.length(); ++i) {
@@ -1443,7 +1449,11 @@ Fragment FlowGraphBuilder::CatchBlockEntry(const Array& handler_types,
                                   *CurrentStackTrace(),
                                   true);
   graph_entry_->AddCatchEntry(entry);
-  return Fragment(entry);
+  Fragment instructions(entry);
+  instructions += LoadLocal(CurrentCatchContext());
+  instructions += StoreLocal(parsed_function_->current_context_var());
+  instructions += Drop();
+  return instructions;
 }
 
 
@@ -1456,8 +1466,9 @@ Fragment FlowGraphBuilder::TryCatch(int try_handler_index) {
   Fragment body;
   JoinEntryInstr* entry =
       new(Z) JoinEntryInstr(AllocateBlockId(), try_handler_index);
-  // TODO(kustermann): With closure support, we need to save the context
-  // variable before jumping.
+  body += LoadLocal(parsed_function_->current_context_var());
+  body += StoreLocal(catch_context_variables_[handler_depth_]);
+  body += Drop();
   body += Goto(entry);
   return Fragment(body.entry, entry);
 }
@@ -1466,6 +1477,13 @@ Fragment FlowGraphBuilder::TryCatch(int try_handler_index) {
 Fragment FlowGraphBuilder::CheckStackOverflow() {
   return Fragment(new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource,
                                                  loop_depth_));
+}
+
+
+Fragment FlowGraphBuilder::CloneContext() {
+  Fragment instructions = LoadLocal(parsed_function_->current_context_var());
+  instructions <<= new(Z) CloneContextInstr(TokenPosition::kNoSource, Pop());
+  return instructions;
 }
 
 
@@ -2138,10 +2156,10 @@ Fragment FlowGraphBuilder::TranslateInitializers(
 
 Fragment FlowGraphBuilder::TranslateStatement(Statement* statement) {
 #ifdef DEBUG
-  int depth = context_depth_;
+  int original_context_depth = context_depth_;
 #endif
   statement->AcceptStatementVisitor(this);
-  DEBUG_ASSERT(context_depth_ == depth);
+  DEBUG_ASSERT(context_depth_ == original_context_depth);
   return fragment_;
 }
 
@@ -2953,12 +2971,16 @@ void FlowGraphBuilder::VisitDoStatement(DoStatement* node) {
 void FlowGraphBuilder::VisitForStatement(ForStatement* node) {
   Fragment declarations;
   List<VariableDeclaration>& variables = node->variables();
+  bool captured = false;
   for (int i = 0; i < variables.length(); ++i) {
+    captured = captured || LookupVariable(variables[i])->is_captured();
     declarations += TranslateStatement(variables[i]);
   }
 
   ++loop_depth_;
-  Fragment condition = TranslateExpression(node->condition());
+  Fragment condition = node->condition() == NULL
+      ? Constant(Bool::True())
+      : TranslateExpression(node->condition());
   TargetEntryInstr* body_entry;
   TargetEntryInstr* loop_exit;
   condition += Branch(&body_entry, &loop_exit);
@@ -2967,6 +2989,7 @@ void FlowGraphBuilder::VisitForStatement(ForStatement* node) {
   body += TranslateStatement(node->body());
 
   if (body.is_open()) {
+    if (captured) body += CloneContext();
     List<Expression>& updates = node->updates();
     for (int i = 0; i < updates.length(); ++i) {
       body += TranslateExpression(updates[i]);
@@ -3231,9 +3254,6 @@ void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
   //      rethrowing the exception.
   int try_handler_index = AllocateTryIndex();
   Fragment try_body = TryCatch(try_handler_index);
-
-  // TODO(kustermann): With closure support, we need to restore the context
-  // variable here.
   JoinEntryInstr* after_try = BuildJoinEntry();
 
   // Fill in the body of the try.
@@ -3279,9 +3299,6 @@ void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
 void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
   int try_handler_index = AllocateTryIndex();
   Fragment try_body = TryCatch(try_handler_index);
-
-  // TODO(kustermann): With closure support, we need to restore the context
-  // variable here.
   JoinEntryInstr* after_try = BuildJoinEntry();
 
   // Fill in the body of the try.

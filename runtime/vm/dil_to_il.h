@@ -266,6 +266,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment CatchBlockEntry(const Array& handler_types, int handler_index);
   Fragment TryCatch(int try_handler_index);
   Fragment CheckStackOverflow();
+  Fragment CloneContext();
   Fragment Constant(const Object& value);
   Fragment CreateArray();
   Fragment Goto(JoinEntryInstr* destination);
@@ -360,12 +361,16 @@ class FlowGraphBuilder : public TreeVisitor {
 
   std::vector<LocalVariable*> exception_variables_;
   std::vector<LocalVariable*> stack_trace_variables_;
+  std::vector<LocalVariable*> catch_context_variables_;
 
   LocalVariable* CurrentException() {
     return exception_variables_[handler_depth_ - 1];
   }
   LocalVariable* CurrentStackTrace() {
     return stack_trace_variables_[handler_depth_ - 1];
+  }
+  LocalVariable* CurrentCatchContext() {
+    return catch_context_variables_[handler_depth_ - 1];
   }
 
   // A chained list of breakable blocks. Chaining and lookup is done by the
