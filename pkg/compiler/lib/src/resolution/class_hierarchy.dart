@@ -174,7 +174,8 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
     }
 
     if (element.interfaces == null) {
-      element.interfaces = resolveInterfaces(node.interfaces, node.superclass);
+      element.interfaces =
+          resolveInterfaces(element, node.interfaces, node.superclass);
     } else {
       assert(invariant(element, element.hasIncompleteHierarchy));
     }
@@ -372,6 +373,7 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
         node.asNamedMixinApplication();
     Link<DartType> interfaces = (namedMixinApplication != null)
         ? resolveInterfaces(
+            mixinApplication,
             namedMixinApplication.interfaces, namedMixinApplication.superclass)
         : const Link<DartType>();
 
@@ -457,25 +459,32 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
             superclass,
             MessageKind.CANNOT_EXTEND_MALFORMED,
             {'className': element.name, 'malformedType': supertype});
+        cls.hasIncompleteHierarchy = true;
         return objectType;
       } else if (supertype.isEnumType) {
         reporter.reportErrorMessage(superclass, MessageKind.CANNOT_EXTEND_ENUM,
             {'className': element.name, 'enumType': supertype});
+        cls.hasIncompleteHierarchy = true;
         return objectType;
       } else if (!supertype.isInterfaceType) {
         reporter.reportErrorMessage(
             superclass.typeName, MessageKind.CLASS_NAME_EXPECTED);
+        cls.hasIncompleteHierarchy = true;
         return objectType;
       } else if (isBlackListed(supertype)) {
         reporter.reportErrorMessage(
             superclass, MessageKind.CANNOT_EXTEND, {'type': supertype});
+        cls.hasIncompleteHierarchy = true;
         return objectType;
       }
     }
     return supertype;
   }
 
-  Link<DartType> resolveInterfaces(NodeList interfaces, Node superclass) {
+  Link<DartType> resolveInterfaces(
+      BaseClassElementX cls,
+      NodeList interfaces,
+      Node superclass) {
     Link<DartType> result = const Link<DartType>();
     if (interfaces == null) return result;
     for (Link<Node> link = interfaces.nodes; !link.isEmpty; link = link.tail) {
@@ -486,16 +495,19 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
               superclass,
               MessageKind.CANNOT_IMPLEMENT_MALFORMED,
               {'className': element.name, 'malformedType': interfaceType});
+          cls.hasIncompleteHierarchy = true;
         } else if (interfaceType.isEnumType) {
           reporter.reportErrorMessage(
               superclass,
               MessageKind.CANNOT_IMPLEMENT_ENUM,
               {'className': element.name, 'enumType': interfaceType});
+          cls.hasIncompleteHierarchy = true;
         } else if (!interfaceType.isInterfaceType) {
           // TODO(johnniwinther): Handle dynamic.
           TypeAnnotation typeAnnotation = link.head;
           reporter.reportErrorMessage(
               typeAnnotation.typeName, MessageKind.CLASS_NAME_EXPECTED);
+          cls.hasIncompleteHierarchy = true;
         } else {
           if (interfaceType == element.supertype) {
             reporter.reportErrorMessage(
@@ -506,15 +518,18 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
                 link.head,
                 MessageKind.DUPLICATE_EXTENDS_IMPLEMENTS,
                 {'type': interfaceType});
+            cls.hasIncompleteHierarchy = true;
           }
           if (result.contains(interfaceType)) {
             reporter.reportErrorMessage(link.head,
                 MessageKind.DUPLICATE_IMPLEMENTS, {'type': interfaceType});
+            cls.hasIncompleteHierarchy = true;
           }
           result = result.prepend(interfaceType);
           if (isBlackListed(interfaceType)) {
             reporter.reportErrorMessage(link.head, MessageKind.CANNOT_IMPLEMENT,
                 {'type': interfaceType});
+            cls.hasIncompleteHierarchy = true;
           }
         }
       }
