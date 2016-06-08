@@ -960,10 +960,18 @@ dart::RawFunction* TranslationHelper::LookupStaticMethodByDilProcedure(
   if (parent->IsClass()) {
     dart::Class& klass = dart::Class::Handle(Z,
         LookupClassByDilClass(Class::Cast(parent)));
-    dart::RawFunction* function =
+    dart::RawFunction* raw_function =
         klass.LookupFunctionAllowPrivate(procedure_name);
-    ASSERT(function != Object::null());
-    return function;
+    ASSERT(raw_function != Object::null());
+
+    // TODO(kustermann): We can probably get rid of this after no longer using
+    // the built-in core libraries.
+    dart::Function& function = dart::Function::ZoneHandle(Z, raw_function);
+    if (function.IsRedirectingFactory()) {
+      ClassFinalizer::ResolveRedirectingFactory(klass, function);
+      function ^= function.RedirectionTarget();
+    }
+    return function.raw();
   } else {
     ASSERT(parent->IsLibrary());
     dart::Library& library = dart::Library::Handle(Z,
