@@ -2015,8 +2015,8 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     // Copy captured parameters from the stack into the context.
     LocalScope* scope = parsed_function_->node_sequence()->scope();
     int parameter_count = parsed_function_->function().NumParameters();
-    int index = parsed_function_->first_parameter_index();
-    for (int i = 0; i < parameter_count; ++i) {
+    int parameter_index = parsed_function_->first_parameter_index();
+    for (int i = 0; i < parameter_count; ++i, --parameter_index) {
       LocalVariable* variable = scope->VariableAt(i);
       if (variable->is_captured()) {
         // There is no LocalVariable describing the on-stack parameter so
@@ -2025,7 +2025,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
             new(Z) LocalVariable(TokenPosition::kNoSource,
                                  Symbols::TempParam(),
                                  Object::dynamic_type());
-        parameter->set_index(index++);
+        parameter->set_index(parameter_index);
         // Mark the stack variable so it will be ignored by the code for
         // try/catch.
         parameter->set_is_captured_parameter(true);
