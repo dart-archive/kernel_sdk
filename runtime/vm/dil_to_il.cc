@@ -24,24 +24,24 @@ namespace dil {
 
 class DartTypeTranslator : public DartTypeVisitor {
  public:
-  explicit DartTypeTranslator(FlowGraphBuilder* owner)
-      : owner_(owner),
-        zone_(owner->zone_),
+  explicit DartTypeTranslator(TranslationHelper* helper)
+      : translation_helper_(*helper),
+        zone_(helper->zone()),
         result_(AbstractType::ZoneHandle(Z)) {
   }
 
   AbstractType& result() { return result_; }
 
-  void VisitDefaultDartType(DartType* node) { UNREACHABLE(); }
+  virtual void VisitDefaultDartType(DartType* node) { UNREACHABLE(); }
 
-  void VisitInterfaceType(InterfaceType* node);
+  virtual void VisitInterfaceType(InterfaceType* node);
 
-  void VisitDynamicType(DynamicType* node);
+  virtual void VisitDynamicType(DynamicType* node);
 
-  void VisitVoidType(VoidType* node);
+  virtual void VisitVoidType(VoidType* node);
 
  private:
-  FlowGraphBuilder* owner_;
+  TranslationHelper& translation_helper_;
   Zone* zone_;
   AbstractType& result_;
 };
@@ -1081,11 +1081,19 @@ void ConstantEvaluator::VisitStringLiteral(StringLiteral* node) {
 
 
 void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
-  // TODO(kustermann): Set the correct type.
+  DartTypeTranslator translator(&H);
+  TypeArguments& type_arguments =
+      TypeArguments::Handle(Z, TypeArguments::null());
+  if (!node->type()->IsDynamicType()) {
+    type_arguments = TypeArguments::New(1);
+    node->type()->AcceptDartTypeVisitor(&translator);
+    type_arguments.SetTypeAt(0, translator.result());
+    type_arguments = type_arguments.Canonicalize();
+  }
 
   int length = node->expressions().length();
   Array& const_list = Array::ZoneHandle(Z, Array::New(length, Heap::kOld));
-  const_list.SetTypeArguments(TypeArguments::Handle(Z, TypeArguments::null()));
+  const_list.SetTypeArguments(type_arguments);
   for (int i = 0; i < length; i++) {
     const Instance& expression = EvaluateExpression(node->expressions()[i]);
     const_list.SetAt(i, expression);
@@ -1096,7 +1104,19 @@ void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
 
 
 void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
-  // TODO(kustermann): Set the correct type/type-arguments.
+  DartTypeTranslator translator(&H);
+  TypeArguments& type_arguments =
+      TypeArguments::Handle(Z, TypeArguments::null());
+  if (!node->key_type()->IsDynamicType() ||
+      !node->value_type()->IsDynamicType()) {
+    type_arguments = TypeArguments::New(2);
+    node->key_type()->AcceptDartTypeVisitor(&translator);
+    type_arguments.SetTypeAt(0, translator.result());
+    node->value_type()->AcceptDartTypeVisitor(&translator);
+    type_arguments.SetTypeAt(1, translator.result());
+    type_arguments = type_arguments.Canonicalize();
+  }
+
   int length = node->entries().length();
 
   Array& const_kv_array =
@@ -1123,8 +1143,7 @@ void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
   // NOTE: This needs to be kept in sync with `runtime/lib/immutable_map.dart`!
   result_ ^= Instance::New(map_class, Heap::kOld);
   ASSERT(!result_.IsNull());
-
-  result_.SetTypeArguments(TypeArguments::Handle(Z, TypeArguments::null()));
+  result_.SetTypeArguments(type_arguments);
   result_.SetField(field, const_kv_array);
   result_ ^= Canonicalize(result_);
 }
@@ -2333,11 +2352,31 @@ void FlowGraphBuilder::VisitSymbolLiteral(SymbolLiteral* node) {
 
 
 void DartTypeTranslator::VisitInterfaceType(InterfaceType* node) {
-  if (node->type_arguments().length() != 0) UNIMPLEMENTED();
+  bool only_dynamic = true;
+  for (int i = 0; i < node->type_arguments().length(); i++) {
+    if (!node->type_arguments()[i]->IsDynamicType()) {
+      only_dynamic = false;
+      break;
+    }
+  }
+
+  TypeArguments& type_arguments =
+      TypeArguments::Handle(Z, TypeArguments::null());
+  if (!only_dynamic) {
+    type_arguments = TypeArguments::New(node->type_arguments().length());
+    for (int i = 0; i < node->type_arguments().length(); i++) {
+      DartType* type_argument = node->type_arguments()[i];
+      type_argument->AcceptDartTypeVisitor(this);
+      type_arguments.SetTypeAt(i, result_);
+    }
+  }
 
   const dart::Class& klass = dart::Class::Handle(Z,
-      owner_->translation_helper_.LookupClassByDilClass(node->klass()));
-  result_ ^= klass.DeclarationType();
+      H.LookupClassByDilClass(node->klass()));
+
+  result_ = Type::New(klass, type_arguments, TokenPosition::kNoSource);
+  result_.SetIsFinalized();
+  result_ = result_.Canonicalize();
 }
 
 
@@ -2352,7 +2391,7 @@ void DartTypeTranslator::VisitVoidType(VoidType* node) {
 
 
 void FlowGraphBuilder::VisitTypeLiteral(TypeLiteral* node) {
-  DartTypeTranslator translator(this);
+  DartTypeTranslator translator(&H);
   node->type()->AcceptDartTypeVisitor(&translator);
   fragment_ = Fragment(Constant(translator.result()));
 }
@@ -2571,10 +2610,11 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
 void FlowGraphBuilder::VisitIsExpression(IsExpression* node) {
   Fragment instructions = TranslateExpression(node->operand());
   instructions += PushArgument();
+
   instructions += NullConstant();
   instructions += PushArgument();  // Type arguments.
 
-  DartTypeTranslator translator(this);
+  DartTypeTranslator translator(&H);
   node->type()->AcceptDartTypeVisitor(&translator);
   instructions += Constant(translator.result());
   instructions += PushArgument();  // Type.
@@ -2595,7 +2635,7 @@ void FlowGraphBuilder::VisitAsExpression(AsExpression* node) {
   instructions += NullConstant();
   instructions += PushArgument();  // Type arguments.
 
-  DartTypeTranslator translator(this);
+  DartTypeTranslator translator(&H);
   node->type()->AcceptDartTypeVisitor(&translator);
   instructions += Constant(translator.result());
   instructions += PushArgument();  // Type.
@@ -3419,7 +3459,7 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
           StoreLocal(LookupVariable(catch_clause->stack_trace()));
       catch_handler_body += Drop();
     }
-    DartTypeTranslator type_translator(this);
+    DartTypeTranslator type_translator(&H);
     if (catch_clause->guard() != NULL &&
         !catch_clause->guard()->IsDynamicType()) {
       catch_clause->guard()->AcceptDartTypeVisitor(&type_translator);
