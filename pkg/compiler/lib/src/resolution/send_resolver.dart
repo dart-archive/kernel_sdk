@@ -59,7 +59,8 @@ class ConstructorDeclStructure<R, A> extends DeclStructure<R, A> {
 
 class RedirectingFactoryConstructorDeclStructure<R, A>
     extends DeclStructure<R, A> {
-  InterfaceType redirectionTargetType;
+  // TODO(ahe): Construct invalid something instead.
+  DartType redirectionTargetType;
   ConstructorElement redirectionTarget;
 
   RedirectingFactoryConstructorDeclStructure(ConstructorElement constructor,

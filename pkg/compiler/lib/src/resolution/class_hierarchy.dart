@@ -394,8 +394,7 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
     ClassElement superclass = supertype.element;
     if (mixinType.kind != TypeKind.INTERFACE) {
       mixinApplication.hasIncompleteHierarchy = true;
-      mixinApplication.allSupertypesAndSelf = superclass.allSupertypesAndSelf;
-      return;
+      mixinType = objectType;
     }
 
     assert(mixinApplication.mixinType == null);
