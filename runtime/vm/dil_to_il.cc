@@ -2612,26 +2612,72 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   Array& argument_names = Array::ZoneHandle(Z);
   Fragment instructions;
 
-  // The VM requires currently a TypeArguments object as first parameter for
-  // every factory constructor :-/ !
-  if (target.IsFactory()) {
-    argument_count++;
+  bool is_constructor =
+      target.kind() == RawFunction::kConstructor &&
+      !target.IsFactory();
+  LocalVariable* instance_variable = NULL;
 
-    List<DartType>& dil_type_arguments = node->arguments()->types();
+  // If we cross the Dil -> VM core library boundary, a [StaticInvocation]
+  // can appear, but the thing we're calling is not a static method, but a
+  // factory constructor.
+  // The `H.LookupStaticmethodByDilProcedure` will potentially resolve to the
+  // forwarded constructor.
+  // In that case we'll make an instance and pass it as first argument.
+  //
+  // TODO(kustermann): Get rid of this after we're using our own core
+  // libraries.
+  if (is_constructor) {
+    const dart::Class& klass = dart::Class::ZoneHandle(Z, target.Owner());
 
-    DartTypeTranslator translator(&H);
-    TypeArguments& type_arguments = *translator.TranslateTypeArguments(
-        dil_type_arguments.raw_array(), dil_type_arguments.length());
+    if (klass.NumTypeParameters() > 0) {
+      List<DartType>& dil_type_arguments = node->arguments()->types();
+      DartTypeTranslator translator(&H);
+      TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+          dil_type_arguments.raw_array(), dil_type_arguments.length());
 
-    instructions += Constant(type_arguments);
+      instructions += Constant(type_arguments);
+      instructions += PushArgument();
+      instructions += AllocateObject(klass, 1);
+    } else {
+      instructions += AllocateObject(klass, 0);
+    }
+
+    instance_variable = MakeTemporary();
+
+    instructions += LoadLocal(instance_variable);
     instructions += PushArgument();
+    argument_count++;
   } else {
-    ASSERT(node->arguments()->types().length() == 0);
+    // The VM requires currently a TypeArguments object as first parameter for
+    // every factory constructor :-/ !
+    //
+    // TODO(kustermann): Get rid of this after we're using our own core
+    // libraries.
+    if (target.IsFactory()) {
+      argument_count++;
+
+      List<DartType>& dil_type_arguments = node->arguments()->types();
+
+      DartTypeTranslator translator(&H);
+      TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+          dil_type_arguments.raw_array(), dil_type_arguments.length());
+
+      instructions += Constant(type_arguments);
+      instructions += PushArgument();
+    } else {
+      ASSERT(node->arguments()->types().length() == 0);
+    }
   }
   instructions += TranslateArguments(node->arguments(), &argument_names);
+  instructions += StaticCall(target, argument_count, argument_names);
 
-  fragment_ = instructions +
-      StaticCall(target, argument_count, argument_names);
+  if (is_constructor) {
+    // Drop the result of the constructor call and leave [instance_variable] on
+    // top-of-stack.
+    instructions += Drop();
+  }
+
+  fragment_ = instructions;
 }
 
 
