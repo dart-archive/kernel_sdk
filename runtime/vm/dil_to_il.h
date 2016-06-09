@@ -258,7 +258,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment PopContext();
 
   Fragment AllocateContext(int size);
-  Fragment AllocateObject(const dart::Class& klass);
+  Fragment AllocateObject(const dart::Class& klass, int argument_count);
   Fragment AllocateObject(const dart::Class& klass,
                           const Function& closure_function);
   Fragment BooleanNegate();

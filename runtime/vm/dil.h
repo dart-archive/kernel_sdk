@@ -216,6 +216,8 @@ class List {
 
   int length() { return length_; }
 
+  T** raw_array() { return array_; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(List);
 

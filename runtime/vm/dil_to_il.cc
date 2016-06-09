@@ -40,6 +40,8 @@ class DartTypeTranslator : public DartTypeVisitor {
 
   virtual void VisitVoidType(VoidType* node);
 
+  TypeArguments* TranslateTypeArguments(DartType** dart_types, int length);
+
  private:
   TranslationHelper& translation_helper_;
   Zone* zone_;
@@ -1096,14 +1098,8 @@ void ConstantEvaluator::VisitStringLiteral(StringLiteral* node) {
 
 void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
   DartTypeTranslator translator(&H);
-  TypeArguments& type_arguments =
-      TypeArguments::Handle(Z, TypeArguments::null());
-  if (!node->type()->IsDynamicType()) {
-    type_arguments = TypeArguments::New(1);
-    node->type()->AcceptDartTypeVisitor(&translator);
-    type_arguments.SetTypeAt(0, translator.result());
-    type_arguments = type_arguments.Canonicalize();
-  }
+  DartType* types[] = { node->type() };
+  TypeArguments& type_arguments = *translator.TranslateTypeArguments(types, 1);
 
   int length = node->expressions().length();
   Array& const_list = Array::ZoneHandle(Z, Array::New(length, Heap::kOld));
@@ -1119,17 +1115,8 @@ void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
 
 void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
   DartTypeTranslator translator(&H);
-  TypeArguments& type_arguments =
-      TypeArguments::Handle(Z, TypeArguments::null());
-  if (!node->key_type()->IsDynamicType() ||
-      !node->value_type()->IsDynamicType()) {
-    type_arguments = TypeArguments::New(2);
-    node->key_type()->AcceptDartTypeVisitor(&translator);
-    type_arguments.SetTypeAt(0, translator.result());
-    node->value_type()->AcceptDartTypeVisitor(&translator);
-    type_arguments.SetTypeAt(1, translator.result());
-    type_arguments = type_arguments.Canonicalize();
-  }
+  DartType* types[] = { node->key_type(), node->value_type() };
+  TypeArguments& type_arguments = *translator.TranslateTypeArguments(types, 2);
 
   int length = node->entries().length();
 
@@ -1435,8 +1422,9 @@ Fragment FlowGraphBuilder::AllocateContext(int size) {
 }
 
 
-Fragment FlowGraphBuilder::AllocateObject(const dart::Class& klass) {
-  ArgumentArray arguments = new(Z) ZoneGrowableArray<PushArgumentInstr*>(Z, 0);
+Fragment FlowGraphBuilder::AllocateObject(const dart::Class& klass,
+                                          int argument_count) {
+  ArgumentArray arguments = GetArguments(argument_count);
   AllocateObjectInstr* allocate =
       new(Z) AllocateObjectInstr(TokenPosition::kNoSource, klass, arguments);
   Push(allocate);
@@ -2294,6 +2282,7 @@ Fragment FlowGraphBuilder::TranslateInitializers(
       instructions += LoadLocal(this_variable_);
       instructions += PushArgument();
 
+      ASSERT(init->arguments()->types().length() == 0);
       Array& argument_names = Array::ZoneHandle(Z);
       instructions += TranslateArguments(init->arguments(), &argument_names);
 
@@ -2308,6 +2297,7 @@ Fragment FlowGraphBuilder::TranslateInitializers(
       instructions += LoadLocal(this_variable_);
       instructions += PushArgument();
 
+      ASSERT(init->arguments()->types().length() == 0);
       Array& argument_names = Array::ZoneHandle(Z);
       instructions += TranslateArguments(init->arguments(), &argument_names);
 
@@ -2402,7 +2392,7 @@ void FlowGraphBuilder::VisitSymbolLiteral(SymbolLiteral* node) {
 
   // TODO(kustermann): We should implement constant canonicalization.
   Fragment instructions;
-  instructions += AllocateObject(symbol_class);
+  instructions += AllocateObject(symbol_class, 0);
   LocalVariable* symbol = MakeTemporary();
 
   instructions += LoadLocal(symbol);
@@ -2417,24 +2407,9 @@ void FlowGraphBuilder::VisitSymbolLiteral(SymbolLiteral* node) {
 
 
 void DartTypeTranslator::VisitInterfaceType(InterfaceType* node) {
-  bool only_dynamic = true;
-  for (int i = 0; i < node->type_arguments().length(); i++) {
-    if (!node->type_arguments()[i]->IsDynamicType()) {
-      only_dynamic = false;
-      break;
-    }
-  }
-
-  TypeArguments& type_arguments =
-      TypeArguments::Handle(Z, TypeArguments::null());
-  if (!only_dynamic) {
-    type_arguments = TypeArguments::New(node->type_arguments().length());
-    for (int i = 0; i < node->type_arguments().length(); i++) {
-      DartType* type_argument = node->type_arguments()[i];
-      type_argument->AcceptDartTypeVisitor(this);
-      type_arguments.SetTypeAt(i, result_);
-    }
-  }
+  DartTypeTranslator translator(&H);
+  TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+      node->type_arguments().raw_array(), node->type_arguments().length());
 
   const dart::Class& klass = dart::Class::Handle(Z,
       H.LookupClassByDilClass(node->klass()));
@@ -2452,6 +2427,29 @@ void DartTypeTranslator::VisitDynamicType(DynamicType* node) {
 
 void DartTypeTranslator::VisitVoidType(VoidType* node) {
   result_ ^= Object::void_type().raw();
+}
+
+
+TypeArguments* DartTypeTranslator::TranslateTypeArguments(
+    DartType** dart_types, int length) {
+  bool only_dynamic = true;
+  for (int i = 0; i < length; i++) {
+    if (!dart_types[i]->IsDynamicType()) {
+      only_dynamic = false;
+      break;
+    }
+  }
+  TypeArguments& type_arguments =
+      TypeArguments::ZoneHandle(Z, TypeArguments::null());
+  if (!only_dynamic) {
+    type_arguments = TypeArguments::New(length);
+    for (int i = 0; i < length; i++) {
+      dart_types[i]->AcceptDartTypeVisitor(this);
+      type_arguments.SetTypeAt(i, result_);
+    }
+    type_arguments = type_arguments.Canonicalize();
+  }
+  return &type_arguments;
 }
 
 
@@ -2617,8 +2615,17 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   // every factory constructor :-/ !
   if (target.IsFactory()) {
     argument_count++;
-    instructions += Constant(TypeArguments::ZoneHandle(Z));
+
+    List<DartType>& dil_type_arguments = node->arguments()->types();
+
+    DartTypeTranslator translator(&H);
+    TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+        dil_type_arguments.raw_array(), dil_type_arguments.length());
+
+    instructions += Constant(type_arguments);
     instructions += PushArgument();
+  } else {
+    ASSERT(node->arguments()->types().length() == 0);
   }
   instructions += TranslateArguments(node->arguments(), &argument_names);
 
@@ -2631,6 +2638,7 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   Fragment instructions = TranslateExpression(node->receiver());
   instructions += PushArgument();
 
+  ASSERT(node->arguments()->types().length() == 0);
   Array& argument_names = Array::ZoneHandle(Z);
   instructions += TranslateArguments(node->arguments(), &argument_names);
 
@@ -2650,6 +2658,7 @@ void FlowGraphBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
   int argument_count = node->arguments()->count() + 1;
   Array& argument_names = Array::ZoneHandle(Z);
 
+  ASSERT(node->arguments()->types().length() == 0);
   Fragment instructions = LoadLocal(this_variable_);
   instructions += PushArgument();
   instructions += TranslateArguments(node->arguments(), &argument_names);
@@ -2666,7 +2675,20 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
 
   const dart::Class& klass = dart::Class::ZoneHandle(
       Z, H.LookupClassByDilClass(Class::Cast(node->target()->parent())));
-  Fragment instructions = AllocateObject(klass);
+
+  Fragment instructions;
+  if (klass.NumTypeParameters() > 0) {
+    List<DartType>& dil_type_arguments = node->arguments()->types();
+    DartTypeTranslator translator(&H);
+    TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+        dil_type_arguments.raw_array(), dil_type_arguments.length());
+
+    instructions += Constant(type_arguments);
+    instructions += PushArgument();
+    instructions += AllocateObject(klass, 1);
+  } else {
+    instructions += AllocateObject(klass, 0);
+  }
   LocalVariable* variable = MakeTemporary();
 
   instructions += LoadLocal(variable);
@@ -2687,6 +2709,7 @@ void FlowGraphBuilder::VisitIsExpression(IsExpression* node) {
   Fragment instructions = TranslateExpression(node->operand());
   instructions += PushArgument();
 
+  // FIXME(kustermann):
   instructions += NullConstant();
   instructions += PushArgument();  // Type arguments.
 
@@ -2708,6 +2731,8 @@ void FlowGraphBuilder::VisitIsExpression(IsExpression* node) {
 void FlowGraphBuilder::VisitAsExpression(AsExpression* node) {
   Fragment instructions = TranslateExpression(node->operand());
   instructions += PushArgument();
+
+  // FIXME(kustermann):
   instructions += NullConstant();
   instructions += PushArgument();  // Type arguments.
 
@@ -2850,12 +2875,17 @@ void FlowGraphBuilder::VisitStringConcatenation(StringConcatenation* node) {
 
 
 void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
-  if (node->is_const() || !node->type()->IsDynamicType()) {
+  if (node->is_const()) {
     fragment_ = Constant(constant_evaluator_.EvaluateListLiteral(node));
     return;
   }
+
+  DartTypeTranslator translator(&H);
+  DartType* types[] = { node->type() };
+  TypeArguments& type_arguments = *translator.TranslateTypeArguments(types, 1);
+
   // The type argument for the factory call.
-  Fragment instructions = Constant(TypeArguments::ZoneHandle(Z));
+  Fragment instructions = Constant(type_arguments);
   instructions += PushArgument();
   // The type arguments for CreateArray.
   instructions += Constant(TypeArguments::ZoneHandle(Z));
@@ -2883,9 +2913,7 @@ void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
 
 
 void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
-  if (node->is_const() ||
-      !node->key_type()->IsDynamicType() ||
-      !node->value_type()->IsDynamicType()) {
+  if (node->is_const()) {
     fragment_ = Constant(constant_evaluator_.EvaluateMapLiteral(node));
     return;
   }
@@ -2896,8 +2924,12 @@ void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
       map_class.LookupFactory(
           dart::Library::PrivateCoreLibName(Symbols::MapLiteralFactory())));
 
+  DartTypeTranslator translator(&H);
+  DartType* types[] = { node->key_type(), node->value_type() };
+  TypeArguments& type_arguments = *translator.TranslateTypeArguments(types, 2);
+
   // The type argument for the factory call `new Map<K, V>._fromLiteral(List)`.
-  Fragment instructions = Constant(TypeArguments::ZoneHandle(Z));
+  Fragment instructions = Constant(type_arguments);
   instructions += PushArgument();
 
   // The type arguments for `new List<X>(int len)`.
@@ -2968,9 +3000,6 @@ void FlowGraphBuilder::VisitRethrow(Rethrow* node) {
 
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               Array* argument_names) {
-  if (node->types().length() != 0) {
-    UNIMPLEMENTED();
-  }
   Fragment instructions;
 
   List<Expression>& positional = node->positional();
