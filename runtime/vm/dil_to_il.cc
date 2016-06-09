@@ -787,8 +787,9 @@ Fragment operator<<(const Fragment& fragment, Instruction* next) {
 }
 
 
-const dart::String& TranslationHelper::DartString(const char* content) {
-  return dart::String::ZoneHandle(Z, dart::String::New(content));
+const dart::String& TranslationHelper::DartString(const char* content,
+                                                  Heap::Space space) {
+  return dart::String::ZoneHandle(Z, dart::String::New(content, space));
 }
 
 
@@ -3461,6 +3462,66 @@ void FlowGraphBuilder::VisitContinueSwitchStatement(
     instructions += Goto(entry);
   }
   fragment_ = instructions;
+}
+
+
+void FlowGraphBuilder::VisitAssertStatement(AssertStatement* node) {
+  if (!I->asserts()) {
+    fragment_ = Fragment();
+    return;
+  }
+
+  TargetEntryInstr* then;
+  TargetEntryInstr* otherwise;
+
+  Fragment instructions;
+  instructions += TranslateExpression(node->condition());
+  instructions += Branch(&then, &otherwise);
+
+  const dart::Class& klass = dart::Class::ZoneHandle(Z,
+      dart::Library::LookupCoreClass(Symbols::AssertionError()));
+  ASSERT(!klass.IsNull());
+  const dart::Function& constructor = dart::Function::ZoneHandle(Z,
+      klass.LookupConstructorAllowPrivate(
+        H.DartSymbol("_AssertionError._create")));
+  ASSERT(!constructor.IsNull());
+
+  const dart::String& url = H.DartString(
+      parsed_function_->function().ToLibNamePrefixedQualifiedCString(),
+      Heap::kOld);
+
+  // Create instance of _AssertionError
+  Fragment otherwise_fragment(otherwise);
+  otherwise_fragment += AllocateObject(klass, 0);
+  LocalVariable* instance = MakeTemporary();
+
+  // Call _AssertionError._create constructor.
+  otherwise_fragment += LoadLocal(instance);
+  otherwise_fragment += PushArgument();  // this
+
+  otherwise_fragment += node->message() != NULL
+      ? TranslateExpression(node->message())
+      : Constant(H.DartString("<no message>", Heap::kOld));
+  otherwise_fragment += PushArgument();  // message
+
+  otherwise_fragment += Constant(url);
+  otherwise_fragment += PushArgument();  // url
+
+  otherwise_fragment += IntConstant(0);
+  otherwise_fragment += PushArgument();  // line
+
+  otherwise_fragment += IntConstant(0);
+  otherwise_fragment += PushArgument();  // column
+
+  otherwise_fragment += StaticCall(constructor, 5);
+  otherwise_fragment += Drop();
+
+  // Throw _AssertionError exception.
+  otherwise_fragment += PushArgument();
+  otherwise_fragment += ThrowException();
+  otherwise_fragment += Drop();
+
+  fragment_ = Fragment(instructions.entry, then);
 }
 
 

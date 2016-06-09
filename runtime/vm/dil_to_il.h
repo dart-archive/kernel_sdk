@@ -55,7 +55,8 @@ class TranslationHelper {
 
   Zone* zone() { return zone_; }
 
-  const dart::String& DartString(const char* content);
+  const dart::String& DartString(const char* content,
+                                 Heap::Space space = Heap::kNew);
   dart::String& DartString(String* content, Heap::Space space = Heap::kNew);
   const dart::String& DartSymbol(const char* content) const;
   const dart::String& DartSymbol(String* content) const;
@@ -220,6 +221,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitBreakStatement(BreakStatement* node);
   virtual void VisitSwitchStatement(SwitchStatement* node);
   virtual void VisitContinueSwitchStatement(ContinueSwitchStatement* node);
+  virtual void VisitAssertStatement(AssertStatement* node);
   virtual void VisitTryFinally(TryFinally* node);
   virtual void VisitTryCatch(TryCatch* node);
 
