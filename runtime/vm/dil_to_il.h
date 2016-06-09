@@ -230,6 +230,9 @@ class FlowGraphBuilder : public TreeVisitor {
                                        LocalVariable* setter_value);
   FlowGraph* BuildGraphOfStaticFieldInitializer(Field* node);
   FlowGraph* BuildGraphOfMethodExtractor(const Function& method);
+  FlowGraph* BuildGraphOfImplicitClosureFunction(const Function& function);
+
+  void SetupDefaultParameterValues(FunctionNode* function);
 
   TargetEntryInstr* BuildTargetEntry();
   JoinEntryInstr* BuildJoinEntry();

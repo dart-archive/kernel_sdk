@@ -1493,6 +1493,7 @@ SequenceNode* Parser::ParseImplicitClosure(const Function& func) {
     ASSERT(func.num_fixed_parameters() == 2);  // closure, value.
   } else if (!parent.IsGetterFunction() && !parent.IsImplicitGetterFunction()) {
     // NOTE: For the `dil -> flowgraph` we don't use the parser.
+    // FIXME remove this.
     if (parent.dil_function() == 0) {
       const bool allow_explicit_default_values = true;
       SkipFunctionPreamble();

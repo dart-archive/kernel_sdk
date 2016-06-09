@@ -304,7 +304,13 @@ void ScopeBuilder::BuildScopes() {
         builder_->this_variable_ = variable;
       }
       AddParameters(node, pos);
-      builder_->node_->AcceptVisitor(this);
+
+      // We generate a syntethic body for implicit closure functions - which
+      // will forward the call to the real function.
+      //     -> see BuildGraphOfImplicitClosureFunction
+      if (!function.IsImplicitClosureFunction()) {
+        builder_->node_->AcceptVisitor(this);
+      }
       break;
     }
     case RawFunction::kImplicitGetter:
@@ -1913,7 +1919,6 @@ Fragment FlowGraphBuilder::Drop() {
 FlowGraph* FlowGraphBuilder::BuildGraph() {
   const dart::Function& function = parsed_function_->function();
 
-  if (function.IsImplicitClosureFunction()) return NULL;
   if (function.IsConstructorClosureFunction()) return NULL;
 
   // The IR builder will create its own local variables and scopes, and it
@@ -1929,6 +1934,9 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
     case RawFunction::kRegularFunction:
     case RawFunction::kGetterFunction:
     case RawFunction::kSetterFunction: {
+      if (function.IsImplicitClosureFunction()) {
+        return BuildGraphOfImplicitClosureFunction(function);
+      }
       return BuildGraphOfFunction(node_->IsProcedure()
           ? Procedure::Cast(node_)->function()
           : FunctionNode::Cast(node_));
@@ -1965,44 +1973,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
       new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
 
-  // Setup default values for optional parameters.
-  int num_optional_parameters =
-      parsed_function_->function().NumOptionalParameters();
-  if (num_optional_parameters > 0) {
-    ZoneGrowableArray<const Instance*>* default_values =
-        new ZoneGrowableArray<const Instance*>(Z, num_optional_parameters);
-
-    if (parsed_function_->function().HasOptionalNamedParameters()) {
-      ASSERT(!parsed_function_->function().HasOptionalPositionalParameters());
-      for (int i = 0; i < num_optional_parameters; i++) {
-        VariableDeclaration* variable = function->named_parameters()[i];
-        Instance* default_value;
-        if (variable->initializer() != NULL) {
-           default_value =
-             &constant_evaluator_.EvaluateExpression(variable->initializer());
-        } else {
-           default_value = &Instance::ZoneHandle(Z, Instance::null());
-        }
-        default_values->Add(default_value);
-      }
-    } else {
-      ASSERT(parsed_function_->function().HasOptionalPositionalParameters());
-      int required = function->required_parameter_count();
-      for (int i = 0; i < num_optional_parameters; i++) {
-        VariableDeclaration* variable =
-            function->positional_parameters()[required + i];
-        Instance* default_value;
-        if (variable->initializer() != NULL) {
-           default_value =
-               &constant_evaluator_.EvaluateExpression(variable->initializer());
-        } else {
-           default_value = &Instance::ZoneHandle(Z, Instance::null());
-        }
-        default_values->Add(default_value);
-      }
-    }
-    parsed_function_->set_default_parameter_values(default_values);
-  }
+  SetupDefaultParameterValues(function);
 
   Fragment body(normal_entry);
   body += CheckStackOverflow();
@@ -2179,6 +2150,92 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfMethodExtractor(
   body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
+}
+
+
+FlowGraph* FlowGraphBuilder::BuildGraphOfImplicitClosureFunction(
+    const Function& function) {
+  const Function& target = Function::ZoneHandle(Z, function.parent_function());
+  Procedure* procedure = Procedure::Cast(
+      reinterpret_cast<Node*>(target.dil_function()));
+  FunctionNode* dil_function = procedure->function();
+
+  TargetEntryInstr* normal_entry = BuildTargetEntry();
+  graph_entry_ = new(Z) GraphEntryInstr(*parsed_function_,
+                                        normal_entry,
+                                        Compiler::kNoOSRDeoptId);
+  SetupDefaultParameterValues(dil_function);
+
+  Fragment body(normal_entry);
+  body += CheckStackOverflow();
+
+  // Load all the arguments.
+  int positional_argument_count =
+      dil_function->positional_parameters().length();
+  for (int i = 0; i < positional_argument_count; i++) {
+    body += LoadLocal(LookupVariable(dil_function->positional_parameters()[i]));
+    body += PushArgument();
+  }
+  int named_argument_count = dil_function->named_parameters().length();
+  Array& argument_names = Array::ZoneHandle(Z);
+  if (named_argument_count > 0) {
+    argument_names = Array::New(named_argument_count);
+    for (int i = 0; i < named_argument_count; i++) {
+      VariableDeclaration* variable = dil_function->named_parameters()[i];
+      body += LoadLocal(LookupVariable(variable));
+      body += PushArgument();
+      argument_names.SetAt(i, H.DartSymbol(variable->name()));
+    }
+  }
+  // Forward them to the target.
+  int argument_count = positional_argument_count + named_argument_count;
+  body += StaticCall(target, argument_count, argument_names);
+
+  // Return the result.
+  body += Return();
+
+  return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
+}
+
+
+void FlowGraphBuilder::SetupDefaultParameterValues(FunctionNode* function) {
+  int num_optional_parameters =
+      parsed_function_->function().NumOptionalParameters();
+  if (num_optional_parameters > 0) {
+    ZoneGrowableArray<const Instance*>* default_values =
+        new ZoneGrowableArray<const Instance*>(Z, num_optional_parameters);
+
+    if (parsed_function_->function().HasOptionalNamedParameters()) {
+      ASSERT(!parsed_function_->function().HasOptionalPositionalParameters());
+      for (int i = 0; i < num_optional_parameters; i++) {
+        VariableDeclaration* variable = function->named_parameters()[i];
+        Instance* default_value;
+        if (variable->initializer() != NULL) {
+           default_value =
+             &constant_evaluator_.EvaluateExpression(variable->initializer());
+        } else {
+           default_value = &Instance::ZoneHandle(Z, Instance::null());
+        }
+        default_values->Add(default_value);
+      }
+    } else {
+      ASSERT(parsed_function_->function().HasOptionalPositionalParameters());
+      int required = function->required_parameter_count();
+      for (int i = 0; i < num_optional_parameters; i++) {
+        VariableDeclaration* variable =
+            function->positional_parameters()[required + i];
+        Instance* default_value;
+        if (variable->initializer() != NULL) {
+           default_value =
+               &constant_evaluator_.EvaluateExpression(variable->initializer());
+        } else {
+           default_value = &Instance::ZoneHandle(Z, Instance::null());
+        }
+        default_values->Add(default_value);
+      }
+    }
+    parsed_function_->set_default_parameter_values(default_values);
+  }
 }
 
 
@@ -2438,12 +2495,23 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
   } else {
     ASSERT(target->IsProcedure());
 
-    // Invoke the getter function
     Procedure* procedure = Procedure::Cast(target);
     const Function& target = Function::ZoneHandle(Z,
         H.LookupStaticMethodByDilProcedure(procedure));
 
-    fragment_ = StaticCall(target, 0);
+    if (procedure->kind() == Procedure::kGetter) {
+      fragment_ = StaticCall(target, 0);
+    } else if (procedure->kind() == Procedure::kMethod) {
+      ASSERT(procedure->IsStatic());
+      Function& closure_function =
+          Function::ZoneHandle(Z, target.ImplicitClosureFunction());
+      closure_function.set_dil_function(target.dil_function());
+      const Instance& closure =
+          Instance::ZoneHandle(Z, closure_function.ImplicitStaticClosure());
+      fragment_ = Constant(closure);
+    } else {
+      UNIMPLEMENTED();
+    }
   }
 }
 
