@@ -739,12 +739,11 @@ class Parser {
   }
 
   Token parseStringPart(Token token) {
-    if (identical(token.kind, STRING_TOKEN)) {
-      listener.handleStringPart(token);
-      return token.next;
-    } else {
-      return listener.expected('string', token);
+    if (token.kind != STRING_TOKEN) {
+      token = listener.expectedString(token);
     }
+    listener.handleStringPart(token);
+    return token.next;
   }
 
   Token parseIdentifier(Token token) {

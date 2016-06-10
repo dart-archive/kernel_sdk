@@ -510,6 +510,16 @@ class ElementListener extends Listener {
     return token;
   }
 
+  Token expectedString(Token token) {
+    if (token is ErrorToken) {
+      reportErrorToken(token);
+      return synthesizeIdentifier(token);
+    } else {
+      reportFatalError(token, "Expected string, but got '${token.value}'.");
+    }
+    return token;
+  }
+
   Token expectedType(Token token) {
     pushNode(null);
     if (token is ErrorToken) {

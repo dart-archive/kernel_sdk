@@ -441,11 +441,27 @@ class Listener {
     return synthesizedToken;
   }
 
+  Token synthesizeString(Token token) {
+    Token synthesizedToken = new StringToken.fromString(
+        Precedence.STRING_INFO, '?', token.charOffset);
+    synthesizedToken.next = token.next;
+    return synthesizedToken;
+  }
+
   Token expectedIdentifier(Token token) {
     if (token is ErrorToken) {
       reportErrorToken(token);
     } else {
       error("expected identifier, but got '${token.value}'", token);
+    }
+    return skipToEof(token);
+  }
+
+  Token expectedString(Token token) {
+    if (token is ErrorToken) {
+      reportErrorToken(token);
+    } else {
+      error("expected string, but got '${token.value}'", token);
     }
     return skipToEof(token);
   }
