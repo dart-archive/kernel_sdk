@@ -3690,7 +3690,7 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
       }
     }
 
-    if (catch_clause->guard() != NULL) {
+    if (!type_translator.result().IsNull()) {
       catch_body += LoadLocal(CurrentException());
       catch_body += PushArgument();  // exception
       catch_body += NullConstant();
