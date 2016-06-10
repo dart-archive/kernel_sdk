@@ -4294,6 +4294,8 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
       registry.setSelector(declaration, loopVariableSelector);
       if (loopVariable == null || loopVariable.isInstanceMember) {
         registry.registerDynamicUse(new DynamicUse(loopVariableSelector, null));
+      } else if (loopVariable.impliesType) {
+        reporter.reportErrorMessage(declaration, MessageKind.INVALID_FOR_IN);
       } else if (loopVariable.isStatic || loopVariable.isTopLevel) {
         registry.registerStaticUse(
             new StaticUse.staticSet(loopVariable.declaration));
