@@ -155,7 +155,8 @@ class TypeResolver {
             element.messageKind, element.messageArguments,
             erroneousElement: element);
       } else {
-        type = const DynamicType();
+        type = reportFailureAndCreateType(
+            MessageKind.NOT_A_TYPE, {'node': node.typeName});
       }
     } else if (!element.impliesType) {
       type = reportFailureAndCreateType(
