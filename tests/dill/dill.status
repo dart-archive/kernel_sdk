@@ -274,7 +274,6 @@ co19/Language/Expressions/Postfix_Expressions/syntax_t01_test: RuntimeError
 co19/Language/Expressions/Postfix_Expressions/syntax_t02_test: Crash
 co19/Language/Expressions/Postfix_Expressions/syntax_t03_test: Crash
 co19/Language/Expressions/Postfix_Expressions/syntax_t05_test: Crash
-co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A01_t01_test: Crash
 co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A02_t02_test: Crash
 co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A03_t01_test: Crash
 co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A03_t02_test: Crash
@@ -313,10 +312,6 @@ co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extractio
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/getter_value_t04_test: RuntimeError
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/instance_of_type_getter_t04_test: RuntimeError
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/instance_of_type_t04_test: RuntimeError
-co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/method_lookup_t01_test: Crash
-co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/method_lookup_t02_test: Crash
-co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/method_lookup_t03_test: Crash
-co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/method_lookup_t04_test: Crash
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/no_such_method_t01_test: Crash
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/proxy_annotation_t01_test: Crash
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/proxy_annotation_t02_test: Crash
@@ -348,7 +343,6 @@ co19/Language/Expressions/Shift/syntax_t11_test: Crash
 co19/Language/Expressions/Shift/syntax_t12_test: Crash
 co19/Language/Expressions/Shift/syntax_t13_test: Crash
 co19/Language/Expressions/Shift/syntax_t14_test: Crash
-co19/Language/Expressions/Spawning_an_Isolate/new_isolate_t01_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/double_quote_t02_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/single_quote_t02_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t05_test: Crash
@@ -453,7 +447,6 @@ co19/Language/Libraries_and_Scripts/Imports/same_name_t19_test: Crash
 co19/Language/Libraries_and_Scripts/Imports/syntax_t37_test: Crash
 co19/Language/Libraries_and_Scripts/Imports/syntax_t38_test: Crash
 co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t02_test: RuntimeError
-co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t03_test: Crash
 co19/Language/Libraries_and_Scripts/private_access_t01_test: RuntimeError
 co19/Language/Libraries_and_Scripts/private_access_t02_test: Crash
 co19/Language/Libraries_and_Scripts/private_access_t04_test: Crash

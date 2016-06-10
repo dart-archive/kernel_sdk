@@ -1923,12 +1923,12 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
     case RawFunction::kRegularFunction:
     case RawFunction::kGetterFunction:
     case RawFunction::kSetterFunction: {
-      if (function.IsImplicitClosureFunction()) {
-        return BuildGraphOfImplicitClosureFunction(function);
-      }
-      return BuildGraphOfFunction(node_->IsProcedure()
+      FunctionNode* dil_function = node_->IsProcedure()
           ? Procedure::Cast(node_)->function()
-          : FunctionNode::Cast(node_));
+          : FunctionNode::Cast(node_);
+      return function.IsImplicitClosureFunction()
+          ? BuildGraphOfImplicitClosureFunction(dil_function, function)
+          : BuildGraphOfFunction(dil_function);
     }
     case RawFunction::kConstructor: {
       ASSERT(node_->IsConstructor());
@@ -2143,11 +2143,9 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfMethodExtractor(
 
 
 FlowGraph* FlowGraphBuilder::BuildGraphOfImplicitClosureFunction(
+    FunctionNode* dil_function,
     const Function& function) {
   const Function& target = Function::ZoneHandle(Z, function.parent_function());
-  Procedure* procedure = Procedure::Cast(
-      reinterpret_cast<Node*>(target.dil_function()));
-  FunctionNode* dil_function = procedure->function();
 
   TargetEntryInstr* normal_entry = BuildTargetEntry();
   graph_entry_ = new(Z) GraphEntryInstr(*parsed_function_,
@@ -2159,6 +2157,13 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfImplicitClosureFunction(
   body += CheckStackOverflow();
 
   // Load all the arguments.
+  if (!target.is_static()) {
+    // The context has a fixed shape: a single variable which is the
+    // closed-over receiver.
+    body += LoadLocal(parsed_function_->current_context_var());
+    body += LoadField(Context::variable_offset(0));
+    body += PushArgument();
+  }
   int positional_argument_count =
       dil_function->positional_parameters().length();
   for (int i = 0; i < positional_argument_count; i++) {
@@ -2178,6 +2183,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfImplicitClosureFunction(
   }
   // Forward them to the target.
   int argument_count = positional_argument_count + named_argument_count;
+  if (!target.is_static()) ++argument_count;
   body += StaticCall(target, argument_count, argument_names);
 
   // Return the result.
