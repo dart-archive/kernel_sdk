@@ -467,7 +467,9 @@ abstract class Compiler implements LibraryLoaderListener, IdGenerator {
   /// for [library].
   Future onLibraryScanned(LibraryElement library, LibraryLoader loader) {
     Uri uri = library.canonicalUri;
-    if (uri == Uris.dart_core) {
+    if (library.compilationUnit.script.isSynthesized) {
+      // Ignore.
+    } else if (uri == Uris.dart_core) {
       initializeCoreClasses();
       identicalFunction = coreLibrary.find('identical');
     } else if (uri == Uris.dart__internal) {

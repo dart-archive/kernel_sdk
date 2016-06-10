@@ -1388,6 +1388,7 @@ class _LoadedLibraries implements LoadedLibraries {
       List<Link<Uri>> suffixes = [];
       if (targetUri != canonicalUri) {
         LibraryDependencyNode node = nodeMap[library];
+        if (node == null) return;
 
         /// Process the import (or export) of [importedLibrary].
         void processLibrary(LibraryElement importedLibrary) {
