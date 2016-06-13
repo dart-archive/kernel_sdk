@@ -74,6 +74,8 @@ class ScopeBuilder : public RecursiveVisitor {
 
   virtual void VisitName(Name* node) { /* NOP */ }
 
+  virtual void VisitThisExpression(ThisExpression* node);
+  virtual void VisitTypeParameterType(TypeParameterType* node);
   virtual void VisitVariableGet(VariableGet* node);
   virtual void VisitVariableSet(VariableSet* node);
   virtual void VisitFunctionExpression(FunctionExpression* node);
@@ -115,6 +117,7 @@ class ScopeBuilder : public RecursiveVisitor {
   const dart::String& GenerateIteratorName();
 
   void HandleLocalFunction(TreeNode* parent, FunctionNode* function);
+  void HandleThisLoad();
 
   FlowGraphBuilder* builder_;
   Zone* zone_;
@@ -360,6 +363,17 @@ void ScopeBuilder::BuildScopes() {
 }
 
 
+void ScopeBuilder::VisitThisExpression(ThisExpression* node) {
+  HandleThisLoad();
+}
+
+
+void ScopeBuilder::VisitTypeParameterType(TypeParameterType* node) {
+  // The type argument vector is stored on the instance object. We therefore
+  // need to capture `this`.
+  HandleThisLoad();
+}
+
 void ScopeBuilder::VisitVariableGet(VariableGet* node) {
   LookupVariable(node->variable());
 }
@@ -390,6 +404,24 @@ void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
   loop_depth_ = saved_loop_depth;
   handler_depth_ = saved_handler_depth;
   finally_depth_ = saved_finally_depth;
+}
+
+
+void ScopeBuilder::HandleThisLoad() {
+  if (function_scope_->parent() == NULL && scope_->function_level() > 0) {
+    // We are building the scope tree of the outermost function/method (which
+    // includes traversing all the nested closures as well) and [node]
+    // appears inside a closure, so we capture it.
+    scope_->CaptureVariable(builder_->this_variable_);
+  } else if (function_scope_->parent() != NULL) {
+    // We are building the scope tree of a closure function and saw [node]. We
+    // lazily populate the this variable using the parent function scope.
+    if (builder_->this_variable_ == NULL) {
+      builder_->this_variable_ =
+          function_scope_->parent()->LookupVariable(Symbols::This(), true);
+      ASSERT(builder_->this_variable_ != NULL);
+    }
+  }
 }
 
 
@@ -1672,6 +1704,18 @@ Fragment FlowGraphBuilder::LoadLocal(LocalVariable* variable) {
 }
 
 
+Fragment FlowGraphBuilder::LoadThis() {
+  if (parsed_function_->function().IsClosureFunction()) {
+    Fragment instructions;
+    instructions += LoadContextAt(0);
+    instructions +=
+        LoadField(Context::variable_offset(this_variable_->index()));
+    return instructions;
+  }
+  return Fragment(LoadLocal(this_variable_));
+}
+
+
 Fragment FlowGraphBuilder::InitStaticField(const dart::Field& field) {
   InitStaticFieldInstr* init = new(Z) InitStaticFieldInstr(Pop(), field);
   return Fragment(init);
@@ -2898,7 +2942,7 @@ void FlowGraphBuilder::VisitNot(Not* node) {
 
 
 void FlowGraphBuilder::VisitThisExpression(ThisExpression* node) {
-  fragment_ = LoadLocal(this_variable_);
+  fragment_ = LoadThis();
 }
 
 

@@ -290,6 +290,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment LoadField(const dart::Field& field);
   Fragment LoadField(intptr_t offset);
   Fragment LoadLocal(LocalVariable* variable);
+  Fragment LoadThis();
   Fragment InitStaticField(const dart::Field& field);
   Fragment LoadStaticField();
   Fragment NullConstant();
