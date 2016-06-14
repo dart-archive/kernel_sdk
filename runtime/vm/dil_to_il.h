@@ -234,6 +234,7 @@ class FlowGraphBuilder : public TreeVisitor {
   FlowGraph* BuildGraphOfMethodExtractor(const Function& method);
   FlowGraph* BuildGraphOfImplicitClosureFunction(FunctionNode* dil_function,
                                                  const Function& function);
+  FlowGraph* BuildGraphOfNoSuchMethodDispatcher(const Function& function);
 
   void SetupDefaultParameterValues(FunctionNode* function);
 

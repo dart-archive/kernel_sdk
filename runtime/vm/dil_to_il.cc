@@ -12,6 +12,7 @@
 #include "vm/intermediate_language.h"
 #include "vm/object_store.h"
 #include "vm/report.h"
+#include "vm/resolver.h"
 #include "vm/stack_frame.h"
 
 namespace dart {
@@ -354,6 +355,13 @@ void ScopeBuilder::BuildScopes() {
       builder_->this_variable_ = variable;
       break;
     }
+    case RawFunction::kNoSuchMethodDispatcher:
+      for (int i = 0; i < function.NumParameters(); ++i) {
+        LocalVariable* variable = MakeVariable(
+            dart::String::ZoneHandle(Z, function.ParameterNameAt(i)));
+        scope_->InsertParameterAt(i, variable);
+      }
+      break;
     default:
       UNREACHABLE();
       break;
@@ -1991,6 +1999,8 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
     }
     case RawFunction::kMethodExtractor:
       return BuildGraphOfMethodExtractor(function);
+    case RawFunction::kNoSuchMethodDispatcher:
+      return BuildGraphOfNoSuchMethodDispatcher(function);
     default: {
       UNREACHABLE();
       return NULL;
@@ -2231,6 +2241,100 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfImplicitClosureFunction(
   body += StaticCall(target, argument_count, argument_names);
 
   // Return the result.
+  body += Return();
+
+  return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
+}
+
+
+FlowGraph* FlowGraphBuilder::BuildGraphOfNoSuchMethodDispatcher(
+    const Function& function) {
+  // This function is specialized for a receiver class, a method name, and
+  // the arguments descriptor at a call site.
+
+  TargetEntryInstr* normal_entry = BuildTargetEntry();
+  graph_entry_ = new(Z) GraphEntryInstr(*parsed_function_,
+                                        normal_entry,
+                                        Compiler::kNoOSRDeoptId);
+
+  // The backend will expect an array of default values for all the named
+  // parameters, even if they are all known to be passed at the call site
+  // because the call site matches the arguments descriptor.  Use null for
+  // the default values.
+  const Array& descriptor_array =
+      Array::ZoneHandle(Z, function.saved_args_desc());
+  ArgumentsDescriptor descriptor(descriptor_array);
+  ZoneGrowableArray<const Instance*>* default_values =
+      new ZoneGrowableArray<const Instance*>(Z, descriptor.NamedCount());
+  for (int i = 0; i < descriptor.NamedCount(); ++i) {
+    default_values->Add(&Object::null_instance());
+  }
+  parsed_function_->set_default_parameter_values(default_values);
+
+  Fragment body(normal_entry);
+  body += CheckStackOverflow();
+
+  // The receiver is the first argument to noSuchMethod, and it is the first
+  // argument passed to the dispatcher function.
+  LocalScope* scope = parsed_function_->node_sequence()->scope();
+  body += LoadLocal(scope->VariableAt(0));
+  body += PushArgument();
+
+  // The second argument to noSuchMethod is an invocation mirror.  Push the
+  // arguments for allocating the invocation mirror.  First, the name.
+  body += Constant(dart::String::ZoneHandle(Z, function.name()));
+  body += PushArgument();
+
+  // Second, the arguments descriptor.
+  body += Constant(descriptor_array);
+  body += PushArgument();
+
+  // Third, an array containing the original arguments.  Create it and fill
+  // it in.
+  body += Constant(TypeArguments::ZoneHandle(Z, TypeArguments::null()));
+  body += IntConstant(descriptor.Count());
+  body += CreateArray();
+  LocalVariable* array = MakeTemporary();
+  for (int i = 0; i < descriptor.Count(); ++i) {
+    body += LoadLocal(array);
+    body += IntConstant(i);
+    body += LoadLocal(scope->VariableAt(i));
+    body += StoreIndexed(kArrayCid);
+    body += Drop();
+  }
+  body += PushArgument();
+
+  // Fourth, false indicating this is not a super NoSuchMethod.
+  body += Constant(Bool::False());
+  body += PushArgument();
+
+  const dart::Class& mirror_class = dart::Class::Handle(Z,
+      dart::Library::LookupCoreClass(Symbols::InvocationMirror()));
+  ASSERT(!mirror_class.IsNull());
+  const Function& allocation_function = Function::ZoneHandle(Z,
+      mirror_class.LookupStaticFunction(
+          dart::Library::PrivateCoreLibName(
+              Symbols::AllocateInvocationMirror())));
+  ASSERT(!allocation_function.IsNull());
+  body += StaticCall(allocation_function, 4);
+  body += PushArgument();  // For the call to noSuchMethod.
+
+  ArgumentsDescriptor two_arguments(
+      Array::Handle(Z, ArgumentsDescriptor::New(2)));
+  Function& no_such_method = Function::ZoneHandle(Z,
+      Resolver::ResolveDynamicForReceiverClass(
+          dart::Class::Handle(Z, function.Owner()),
+          Symbols::NoSuchMethod(),
+          two_arguments));
+  if (no_such_method.IsNull()) {
+    // If noSuchMethod is not found on the receiver class, call
+    // Object.noSuchMethod.
+    no_such_method = Resolver::ResolveDynamicForReceiverClass(
+        dart::Class::Handle(Z, I->object_store()->object_class()),
+        Symbols::NoSuchMethod(),
+        two_arguments);
+  }
+  body += StaticCall(no_such_method, 2);
   body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);

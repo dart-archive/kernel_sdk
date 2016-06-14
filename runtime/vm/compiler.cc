@@ -79,8 +79,16 @@ DECLARE_FLAG(bool, trace_irregexp);
 
 #ifndef DART_PRECOMPILED_RUNTIME
 
+
+static bool UseDilFrontEndFor(ParsedFunction* parsed_function) {
+  const Function& function = parsed_function->function();
+  return (function.dil_function() != 0) ||
+         (function.kind() == RawFunction::kNoSuchMethodDispatcher);
+}
+
+
 void DartCompilationPipeline::ParseFunction(ParsedFunction* parsed_function) {
-  if (parsed_function->function().dil_function() == 0) {
+  if (!UseDilFrontEndFor(parsed_function)) {
     Parser::ParseFunction(parsed_function);
     parsed_function->AllocateVariables();
   }
@@ -92,9 +100,9 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
     ParsedFunction* parsed_function,
     const ZoneGrowableArray<const ICData*>& ic_data_array,
     intptr_t osr_id) {
-  intptr_t dil_node = parsed_function->function().dil_function();
-  if (dil_node != 0) {
-    dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(dil_node);
+  if (UseDilFrontEndFor(parsed_function)) {
+    dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(
+        parsed_function->function().dil_function());
     dil::FlowGraphBuilder builder(node, parsed_function);
     FlowGraph* graph = builder.BuildGraph();
     if (graph != NULL) return graph;
