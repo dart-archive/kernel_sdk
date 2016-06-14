@@ -102,7 +102,6 @@ co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t04_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t07_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t10_test: Crash
-co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t11_test: Crash
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t13_test: Crash
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t14_test: Crash
 co19/Language/Expressions/Identifier_Reference/built_in_identifier_t02_test: Crash
@@ -526,14 +525,11 @@ co19/Language/Variables/local_variable_t03_test: Crash
 co19/LibTest/async/DeferredLibrary/DeferredLibrary_A01_t01_test: RuntimeError
 co19/LibTest/async/Stream/Stream_A01_t01_test: Crash
 co19/LibTest/async/Stream/asBroadcastStream_A01_t04_test: Crash
-co19/LibTest/async/Stream/asBroadcastStream_A04_t03_test: Crash
 co19/LibTest/async/Stream/contains_A02_t01_test: Crash
 co19/LibTest/async/Stream/elementAt_A02_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t02_test: Crash
-co19/LibTest/async/StreamController/StreamController.broadcast_A04_t01_test: Crash
 co19/LibTest/async/StreamController/done_A01_t02_test: Crash
-co19/LibTest/async/StreamIterator/moveNext_A01_t01_test: Crash
 co19/LibTest/async/StreamSink/done_A01_t01_test: Crash
 co19/LibTest/async/Zone/ROOT_A01_t01_test: Crash
 co19/LibTest/async/Zone/handleUncaughtError_A01_t04_test: Crash
@@ -640,7 +636,6 @@ co19/LibTest/core/Invocation/isSetter_A01_t02_test: Crash
 co19/LibTest/core/Invocation/memberName_A01_t01_test: Crash
 co19/LibTest/core/Invocation/namedArguments_A01_t01_test: RuntimeError
 co19/LibTest/core/Invocation/positionalArguments_A01_t01_test: Crash
-co19/LibTest/core/Iterable/forEach_A03_t01.test_test: Crash
 co19/LibTest/core/Iterable/toList_A01_t01.test_test: Crash
 co19/LibTest/core/Iterable/toSet_A01_t01.test_test: Crash
 co19/LibTest/core/List/Iterable_A01_t01.test_test: Crash

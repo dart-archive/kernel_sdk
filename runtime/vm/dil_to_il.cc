@@ -226,7 +226,20 @@ void ScopeBuilder::LookupVariable(VariableDeclaration* declaration) {
     variable = function_scope_->parent()->LookupVariable(name, true);
     ASSERT(variable != NULL);
     builder_->locals_[declaration] = variable;
-  } else if (variable->owner()->function_level() < scope_->function_level()) {
+  }
+  if (variable->owner()->function_level() < scope_->function_level()) {
+    // We call `LocalScope->CaptureVariable(variable)` in two scenarios for two
+    // different reasons:
+    //   Scenario 1:
+    //       We need to know which variables defined in this function
+    //       are closed over by nested closures in order to ensure we will
+    //       create a [Context] object of appropriate size and store captured
+    //       variables there instead of the stack.
+    //   Scenario 2:
+    //       We need to find out which variables defined in enclosing functions
+    //       are closed over by this function/closure or nested closures. This
+    //       is necessary in order to build a fat flattened [ContextScope]
+    //       object.
     scope_->CaptureVariable(variable);
   } else {
     ASSERT(variable->owner()->function_level() == scope_->function_level());
@@ -382,6 +395,7 @@ void ScopeBuilder::VisitTypeParameterType(TypeParameterType* node) {
   HandleThisLoad();
 }
 
+
 void ScopeBuilder::VisitVariableGet(VariableGet* node) {
   LookupVariable(node->variable());
 }
@@ -416,19 +430,20 @@ void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
 
 
 void ScopeBuilder::HandleThisLoad() {
-  if (function_scope_->parent() == NULL && scope_->function_level() > 0) {
-    // We are building the scope tree of the outermost function/method (which
-    // includes traversing all the nested closures as well) and [node]
-    // appears inside a closure, so we capture it.
-    scope_->CaptureVariable(builder_->this_variable_);
-  } else if (function_scope_->parent() != NULL) {
+  if (function_scope_->parent() != NULL) {
     // We are building the scope tree of a closure function and saw [node]. We
     // lazily populate the this variable using the parent function scope.
     if (builder_->this_variable_ == NULL) {
       builder_->this_variable_ =
           function_scope_->parent()->LookupVariable(Symbols::This(), true);
       ASSERT(builder_->this_variable_ != NULL);
+      scope_->CaptureVariable(builder_->this_variable_);
     }
+  } else if (scope_->function_level() > 0) {
+    // We are building the scope tree of the outermost function/method (which
+    // includes traversing all the nested closures as well) and [node]
+    // appears inside a closure, so we capture it.
+    scope_->CaptureVariable(builder_->this_variable_);
   }
 }
 
@@ -1709,18 +1724,6 @@ Fragment FlowGraphBuilder::LoadLocal(LocalVariable* variable) {
     Push(load);
   }
   return instructions;
-}
-
-
-Fragment FlowGraphBuilder::LoadThis() {
-  if (parsed_function_->function().IsClosureFunction()) {
-    Fragment instructions;
-    instructions += LoadContextAt(0);
-    instructions +=
-        LoadField(Context::variable_offset(this_variable_->index()));
-    return instructions;
-  }
-  return Fragment(LoadLocal(this_variable_));
 }
 
 
@@ -3046,7 +3049,7 @@ void FlowGraphBuilder::VisitNot(Not* node) {
 
 
 void FlowGraphBuilder::VisitThisExpression(ThisExpression* node) {
-  fragment_ = LoadThis();
+  fragment_ = LoadLocal(this_variable_);
 }
 
 
