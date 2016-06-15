@@ -7,7 +7,7 @@ library dart2js.parser.listener;
 import '../common.dart';
 import '../diagnostics/messages.dart' show MessageTemplate;
 import '../tokens/precedence_constants.dart' as Precedence
-    show EOF_INFO, IDENTIFIER_INFO;
+    show EOF_INFO, IDENTIFIER_INFO, STRING_INFO;
 import '../tokens/token.dart'
     show
         BadInputToken,
