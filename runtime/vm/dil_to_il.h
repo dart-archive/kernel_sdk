@@ -235,6 +235,7 @@ class FlowGraphBuilder : public TreeVisitor {
   FlowGraph* BuildGraphOfImplicitClosureFunction(FunctionNode* dil_function,
                                                  const Function& function);
   FlowGraph* BuildGraphOfNoSuchMethodDispatcher(const Function& function);
+  FlowGraph* BuildGraphOfInvokeFieldDispatcher(const Function& function);
 
   void SetupDefaultParameterValues(FunctionNode* function);
 
@@ -286,6 +287,7 @@ class FlowGraphBuilder : public TreeVisitor {
                         Token::Kind kind,
                         int argument_count,
                         const Array& argument_names);
+  Fragment ClosureCall(int argument_count, const Array& argument_names);
   Fragment ThrowException();
   Fragment RethrowException(int catch_try_index);
   Fragment LoadField(const dart::Field& field);

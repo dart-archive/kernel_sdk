@@ -97,7 +97,6 @@ co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/number_
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/number_of_arguments_t05_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/number_of_arguments_t08_test: Crash
 co19/Language/Expressions/Function_Invocation/Function_Expression_Invocation/not_a_function_expression_t01_test: Crash
-co19/Language/Expressions/Function_Invocation/Function_Expression_Invocation/static_type_t02_test: Crash
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t03_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t04_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t07_test: RuntimeError
@@ -172,11 +171,6 @@ co19/Language/Expressions/Method_Invocation/3_Static_Invocation_A04_t05_test: Ru
 co19/Language/Expressions/Method_Invocation/3_Static_Invocation_A04_t06_test: RuntimeError
 co19/Language/Expressions/Method_Invocation/3_Static_Invocation_A04_t07_test: Crash
 co19/Language/Expressions/Method_Invocation/Ordinary_Invocation/accessible_instance_member_t02_test: RuntimeError
-co19/Language/Expressions/Method_Invocation/Ordinary_Invocation/method_lookup_failed_t01_test: Crash
-co19/Language/Expressions/Method_Invocation/Ordinary_Invocation/method_lookup_failed_t02_test: Crash
-co19/Language/Expressions/Method_Invocation/Ordinary_Invocation/method_lookup_failed_t03_test: Crash
-co19/Language/Expressions/Method_Invocation/Ordinary_Invocation/method_lookup_failed_t04_test: Crash
-co19/Language/Expressions/Method_Invocation/Ordinary_Invocation/static_type_t01_test: Crash
 co19/Language/Expressions/Method_Invocation/Super_Invocation/accessible_instance_member_t01_test: Crash
 co19/Language/Expressions/Method_Invocation/Super_Invocation/accessible_instance_member_t02_test: Crash
 co19/Language/Expressions/Method_Invocation/Super_Invocation/accessible_instance_member_t03_test: Crash
@@ -264,8 +258,6 @@ co19/Language/Expressions/Shift/syntax_t11_test: Crash
 co19/Language/Expressions/Shift/syntax_t12_test: Crash
 co19/Language/Expressions/Shift/syntax_t13_test: Crash
 co19/Language/Expressions/Shift/syntax_t14_test: Crash
-co19/Language/Expressions/Strings/String_Interpolation/double_quote_t02_test: Crash
-co19/Language/Expressions/Strings/String_Interpolation/single_quote_t02_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t05_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t06_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t07_test: Crash
@@ -529,8 +521,6 @@ co19/LibTest/async/Stream/contains_A02_t01_test: Crash
 co19/LibTest/async/Stream/elementAt_A02_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t02_test: Crash
-co19/LibTest/async/StreamController/done_A01_t02_test: Crash
-co19/LibTest/async/StreamSink/done_A01_t01_test: Crash
 co19/LibTest/async/Zone/ROOT_A01_t01_test: Crash
 co19/LibTest/async/Zone/handleUncaughtError_A01_t04_test: Crash
 co19/LibTest/async/Zone/registerBinaryCallback_A01_t01_test: Crash

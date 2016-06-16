@@ -83,7 +83,8 @@ DECLARE_FLAG(bool, trace_irregexp);
 static bool UseDilFrontEndFor(ParsedFunction* parsed_function) {
   const Function& function = parsed_function->function();
   return (function.dil_function() != 0) ||
-         (function.kind() == RawFunction::kNoSuchMethodDispatcher);
+         (function.kind() == RawFunction::kNoSuchMethodDispatcher) ||
+         (function.kind() == RawFunction::kInvokeFieldDispatcher);
 }
 
 

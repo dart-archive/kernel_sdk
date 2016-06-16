@@ -369,6 +369,7 @@ void ScopeBuilder::BuildScopes() {
       break;
     }
     case RawFunction::kNoSuchMethodDispatcher:
+    case RawFunction::kInvokeFieldDispatcher:
       for (int i = 0; i < function.NumParameters(); ++i) {
         LocalVariable* variable = MakeVariable(
             dart::String::ZoneHandle(Z, function.ParameterNameAt(i)));
@@ -1659,6 +1660,17 @@ Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
 }
 
 
+Fragment FlowGraphBuilder::ClosureCall(int argument_count,
+                                       const Array& argument_names) {
+  Value* function = Pop();
+  ArgumentArray arguments = GetArguments(argument_count);
+  ClosureCallInstr* call = new(Z) ClosureCallInstr(
+      function, arguments, argument_names, TokenPosition::kNoSource);
+  Push(call);
+  return Fragment(call);
+}
+
+
 Fragment FlowGraphBuilder::ThrowException() {
   Fragment instructions;
   instructions += Drop();
@@ -2004,6 +2016,8 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       return BuildGraphOfMethodExtractor(function);
     case RawFunction::kNoSuchMethodDispatcher:
       return BuildGraphOfNoSuchMethodDispatcher(function);
+    case RawFunction::kInvokeFieldDispatcher:
+      return BuildGraphOfInvokeFieldDispatcher(function);
     default: {
       UNREACHABLE();
       return NULL;
@@ -2338,6 +2352,99 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfNoSuchMethodDispatcher(
         two_arguments);
   }
   body += StaticCall(no_such_method, 2);
+  body += Return();
+
+  return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
+}
+
+
+FlowGraph* FlowGraphBuilder::BuildGraphOfInvokeFieldDispatcher(
+    const Function& function) {
+  // Find the name of the field we should dispatch to.
+  const dart::Class& owner = dart::Class::Handle(Z, function.Owner());
+  ASSERT(!owner.IsNull());
+  const dart::String& field_name = dart::String::Handle(Z, function.name());
+  const dart::String& getter_name = dart::String::ZoneHandle(Z,
+      Symbols::New(dart::String::Handle(Z,
+          dart::Field::GetterSymbol(field_name))));
+
+  // Determine if this is `class Closure { get call => this; }`
+  const dart::Class& closure_class =
+      dart::Class::Handle(I->object_store()->closure_class());
+  const bool is_closure_call =
+      (owner.raw() == closure_class.raw()) &&
+      field_name.Equals(Symbols::Call());
+
+  // Set default parameters & construct argument names array.
+  //
+  // The backend will expect an array of default values for all the named
+  // parameters, even if they are all known to be passed at the call site
+  // because the call site matches the arguments descriptor.  Use null for
+  // the default values.
+  const Array& descriptor_array =
+      Array::ZoneHandle(Z, function.saved_args_desc());
+  ArgumentsDescriptor descriptor(descriptor_array);
+  const Array& argument_names =
+      Array::ZoneHandle(Z, Array::New(descriptor.NamedCount()));
+  ZoneGrowableArray<const Instance*>* default_values =
+      new ZoneGrowableArray<const Instance*>(Z, descriptor.NamedCount());
+  dart::String& string_handle = dart::String::Handle(Z);
+  for (int i = 0; i < descriptor.NamedCount(); ++i) {
+    default_values->Add(&Object::null_instance());
+    string_handle = descriptor.NameAt(i);
+    argument_names.SetAt(i, string_handle);
+  }
+  parsed_function_->set_default_parameter_values(default_values);
+
+  TargetEntryInstr* normal_entry = BuildTargetEntry();
+  graph_entry_ = new(Z) GraphEntryInstr(*parsed_function_,
+                                        normal_entry,
+                                        Compiler::kNoOSRDeoptId);
+
+  Fragment body(normal_entry);
+  body += CheckStackOverflow();
+
+  LocalScope* scope = parsed_function_->node_sequence()->scope();
+
+  LocalVariable* closure = NULL;
+  if (is_closure_call) {
+    closure = scope->VariableAt(0);
+
+    // The closure itself is the first argument.
+    body += LoadLocal(closure);
+  } else {
+    // Invoke the getter to get the field value.
+    body += LoadLocal(scope->VariableAt(0));
+    body += PushArgument();
+    body += InstanceCall(getter_name, Token::kILLEGAL, 1);
+  }
+
+  body += PushArgument();
+
+  // Push all arguments onto the stack.
+  intptr_t pos = 1;
+  for (; pos < descriptor.PositionalCount(); pos++) {
+    body += LoadLocal(scope->VariableAt(pos));
+    body += PushArgument();
+  }
+  for (; pos < descriptor.Count(); pos++) {
+    body += LoadLocal(scope->VariableAt(pos));
+    body += PushArgument();
+  }
+
+  if (is_closure_call) {
+    // Lookup the function in the closure.
+    body += LoadLocal(closure);
+    body += LoadField(Closure::function_offset());
+
+    body += ClosureCall(descriptor.Count(), argument_names);
+  } else {
+    body += InstanceCall(Symbols::Call(),
+                         Token::kILLEGAL,
+                         descriptor.Count(),
+                         argument_names);
+  }
+
   body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);

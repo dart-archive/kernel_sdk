@@ -2771,17 +2771,27 @@ class ClosureCallInstr : public TemplateDefinition<1, Throws> {
                    ClosureCallNode* node,
                    ZoneGrowableArray<PushArgumentInstr*>* arguments)
       : TemplateDefinition(Thread::Current()->GetNextDeoptId()),
-        ast_node_(*node),
+        argument_names_(node->arguments()->names()),
+        token_pos_(node->token_pos()),
+        arguments_(arguments) {
+    SetInputAt(0, function);
+  }
+
+  ClosureCallInstr(Value* function,
+                   ZoneGrowableArray<PushArgumentInstr*>* arguments,
+                   const Array& argument_names,
+                   TokenPosition token_pos)
+      : TemplateDefinition(Thread::Current()->GetNextDeoptId()),
+        argument_names_(argument_names),
+        token_pos_(token_pos),
         arguments_(arguments) {
     SetInputAt(0, function);
   }
 
   DECLARE_INSTRUCTION(ClosureCall)
 
-  const Array& argument_names() const { return ast_node_.arguments()->names(); }
-  virtual TokenPosition token_pos() const {
-    return ast_node_.token_pos();
-  }
+  const Array& argument_names() const { return argument_names_; }
+  virtual TokenPosition token_pos() const { return token_pos_; }
 
   virtual intptr_t ArgumentCount() const { return arguments_->length(); }
   virtual PushArgumentInstr* PushArgumentAt(intptr_t index) const {
@@ -2798,7 +2808,8 @@ class ClosureCallInstr : public TemplateDefinition<1, Throws> {
   PRINT_OPERANDS_TO_SUPPORT
 
  private:
-  const ClosureCallNode& ast_node_;
+  const Array& argument_names_;
+  TokenPosition token_pos_;
   ZoneGrowableArray<PushArgumentInstr*>* arguments_;
 
   DISALLOW_COPY_AND_ASSIGN(ClosureCallInstr);
