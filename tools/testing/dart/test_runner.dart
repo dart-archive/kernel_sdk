@@ -2449,9 +2449,14 @@ class CommandExecutorImpl implements CommandExecutor {
   Future<CommandOutput> _runCommand(Command command, int timeout) {
     var batchMode = !globalConfiguration['noBatch'];
     var dart2jsBatchMode = globalConfiguration['dart2js_batch'];
+    var isRasta = globalConfiguration['compiler'] == 'rasta';
 
     if (command is BrowserTestCommand) {
       return _startBrowserControllerTest(command, timeout);
+    } else if (command is CompilationCommand && isRasta) {
+      // For now, we always run the Rasta compiler in batch mode.
+      return _getBatchRunner("rastak")
+          .runCommand("rastak", command, timeout, command.arguments);
     } else if (command is CompilationCommand && dart2jsBatchMode) {
       return _getBatchRunner("dart2js")
           .runCommand("dart2js", command, timeout, command.arguments);

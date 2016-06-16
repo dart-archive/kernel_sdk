@@ -47,7 +47,7 @@ vars = {
   "dart_style_tag": "@0.2.4",
   "dev_compiler_rev": "@0c5dd2d1e999c421d978a478e267aac6279e087a",
   "kernel_rev": "@02604e988e296758656034a7c64203c479a78382",
-  "rasta_rev": "@9d1f0dc1bb81b3d98377335b82c63daab803e877",
+  "rasta_rev": "@7c8ebfc2fb9bd75e924aa319fe494b50ccb909f5",
   "glob_rev": "@704cf75e4f26b417505c5c611bdaacd8808467dd",
   "html_tag" : "@0.12.1+1",
   "http_tag" : "@0.11.3+3",

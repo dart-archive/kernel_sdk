@@ -81,6 +81,9 @@ abstract class CompilerConfiguration {
             isDebug: isDebug,
             isChecked: isChecked,
             arch: configuration['arch']);
+      case 'rasta':
+        return new RastaCompilerConfiguration(
+            isHostChecked: isHostChecked);
       case 'none':
         return new NoneCompilerConfiguration(
             isDebug: isDebug,
@@ -173,6 +176,53 @@ class NoneCompilerConfiguration extends CompilerConfiguration {
       ..addAll(vmOptions)
       ..addAll(sharedOptions)
       ..addAll(originalArguments);
+  }
+}
+
+/// The "rasta" compiler.
+class RastaCompilerConfiguration extends CompilerConfiguration {
+  RastaCompilerConfiguration({bool isHostChecked})
+      : super._subclass(isHostChecked: isHostChecked);
+
+  String computeCompilerPath(String buildDir) {
+    var prefix = 'third_party/rasta/bin';
+    String suffix = executableScriptSuffix;
+    if (isHostChecked) {
+      return '$prefix/rastak_developer$suffix';
+    } else {
+      return '$prefix/rastak$suffix';
+    }
+  }
+
+  CompilationCommand computeCompilationCommand(
+      String outputFileName,
+      String buildDir,
+      CommandBuilder commandBuilder,
+      List arguments,
+      Map<String, String> environmentOverrides) {
+    // TODO(kasperl): We may need to forward more arguments to the compiler.
+    // For now, we ignore everything but the input and output.
+    arguments = [arguments[2], outputFileName];
+    return commandBuilder.getCompilationCommand(
+        'rasta',
+        outputFileName,
+        true,
+        bootstrapDependencies(buildDir),
+        computeCompilerPath(buildDir),
+        arguments,
+        environmentOverrides);
+  }
+
+  CommandArtifact computeCompilationArtifact(
+      String buildDir,
+      String tempDir,
+      CommandBuilder commandBuilder,
+      List arguments,
+      Map<String, String> environmentOverrides) {
+    return new CommandArtifact(<Command>[
+      this.computeCompilationCommand('$tempDir/out.dill', buildDir,
+          CommandBuilder.instance, arguments, environmentOverrides)
+    ], '$tempDir/out.dill', 'application/dart');
   }
 }
 

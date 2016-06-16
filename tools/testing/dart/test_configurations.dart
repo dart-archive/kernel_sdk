@@ -226,11 +226,14 @@ void testConfigurations(List<Map> configurations) {
         }
       }
 
+      bool isRasta = conf['compiler'] == 'rasta';
       for (final testSuiteDir in DILL_TEST_SUITE_DIRECTORIES) {
         final name = testSuiteDir.filename;
         if (selectors.containsKey(name)) {
-          testSuites
-              .add(new StandardTestSuite.forDillDirectory(conf, testSuiteDir));
+          StandardTestSuite suite = isRasta
+              ? new StandardTestSuite.forDirectory(conf, testSuiteDir)
+              : new StandardTestSuite.forDillDirectory(conf, testSuiteDir);
+          testSuites.add(suite);
         }
       }
     }

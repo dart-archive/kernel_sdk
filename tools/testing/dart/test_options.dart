@@ -76,7 +76,7 @@ class TestOptionsParser {
    dart2app: Compile the Dart code into an app snapshot before running the test
           (only valid with the following runtimes: dart_product)''',
           ['-c', '--compiler'],
-          ['none', 'precompiler', 'dart2js', 'dart2analyzer', 'dart2app'],
+          ['none', 'precompiler', 'dart2js', 'dart2analyzer', 'dart2app', 'rasta'],
           'none'),
       // TODO(antonm): fix the option drt.
       new _TestOptionSpecification(
@@ -645,6 +645,9 @@ Note: currently only implemented for dart2js.''',
         break;
       case 'precompiler':
         validRuntimes = const ['dart_precompiled'];
+        break;
+      case 'rasta':
+        validRuntimes = const ['vm'];
         break;
       case 'none':
         validRuntimes = const [
