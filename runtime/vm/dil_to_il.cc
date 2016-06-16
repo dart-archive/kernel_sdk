@@ -874,21 +874,21 @@ const dart::String& TranslationHelper::DartClassName(dil::Class* dil_klass) {
 
       String* mixin_name = NormalClass::Cast(mixin_type->klass())->name();
 
-      tmp ^= dart::String::FromUTF8(mixin_name->buffer(), mixin_name->size());
+      tmp = dart::String::FromUTF8(mixin_name->buffer(), mixin_name->size());
 
-      partial ^= dart::String::Concat(amp, partial);
-      partial ^= dart::String::Concat(tmp, partial);
+      partial = dart::String::Concat(amp, partial);
+      partial = dart::String::Concat(tmp, partial);
 
       dil_klass = base_type->klass();
     }
 
-    tmp ^= dart::String::FromUTF8(
+    tmp = dart::String::FromUTF8(
         dil_klass->name()->buffer(), dil_klass->name()->size());
 
-    partial ^= dart::String::Concat(amp, partial);
-    partial ^= dart::String::Concat(tmp, partial);
+    partial = dart::String::Concat(amp, partial);
+    partial = dart::String::Concat(tmp, partial);
 
-    partial ^= dart::Symbols::New(partial);
+    partial = dart::Symbols::New(partial);
     return partial;
   }
 }
@@ -951,8 +951,8 @@ const dart::String& TranslationHelper::DartFactoryName(String* klass_name,
                                                        String* method_name) {
   // We build a String which looks like <classname>.<constructor-name>.
   dart::String& temp = DartString(klass_name);
-  temp ^= dart::String::Concat(temp, Symbols::Dot());
-  temp ^= dart::String::Concat(temp, DartString(method_name));
+  temp = dart::String::Concat(temp, Symbols::Dot());
+  temp = dart::String::Concat(temp, DartString(method_name));
   return dart::String::ZoneHandle(Z, dart::Symbols::New(temp));
 }
 
@@ -986,7 +986,7 @@ dart::RawField* TranslationHelper::LookupFieldByDilField(Field* dil_field) {
 
   dart::Class& klass = dart::Class::Handle(Z);
   if (node->IsClass()) {
-    klass ^= LookupClassByDilClass(Class::Cast(node));
+    klass = LookupClassByDilClass(Class::Cast(node));
   } else {
     ASSERT(node->IsLibrary());
     dart::Library& library = dart::Library::Handle(
@@ -1020,7 +1020,7 @@ dart::RawFunction* TranslationHelper::LookupStaticMethodByDilProcedure(
     dart::Function& function = dart::Function::ZoneHandle(Z, raw_function);
     if (function.IsRedirectingFactory()) {
       ClassFinalizer::ResolveRedirectingFactory(klass, function);
-      function ^= function.RedirectionTarget();
+      function = function.RedirectionTarget();
     }
     return function.raw();
   } else {
@@ -1112,30 +1112,40 @@ Instance& ConstantEvaluator::EvaluateMapLiteral(MapLiteral* node) {
 
 
 void ConstantEvaluator::VisitBoolLiteral(BoolLiteral* node) {
-  result_ ^= dart::Bool::Get(node->value()).raw();
+  result_ = dart::Bool::Get(node->value()).raw();
 }
 
 
 void ConstantEvaluator::VisitDoubleLiteral(DoubleLiteral* node) {
-  result_ ^= dart::Double::New(H.DartString(node->value()), Heap::kOld);
-  result_ ^= Canonicalize(result_);
+  result_ = dart::Double::New(H.DartString(node->value()), Heap::kOld);
+  result_ = Canonicalize(result_);
 }
 
 
 void ConstantEvaluator::VisitIntLiteral(IntLiteral* node) {
-  result_ ^= dart::Integer::New(node->value(), Heap::kOld);
-  result_ ^= Canonicalize(result_);
+  result_ = dart::Integer::New(node->value(), Heap::kOld);
+  result_ = Canonicalize(result_);
 }
 
 
 void ConstantEvaluator::VisitNullLiteral(NullLiteral* node) {
-  result_ ^= dart::Instance::null();
+  result_ = dart::Instance::null();
 }
 
 
 void ConstantEvaluator::VisitStringLiteral(StringLiteral* node) {
-  result_ ^= H.DartString(node->value(), Heap::kOld).raw();
-  result_ ^= Canonicalize(result_);
+  result_ = H.DartString(node->value(), Heap::kOld).raw();
+  result_ = Canonicalize(result_);
+}
+
+
+void ConstantEvaluator::VisitTypeLiteral(TypeLiteral* node) {
+  result_ = T.TranslateType(node->type()).raw();
+}
+
+
+void ConstantEvaluator::VisitSymbolLiteral(SymbolLiteral* node) {
+  result_ = H.DartSymbol(node->value()).raw();
 }
 
 
@@ -1144,14 +1154,15 @@ void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
   TypeArguments& type_arguments = *T.TranslateTypeArguments(types, 1);
 
   int length = node->expressions().length();
-  Array& const_list = Array::ZoneHandle(Z, Array::New(length, Heap::kOld));
+  const Array& const_list =
+      Array::ZoneHandle(Z, Array::New(length, Heap::kOld));
   const_list.SetTypeArguments(type_arguments);
   for (int i = 0; i < length; i++) {
     const Instance& expression = EvaluateExpression(node->expressions()[i]);
     const_list.SetAt(i, expression);
   }
   const_list.MakeImmutable();
-  result_ ^= Canonicalize(const_list);
+  result_ = Canonicalize(const_list);
 }
 
 
@@ -1183,11 +1194,11 @@ void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
   ASSERT(!field.IsNull());
 
   // NOTE: This needs to be kept in sync with `runtime/lib/immutable_map.dart`!
-  result_ ^= Instance::New(map_class, Heap::kOld);
+  result_ = Instance::New(map_class, Heap::kOld);
   ASSERT(!result_.IsNull());
   result_.SetTypeArguments(type_arguments);
   result_.SetField(field, const_kv_array);
-  result_ ^= Canonicalize(result_);
+  result_ = Canonicalize(result_);
 }
 
 
@@ -1199,42 +1210,24 @@ void ConstantEvaluator::VisitConstructorInvocation(
   const Function& constructor =
       Function::Handle(Z, H.LookupConstructorByDilConstructor(node->target()));
 
-  // Build up arguments.
-  Instance& receiver = Instance::Handle(Z);
-  Array& arguments = Array::ZoneHandle(Z,
-      Array::New(1 + dil_arguments->count(), Heap::kOld));
-  Array& names = Array::ZoneHandle(Z,
-      Array::New(dil_arguments->named().length(), Heap::kOld));
-  int pos = 0;
+  Instance* receiver = NULL;
+  const TypeArguments* type_arguments = NULL;
   if (constructor.IsFactory()) {
-    const TypeArguments& type_arguments =
-        TypeArguments::ZoneHandle(Z, TypeArguments::null());
-    arguments.SetAt(pos++, type_arguments);
+    type_arguments = &TypeArguments::ZoneHandle(Z, TypeArguments::null());
   } else {
     const dart::Class& klass = dart::Class::Handle(Z, constructor.Owner());
-    receiver ^= Instance::New(klass, Heap::kOld);
-    arguments.SetAt(pos++, receiver);
-  }
-  for (int i = 0; i < dil_arguments->positional().length(); i++) {
-    EvaluateExpression(dil_arguments->positional()[i]);
-    arguments.SetAt(pos++, result_);
-  }
-  for (int i = 0; i < dil_arguments->named().length(); i++) {
-    NamedExpression* named_expression = dil_arguments->named()[i];
-    EvaluateExpression(named_expression->expression());
-    arguments.SetAt(pos++, result_);
-    names.SetAt(i, H.DartSymbol(named_expression->name()));
+    receiver = &Instance::ZoneHandle(Z, Instance::New(klass, Heap::kOld));
   }
 
-  // Run the constructor and canonicalize the result.
-  const Object& result = RunFunction(constructor, arguments, names);
+  const Object& result = RunFunction(
+      constructor, dil_arguments, receiver, type_arguments);
   if (constructor.IsFactory()) {
     // Factories return the new object.
     result_ ^= result.raw();
-    result_ ^= Canonicalize(result_);
+    result_ = Canonicalize(result_);
   } else {
-    ASSERT(!receiver.IsNull());
-    result_ ^= Canonicalize(receiver);
+    ASSERT(!receiver->IsNull());
+    result_ = Canonicalize(*receiver);
   }
 }
 
@@ -1248,54 +1241,57 @@ void ConstantEvaluator::VisitMethodInvocation(MethodInvocation* node) {
       isolate_->class_table()->At(receiver.GetClassId()));
   ASSERT(!klass.IsNull());
 
+  // Search the superclass chain for the selector.
+  // TODO(kustermann): Are there convenience function in the VM which do this?
+  // TODO(kustermann): Can we assume this will never be a no-such-method error?
   dart::Function& function = dart::Function::Handle(Z);
   while (!klass.IsNull()) {
-    function ^= klass.LookupDynamicFunctionAllowPrivate(
+    function = klass.LookupDynamicFunctionAllowPrivate(
         H.DartSymbol(node->name()->string()));
     if (!function.IsNull()) break;
-    klass ^= klass.SuperClass();
+    klass = klass.SuperClass();
   }
   ASSERT(!function.IsNull());
 
-  // Build up arguments.
-  Array& arguments = Array::ZoneHandle(Z,
-      Array::New(1 + dil_arguments->count(), Heap::kOld));
-  Array& names = Array::ZoneHandle(Z,
-      Array::New(dil_arguments->named().length(), Heap::kOld));
-  int pos = 0;
-  arguments.SetAt(pos++, receiver);
-  for (int i = 0; i < dil_arguments->positional().length(); i++) {
-    EvaluateExpression(dil_arguments->positional()[i]);
-    arguments.SetAt(pos++ + i, result_);
-  }
-  for (int i = 0; i < dil_arguments->named().length(); i++) {
-    NamedExpression* named_expression = dil_arguments->named()[i];
-    EvaluateExpression(named_expression->expression());
-    arguments.SetAt(pos++ + i, result_);
-    names.SetAt(i, H.DartSymbol(named_expression->name()));
-  }
-
-  // Run the constructor and canonicalize the result.
-  const Object& result = RunFunction(function, arguments, names);
+  // Run the method and canonicalize the result.
+  const Object& result = RunFunction(function, dil_arguments, &receiver);
   result_ ^= result.raw();
-  result_ ^= Canonicalize(result_);
+  result_ = Canonicalize(result_);
 }
 
 
 void ConstantEvaluator::VisitStaticGet(StaticGet* node) {
   Member* member = node->target();
-  ASSERT(member->IsField());
-  Field* dil_field = Field::Cast(member);
-  const dart::Field& field = dart::Field::Handle(Z,
-      H.LookupFieldByDilField(dil_field));
-  if (field.StaticValue() == Object::sentinel().raw() ||
-      field.StaticValue() == Object::transition_sentinel().raw()) {
-    field.EvaluateInitializer();
-    result_ ^= field.StaticValue();
-    result_ ^= Canonicalize(result_);
-    field.SetStaticValue(result_, true);
-  } else {
-    result_ ^= field.StaticValue();
+  if (member->IsField()) {
+    Field* dil_field = Field::Cast(member);
+    const dart::Field& field = dart::Field::Handle(Z,
+        H.LookupFieldByDilField(dil_field));
+    if (field.StaticValue() == Object::sentinel().raw() ||
+        field.StaticValue() == Object::transition_sentinel().raw()) {
+      field.EvaluateInitializer();
+      result_ = field.StaticValue();
+      result_ = Canonicalize(result_);
+      field.SetStaticValue(result_, true);
+    } else {
+      result_ = field.StaticValue();
+    }
+  } else if (member->IsProcedure()) {
+    Procedure* procedure = Procedure::Cast(member);
+    const Function& target = Function::ZoneHandle(Z,
+        H.LookupStaticMethodByDilProcedure(procedure));
+
+    if (procedure->kind() == Procedure::kMethod) {
+      ASSERT(procedure->IsStatic());
+      Function& closure_function =
+          Function::ZoneHandle(Z, target.ImplicitClosureFunction());
+      closure_function.set_dil_function(target.dil_function());
+      result_ = closure_function.ImplicitStaticClosure();
+      result_ = Canonicalize(result_);
+    } else if (procedure->kind() == Procedure::kGetter) {
+      UNIMPLEMENTED();
+    } else {
+      UNIMPLEMENTED();
+    }
   }
 }
 
@@ -1306,7 +1302,90 @@ void ConstantEvaluator::VisitVariableGet(VariableGet* node) {
   // with it.
   LocalVariable* variable = builder_->LookupVariable(node->variable());
   ASSERT(variable->IsConst());
-  result_ ^= variable->ConstValue()->raw();
+  result_ = variable->ConstValue()->raw();
+}
+
+
+void ConstantEvaluator::VisitStaticInvocation(StaticInvocation* node) {
+  const Function& function = Function::ZoneHandle(Z,
+      H.LookupStaticMethodByDilProcedure(node->procedure()));
+  const Object& result = RunFunction(function, node->arguments());
+  result_ ^= result.raw();
+  result_ = Canonicalize(result_);
+}
+
+
+void ConstantEvaluator::VisitStringConcatenation(StringConcatenation* node) {
+  int length = node->expressions().length();
+
+  bool all_string = true;
+  const Array& strings = Array::Handle(Z, Array::New(length));
+  for (int i = 0; i < length; i++) {
+    EvaluateExpression(node->expressions()[i]);
+    strings.SetAt(i, result_);
+    all_string = all_string && result_.IsString();
+  }
+  if (all_string) {
+    result_ = dart::String::ConcatAll(strings, Heap::kOld);
+    result_ = Canonicalize(result_);
+  } else {
+    // Get string interpolation function.
+    const dart::Class& cls = dart::Class::Handle(
+        Z, dart::Library::LookupCoreClass(Symbols::StringBase()));
+    ASSERT(!cls.IsNull());
+    const Function& func = Function::Handle(Z, cls.LookupStaticFunction(
+        dart::Library::PrivateCoreLibName(Symbols::Interpolate())));
+    ASSERT(!func.IsNull());
+
+    // Build argument array to pass to the interpolation function.
+    const Array& interpolate_arg = Array::Handle(Z, Array::New(1, Heap::kOld));
+    interpolate_arg.SetAt(0, strings);
+
+    // Run and canonicalize.
+    const Object& result =
+        RunFunction(func, interpolate_arg, Array::null_array());
+    result_ = Canonicalize(dart::String::Cast(result));
+  }
+}
+
+
+void ConstantEvaluator::VisitConditionalExpression(
+    ConditionalExpression* node) {
+  EvaluateExpression(node->condition());
+  if (Bool::Cast(result_).value()) {
+    EvaluateExpression(node->then());
+  } else {
+    EvaluateExpression(node->otherwise());
+  }
+}
+
+
+void ConstantEvaluator::VisitLogicalExpression(LogicalExpression* node) {
+  if (node->op() == LogicalExpression::kAnd) {
+    EvaluateExpression(node->left());
+    if (Bool::Cast(result_).value()) {
+      EvaluateExpression(node->right());
+    }
+  } else if (node->op() == LogicalExpression::kOr) {
+    EvaluateExpression(node->left());
+    if (!Bool::Cast(result_).value()) {
+      EvaluateExpression(node->right());
+    }
+  } else {
+    ASSERT(node->op() == LogicalExpression::kIfNull);
+    EvaluateExpression(node->left());
+    if (result_.IsNull()) {
+      EvaluateExpression(node->right());
+    }
+  }
+}
+
+
+void ConstantEvaluator::VisitNot(Not* node) {
+  EvaluateExpression(node->expression());
+  ASSERT(result_.IsBool());
+  result_ = Bool::Cast(result_).value()
+      ? Bool::False().raw() : Bool::True().raw();
 }
 
 
@@ -1322,6 +1401,40 @@ RawInstance* ConstantEvaluator::Canonicalize(const Instance& instance) {
     }
     return result;
   }
+}
+
+
+const Object& ConstantEvaluator::RunFunction(const Function& function,
+                                             Arguments* dil_arguments,
+                                             const Instance* receiver,
+                                             const TypeArguments* type_args) {
+  ASSERT(!((receiver != NULL) && (type_args != NULL)));
+  intptr_t extra_arguments =
+      (receiver != NULL ? 1 : 0) + (type_args != NULL ? 1 : 0);
+
+  // Build up arguments.
+  const Array& arguments = Array::ZoneHandle(Z,
+      Array::New(extra_arguments + dil_arguments->count()));
+  const Array& names = Array::ZoneHandle(Z,
+      Array::New(dil_arguments->named().length()));
+  intptr_t pos = 0;
+  if (receiver != NULL) {
+    arguments.SetAt(pos++, *receiver);
+  }
+  if (type_args != NULL) {
+    arguments.SetAt(pos++, *type_args);
+  }
+  for (intptr_t i = 0; i < dil_arguments->positional().length(); i++) {
+    EvaluateExpression(dil_arguments->positional()[i]);
+    arguments.SetAt(pos++, result_);
+  }
+  for (intptr_t i = 0; i < dil_arguments->named().length(); i++) {
+    NamedExpression* named_expression = dil_arguments->named()[i];
+    EvaluateExpression(named_expression->expression());
+    arguments.SetAt(pos++, result_);
+    names.SetAt(i, H.DartSymbol(named_expression->name()));
+  }
+  return RunFunction(function, arguments, names);
 }
 
 
@@ -2744,12 +2857,12 @@ void DartTypeTranslator::VisitInterfaceType(InterfaceType* node) {
 
 
 void DartTypeTranslator::VisitDynamicType(DynamicType* node) {
-  result_ ^= Object::dynamic_type().raw();
+  result_ = Object::dynamic_type().raw();
 }
 
 
 void DartTypeTranslator::VisitVoidType(VoidType* node) {
-  result_ ^= Object::void_type().raw();
+  result_ = Object::void_type().raw();
 }
 
 
@@ -2812,8 +2925,6 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
       fragment_ = StaticCall(getter, 0);
     }
   } else {
-    ASSERT(target->IsProcedure());
-
     Procedure* procedure = Procedure::Cast(target);
     const Function& target = Function::ZoneHandle(Z,
         H.LookupStaticMethodByDilProcedure(procedure));
@@ -3379,9 +3490,9 @@ Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
   List<Expression>& positional = node->positional();
   List<NamedExpression>& named = node->named();
   if (named.length() == 0) {
-    *argument_names ^= Array::null();
+    *argument_names = Array::null();
   } else {
-    *argument_names ^= Array::New(named.length());
+    *argument_names = Array::New(named.length());
   }
 
   for (int i = 0; i < positional.length(); ++i) {

@@ -210,6 +210,8 @@ class ConstantEvaluator : public ExpressionVisitor {
   virtual void VisitIntLiteral(IntLiteral* node);
   virtual void VisitNullLiteral(NullLiteral* node);
   virtual void VisitStringLiteral(StringLiteral* node);
+  virtual void VisitSymbolLiteral(SymbolLiteral* node);
+  virtual void VisitTypeLiteral(TypeLiteral* node);
 
   virtual void VisitListLiteral(ListLiteral* node);
   virtual void VisitMapLiteral(MapLiteral* node);
@@ -218,11 +220,21 @@ class ConstantEvaluator : public ExpressionVisitor {
   virtual void VisitMethodInvocation(MethodInvocation* node);
   virtual void VisitStaticGet(StaticGet* node);
   virtual void VisitVariableGet(VariableGet* node);
+  virtual void VisitStaticInvocation(StaticInvocation* node);
+  virtual void VisitStringConcatenation(StringConcatenation* node);
+  virtual void VisitConditionalExpression(ConditionalExpression* node);
+  virtual void VisitLogicalExpression(LogicalExpression* node);
+  virtual void VisitNot(Not* node);
 
   // TODO(kustermann): Figure out what else we need here.
 
  private:
   RawInstance* Canonicalize(const Instance& instance);
+
+  const Object& RunFunction(const Function& function,
+                            Arguments* arguments,
+                            const Instance* receiver = NULL,
+                            const TypeArguments* type_args = NULL);
 
   const Object& RunFunction(const Function& function,
                             const Array& arguments,
@@ -254,6 +266,10 @@ class FlowGraphBuilder : public TreeVisitor {
   FlowGraph* BuildGraph();
 
   virtual void VisitDefaultTreeNode(TreeNode* node) { UNREACHABLE(); }
+
+  virtual void VisitInvalidExpression(InvalidExpression* node) {
+    FATAL("Invalid expression not implemented");
+  }
 
   virtual void VisitNullLiteral(NullLiteral* node);
   virtual void VisitBoolLiteral(BoolLiteral* node);

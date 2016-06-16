@@ -64,18 +64,10 @@ co19/Language/Expressions/Bitwise_Expressions/syntax_t14_test: Crash
 co19/Language/Expressions/Bitwise_Expressions/syntax_t15_test: Crash
 co19/Language/Expressions/Conditional/syntax_t12_test: Crash
 co19/Language/Expressions/Conditional/syntax_t13_test: Crash
-co19/Language/Expressions/Constants/equals_expression_t01_test: Crash
-co19/Language/Expressions/Constants/identical_t01_test: Crash
-co19/Language/Expressions/Constants/identifier_denotes_a_constant_t02_test: Crash
 co19/Language/Expressions/Constants/identifier_denotes_a_constant_t04_test: Crash
 co19/Language/Expressions/Constants/identifier_denotes_a_constant_t05_test: Crash
 co19/Language/Expressions/Constants/literal_number_t01_test: Crash
-co19/Language/Expressions/Constants/literal_string_t01_test: Crash
-co19/Language/Expressions/Constants/literal_symbol_t01_test: Crash
 co19/Language/Expressions/Constants/math_operators_t01_test: Crash
-co19/Language/Expressions/Constants/parenthesized_expression_t01_test: Crash
-co19/Language/Expressions/Constants/static_method_t01_test: Crash
-co19/Language/Expressions/Constants/ternary_operator_t01_test: Crash
 co19/Language/Expressions/Equality/evaluation_super_t02_test: RuntimeError
 co19/Language/Expressions/Equality/evaluation_t03_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
@@ -146,13 +138,10 @@ co19/Language/Expressions/Instance_Creation/New/type_t06_test: Crash
 co19/Language/Expressions/Instance_Creation/New/type_t07_test: Crash
 co19/Language/Expressions/Instance_Creation/malformed_or_malbounded_t01_test: Crash
 co19/Language/Expressions/Instance_Creation/malformed_or_malbounded_t03_test: Crash
-co19/Language/Expressions/Lists/static_type_dynamic_t01_test: Crash
 co19/Language/Expressions/Logical_Boolean_Expressions/syntax_t12_test: Crash
 co19/Language/Expressions/Logical_Boolean_Expressions/syntax_t13_test: Crash
 co19/Language/Expressions/Lookup/Method_Lookup/superclass_t07_test: RuntimeError
 co19/Language/Expressions/Lookup/Method_Lookup/superclass_t08_test: RuntimeError
-co19/Language/Expressions/Maps/static_type_dynamic_t01_test: Crash
-co19/Language/Expressions/Maps/value_of_a_constant_map_t02_test: Crash
 co19/Language/Expressions/Method_Invocation/3_Static_Invocation_A02_t01_test: Crash
 co19/Language/Expressions/Method_Invocation/3_Static_Invocation_A04_t05_test: RuntimeError
 co19/Language/Expressions/Method_Invocation/3_Static_Invocation_A04_t06_test: RuntimeError
@@ -243,7 +232,6 @@ co19/Language/Expressions/Strings/String_Interpolation/syntax_t05_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t07_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t13_test: Crash
 co19/Language/Expressions/Strings/adjacent_strings_t02_test: RuntimeError
-co19/Language/Expressions/Strings/adjacent_strings_t04_test: Crash
 co19/Language/Expressions/Strings/escape_backspace_t01_test: RuntimeError
 co19/Language/Expressions/Strings/escape_carriage_return_t01_test: RuntimeError
 co19/Language/Expressions/Strings/escape_characters_t01_test: RuntimeError
@@ -619,3 +607,5 @@ co19/LibTest/math/Rectangle/operator_equality_A01_t01_test: Crash
 co19/LibTest/math/Rectangle/operator_equality_A02_t01_test: Crash
 co19/LibTest/math/Rectangle/operator_equality_A04_t01_test: Crash
 co19/LibTest/typed_data/Float32x4List/toSet_A01_t01_test: Crash
+
+
