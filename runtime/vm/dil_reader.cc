@@ -200,9 +200,6 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
   // This will trigger a call to [ReadPreliminaryClass] if not already done.
   dart::Class& klass = LookupClass(dil_klass);
 
-  klass.set_library(library);
-  library.AddClass(klass);
-
   TokenPosition pos(0);
 
   Type& klass_type = Type::Handle(Type::NewNonParameterizedType(klass));
@@ -487,9 +484,9 @@ dart::Library& DilReader::LookupLibrary(Library* library) {
 dart::Class& DilReader::LookupClass(Class* klass) {
   dart::Class* handle = NULL;
   if (!classes_.Lookup(klass, &handle)) {
+    dart::Library& library = LookupLibrary(klass->parent());
     const dart::String& name = H.DartClassName(klass);
     if (klass->parent()->IsCorelibrary()) {
-      dart::Library& library = LookupLibrary(klass->parent());
       handle = &dart::Class::Handle(Z, library.LookupClass(name));
       classes_.Insert(klass, handle);
     } else {
@@ -498,6 +495,9 @@ dart::Class& DilReader::LookupClass(Class* klass) {
           H.DartString(""), RawScript::kScriptTag));
       handle = &dart::Class::Handle(Z, dart::Class::New(name, script, pos));
       classes_.Insert(klass, handle);
+
+      handle->set_library(library);
+      library.AddClass(*handle);
 
       ReadPreliminaryClass(handle, klass);
     }
