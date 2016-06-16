@@ -40,7 +40,8 @@ class DilReader {
   DilReader(const uint8_t* buffer, intptr_t len)
       : zone_(dart::Thread::Current()->zone()),
         isolate_(dart::Thread::Current()->isolate()),
-        translation_helper_(zone_),
+        translation_helper_(zone_, isolate_),
+        type_translator_(&translation_helper_, &active_class_),
         buffer_(buffer),
         buffer_length_(len) {}
 
@@ -48,6 +49,7 @@ class DilReader {
   dart::Object& ReadProgram();
 
   static void SetupFunctionParameters(TranslationHelper translation_helper_,
+                                      DartTypeTranslator type_translator_,
                                       const dart::Class& owner,
                                       const dart::Function& function,
                                       FunctionNode* dil_function,
@@ -80,7 +82,9 @@ class DilReader {
 
   dart::Zone* zone_;
   dart::Isolate* isolate_;
+  ActiveClass active_class_;
   TranslationHelper translation_helper_;
+  DartTypeTranslator type_translator_;
 
   const uint8_t* buffer_;
   intptr_t buffer_length_;

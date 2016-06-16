@@ -20,34 +20,8 @@ namespace dil {
 
 #define Z (zone_)
 #define H (translation_helper_)
+#define T (type_translator_)
 #define I Isolate::Current()
-
-
-class DartTypeTranslator : public DartTypeVisitor {
- public:
-  explicit DartTypeTranslator(TranslationHelper* helper)
-      : translation_helper_(*helper),
-        zone_(helper->zone()),
-        result_(AbstractType::ZoneHandle(Z)) {
-  }
-
-  AbstractType& result() { return result_; }
-
-  virtual void VisitDefaultDartType(DartType* node) { UNREACHABLE(); }
-
-  virtual void VisitInterfaceType(InterfaceType* node);
-
-  virtual void VisitDynamicType(DynamicType* node);
-
-  virtual void VisitVoidType(VoidType* node);
-
-  TypeArguments* TranslateTypeArguments(DartType** dart_types, int length);
-
- private:
-  TranslationHelper& translation_helper_;
-  Zone* zone_;
-  AbstractType& result_;
-};
 
 
 class ScopeBuilder : public RecursiveVisitor {
@@ -1166,9 +1140,8 @@ void ConstantEvaluator::VisitStringLiteral(StringLiteral* node) {
 
 
 void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
-  DartTypeTranslator translator(&H);
   DartType* types[] = { node->type() };
-  TypeArguments& type_arguments = *translator.TranslateTypeArguments(types, 1);
+  TypeArguments& type_arguments = *T.TranslateTypeArguments(types, 1);
 
   int length = node->expressions().length();
   Array& const_list = Array::ZoneHandle(Z, Array::New(length, Heap::kOld));
@@ -1183,9 +1156,8 @@ void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
 
 
 void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
-  DartTypeTranslator translator(&H);
   DartType* types[] = { node->key_type(), node->value_type() };
-  TypeArguments& type_arguments = *translator.TranslateTypeArguments(types, 2);
+  TypeArguments& type_arguments = *T.TranslateTypeArguments(types, 2);
 
   int length = node->entries().length();
 
@@ -1371,8 +1343,7 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
                                    ParsedFunction* parsed_function,
                                    int first_block_id)
   : zone_(Thread::Current()->zone()),
-    translation_helper_(zone_),
-    constant_evaluator_(this, zone_, &translation_helper_),
+    translation_helper_(zone_, Thread::Current()->isolate()),
     node_(node),
     parsed_function_(parsed_function),
     ic_data_array_(Z, 0),
@@ -1394,8 +1365,9 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     try_finally_block_(NULL),
     try_catch_block_(NULL),
     next_used_try_index_(0),
-    catch_block_(NULL) {
-}
+    catch_block_(NULL),
+    type_translator_(&translation_helper_, &active_class_),
+    constant_evaluator_(this, zone_, &translation_helper_, &type_translator_) {}
 
 
 FlowGraphBuilder::~FlowGraphBuilder() { }
@@ -1989,6 +1961,35 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
   const dart::Function& function = parsed_function_->function();
 
   if (function.IsConstructorClosureFunction()) return NULL;
+
+  dart::Class& klass = dart::Class::Handle(zone_,
+      parsed_function_->function().Owner());
+
+  // Find out if there is an enclosing dil class (which will be used to resolve
+  // type parameters).
+  Class* dil_klass = NULL;
+  dart::Function& topmost = dart::Function::Handle(Z, function.raw());
+  while (topmost.parent_function() != Object::null()) {
+    topmost = topmost.parent_function();
+  }
+  TreeNode* topmost_node = reinterpret_cast<TreeNode*>(topmost.dil_function());
+  if (topmost_node != NULL) {
+    // Going up the closure->parent chain needs to result in a Procedure or
+    // Constructor.
+    TreeNode* parent = NULL;
+    if (topmost_node->IsProcedure()) {
+      parent = Procedure::Cast(topmost_node)->parent();
+    } else if (topmost_node->IsConstructor()) {
+      parent = Constructor::Cast(topmost_node)->parent();
+    } else if (topmost_node->IsField()) {
+      parent = Field::Cast(topmost_node)->parent();
+    }
+    if (parent != NULL && parent->IsClass()) dil_klass = Class::Cast(parent);
+  }
+
+  // Mark that we are using [klass]/[dill_klass] as active class.  Resolving of
+  // type parameters will get resolved via [dill_klass].
+  ActiveClassScope active_class_scope(&active_class_, dil_klass, &klass);
 
   // The IR builder will create its own local variables and scopes, and it
   // will not need an AST.  The code generator will assume that there is a
@@ -2689,9 +2690,48 @@ void FlowGraphBuilder::VisitSymbolLiteral(SymbolLiteral* node) {
 }
 
 
+AbstractType& DartTypeTranslator::TranslateType(DartType* node) {
+  node->AcceptDartTypeVisitor(this);
+  // We return a new `ZoneHandle` here on purpose: The intermediate language
+  // instructions do not make a copy of the handle, so we do it.
+  return dart::AbstractType::ZoneHandle(Z, result_.raw());
+}
+
+
+AbstractType& DartTypeTranslator::TranslateTypeWithoutFinalization(
+    DartType* node) {
+  bool saved_finalize = finalize_;
+  finalize_ = false;
+  AbstractType& result = TranslateType(node);
+  finalize_ = saved_finalize;
+  return result;
+}
+
+
+void DartTypeTranslator::VisitTypeParameterType(TypeParameterType* node) {
+  ASSERT(active_class_->dil_class != NULL);
+
+  List<TypeParameter>& parameters = active_class_->dil_class->type_parameters();
+  for (int i = 0; i < parameters.length(); i++) {
+    TypeParameter* type_parameter = parameters[i];
+    if (node->parameter() == type_parameter) {
+      result_ = dart::TypeParameter::New(
+          *active_class_->klass,
+          i,
+          H.DartSymbol(type_parameter->name()),
+          Type::Handle(Z, H.isolate()->object_store()->object_type()),
+          TokenPosition::kNoSource);  // bound
+      result_.SetIsFinalized();
+      result_ = result_.Canonicalize();
+      return;
+    }
+  }
+  UNREACHABLE();
+}
+
+
 void DartTypeTranslator::VisitInterfaceType(InterfaceType* node) {
-  DartTypeTranslator translator(&H);
-  TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+  TypeArguments& type_arguments = *TranslateTypeArguments(
       node->type_arguments().raw_array(), node->type_arguments().length());
 
   const dart::Class& klass = dart::Class::Handle(Z,
@@ -2737,9 +2777,7 @@ TypeArguments* DartTypeTranslator::TranslateTypeArguments(
 
 
 void FlowGraphBuilder::VisitTypeLiteral(TypeLiteral* node) {
-  DartTypeTranslator translator(&H);
-  node->type()->AcceptDartTypeVisitor(&translator);
-  fragment_ = Fragment(Constant(translator.result()));
+  fragment_ = Fragment(Constant(T.TranslateType(node->type())));
 }
 
 
@@ -2913,8 +2951,7 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
 
     if (klass.NumTypeParameters() > 0) {
       List<DartType>& dil_type_arguments = node->arguments()->types();
-      DartTypeTranslator translator(&H);
-      TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+      TypeArguments& type_arguments = *T.TranslateTypeArguments(
           dil_type_arguments.raw_array(), dil_type_arguments.length());
 
       instructions += Constant(type_arguments);
@@ -2940,8 +2977,7 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
 
       List<DartType>& dil_type_arguments = node->arguments()->types();
 
-      DartTypeTranslator translator(&H);
-      TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+      TypeArguments& type_arguments = *T.TranslateTypeArguments(
           dil_type_arguments.raw_array(), dil_type_arguments.length());
 
       instructions += Constant(type_arguments);
@@ -3008,8 +3044,7 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
   Fragment instructions;
   if (klass.NumTypeParameters() > 0) {
     List<DartType>& dil_type_arguments = node->arguments()->types();
-    DartTypeTranslator translator(&H);
-    TypeArguments& type_arguments = *translator.TranslateTypeArguments(
+    TypeArguments& type_arguments = *T.TranslateTypeArguments(
         dil_type_arguments.raw_array(), dil_type_arguments.length());
 
     instructions += Constant(type_arguments);
@@ -3042,9 +3077,7 @@ void FlowGraphBuilder::VisitIsExpression(IsExpression* node) {
   instructions += NullConstant();
   instructions += PushArgument();  // Type arguments.
 
-  DartTypeTranslator translator(&H);
-  node->type()->AcceptDartTypeVisitor(&translator);
-  instructions += Constant(translator.result());
+  instructions += Constant(T.TranslateType(node->type()));
   instructions += PushArgument();  // Type.
 
   instructions += Constant(Bool::False());
@@ -3065,9 +3098,7 @@ void FlowGraphBuilder::VisitAsExpression(AsExpression* node) {
   instructions += NullConstant();
   instructions += PushArgument();  // Type arguments.
 
-  DartTypeTranslator translator(&H);
-  node->type()->AcceptDartTypeVisitor(&translator);
-  instructions += Constant(translator.result());
+  instructions += Constant(T.TranslateType(node->type()));
   instructions += PushArgument();  // Type.
 
   fragment_ = instructions +
@@ -3209,9 +3240,8 @@ void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
     return;
   }
 
-  DartTypeTranslator translator(&H);
   DartType* types[] = { node->type() };
-  TypeArguments& type_arguments = *translator.TranslateTypeArguments(types, 1);
+  TypeArguments& type_arguments = *T.TranslateTypeArguments(types, 1);
 
   // The type argument for the factory call.
   Fragment instructions = Constant(type_arguments);
@@ -3253,9 +3283,8 @@ void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
       map_class.LookupFactory(
           dart::Library::PrivateCoreLibName(Symbols::MapLiteralFactory())));
 
-  DartTypeTranslator translator(&H);
   DartType* types[] = { node->key_type(), node->value_type() };
-  TypeArguments& type_arguments = *translator.TranslateTypeArguments(types, 2);
+  TypeArguments& type_arguments = *T.TranslateTypeArguments(types, 2);
 
   // The type argument for the factory call `new Map<K, V>._fromLiteral(List)`.
   Fragment instructions = Constant(type_arguments);
@@ -3953,11 +3982,11 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
           StoreLocal(LookupVariable(catch_clause->stack_trace()));
       catch_handler_body += Drop();
     }
-    DartTypeTranslator type_translator(&H);
+    AbstractType* type_guard = NULL;
     if (catch_clause->guard() != NULL &&
         !catch_clause->guard()->IsDynamicType()) {
-      catch_clause->guard()->AcceptDartTypeVisitor(&type_translator);
-      handler_types.SetAt(i, type_translator.result());
+      type_guard = &T.TranslateType(catch_clause->guard());
+      handler_types.SetAt(i, *type_guard);
     } else {
       handler_types.SetAt(i, Object::dynamic_type());
     }
@@ -3972,12 +4001,12 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
       }
     }
 
-    if (!type_translator.result().IsNull()) {
+    if (type_guard != NULL) {
       catch_body += LoadLocal(CurrentException());
       catch_body += PushArgument();  // exception
       catch_body += NullConstant();
       catch_body += PushArgument();  // type arguments
-      catch_body += Constant(type_translator.result());
+      catch_body += Constant(*type_guard);
       catch_body += PushArgument();  // guard type
       catch_body += Constant(Object::bool_false());
       catch_body += PushArgument();  // negate
@@ -4045,6 +4074,7 @@ Fragment FlowGraphBuilder::TranslateFunctionNode(FunctionNode* node,
       function.set_result_type(Object::dynamic_type());
       function.set_is_debuggable(false);
       DilReader::SetupFunctionParameters(H,
+                                         T,
                                          dart::Class::Handle(Z),
                                          function,
                                          node,

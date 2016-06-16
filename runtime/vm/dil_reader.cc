@@ -15,6 +15,7 @@ namespace dil {
 
 #define Z (zone_)
 #define I (isolate_)
+#define T (type_translator_)
 #define H (translation_helper_)
 
 // FIXME(kustermann): We should add support for type conversion to annotate
@@ -24,7 +25,7 @@ namespace dil {
 class SimpleExpressionConverter : public ExpressionVisitor {
  public:
   explicit SimpleExpressionConverter(Zone* zone)
-      : translation_helper_(zone),
+      : translation_helper_(zone, NULL),
         zone_(zone), is_simple_(false), simple_value_(NULL) {}
 
   virtual void VisitDefaultExpression(Expression* node) {
@@ -160,6 +161,8 @@ void DilReader::ReadLibrary(Library* dil_library) {
 }
 
 void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
+  ActiveClassScope active_class_scope(&active_class_, dil_klass, klass);
+
   if (dil_klass->IsNormalClass()) {
     NormalClass* dil_normal_class = NormalClass::Cast(dil_klass);
     InterfaceType* super_class_type = dil_normal_class->super_class();
@@ -199,6 +202,8 @@ void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
 void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
   // This will trigger a call to [ReadPreliminaryClass] if not already done.
   dart::Class& klass = LookupClass(dil_klass);
+
+  ActiveClassScope active_class_scope(&active_class_, dil_klass, &klass);
 
   TokenPosition pos(0);
 
@@ -244,7 +249,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     klass.AddFunction(function);
     function.set_dil_function(reinterpret_cast<intptr_t>(dil_constructor));
     function.set_result_type(klass_type);
-    SetupFunctionParameters(H, klass, function, dil_constructor->function(),
+    SetupFunctionParameters(H, T, klass, function, dil_constructor->function(),
                             true,    // is_method
                             false);  // is_closure
   }
@@ -259,6 +264,8 @@ void DilReader::ReadProcedure(const dart::Library& library,
                               const dart::Class& owner,
                               Procedure* dil_procedure,
                               Class* dil_klass) {
+  ActiveClassScope active_class_scope(&active_class_, dil_klass, &owner);
+
   const dart::String& name = H.DartProcedureName(dil_procedure);
   TokenPosition pos(0);
   bool is_method = dil_klass != NULL && !dil_procedure->IsStatic();
@@ -277,7 +284,7 @@ void DilReader::ReadProcedure(const dart::Library& library,
   function.set_result_type(AbstractType::dynamic_type());
   function.set_is_debuggable(false);
 
-  SetupFunctionParameters(H, owner, function, dil_procedure->function(),
+  SetupFunctionParameters(H, T, owner, function, dil_procedure->function(),
                           is_method,
                           false);  // is_closure
 
@@ -340,6 +347,7 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
 }
 
 void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
+                                        DartTypeTranslator type_translator_,
                                         const dart::Class& klass,
                                         const dart::Function& function,
                                         FunctionNode* node,

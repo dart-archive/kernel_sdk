@@ -49,11 +49,48 @@ Fragment operator<<(const Fragment& fragment, Instruction* next);
 
 typedef ZoneGrowableArray<PushArgumentInstr*>* ArgumentArray;
 
+
+class ActiveClass {
+ public:
+  ActiveClass() : dil_class(NULL), klass(NULL) {}
+
+  Class* dil_class;
+  const dart::Class* klass;
+};
+
+
+class ActiveClassScope {
+ public:
+  ActiveClassScope(ActiveClass* active_class,
+                   Class* dil_class,
+                   const dart::Class* klass)
+    : active_class_(active_class) {
+    saved_dil_class_ = active_class_->dil_class;
+    saved_class_ = active_class_->klass;
+
+    active_class_->dil_class = dil_class;
+    active_class_->klass = klass;
+  }
+  ~ActiveClassScope() {
+    active_class_->klass = saved_class_;
+    active_class_->dil_class = saved_dil_class_;
+  }
+
+ private:
+  ActiveClass* active_class_;
+  Class* saved_dil_class_;
+  const dart::Class* saved_class_;
+};
+
+
 class TranslationHelper {
  public:
-  explicit TranslationHelper(dart::Zone* zone) : zone_(zone) {}
+  explicit TranslationHelper(dart::Zone* zone, Isolate* isolate)
+      : zone_(zone), isolate_(isolate) {}
 
   Zone* zone() { return zone_; }
+
+  Isolate* isolate() { return isolate_; }
 
   const dart::String& DartString(const char* content,
                                  Heap::Space space = Heap::kNew);
@@ -84,6 +121,46 @@ class TranslationHelper {
 
  private:
   dart::Zone* zone_;
+  dart::Isolate* isolate_;
+};
+
+class DartTypeTranslator : public DartTypeVisitor {
+ public:
+  explicit DartTypeTranslator(TranslationHelper* helper,
+                              ActiveClass* active_class,
+                              bool finalize = true)
+      : translation_helper_(*helper),
+        active_class_(active_class),
+        zone_(helper->zone()),
+        result_(AbstractType::Handle(helper->zone())),
+        finalize_(finalize) {}
+
+  AbstractType& result() { return result_; }
+
+  AbstractType& TranslateType(DartType* node);
+
+  AbstractType& TranslateTypeWithoutFinalization(DartType* node);
+
+
+  virtual void VisitDefaultDartType(DartType* node) { UNREACHABLE(); }
+
+  virtual void VisitTypeParameterType(TypeParameterType* node);
+
+  virtual void VisitInterfaceType(InterfaceType* node);
+
+  virtual void VisitDynamicType(DynamicType* node);
+
+  virtual void VisitVoidType(VoidType* node);
+
+  TypeArguments* TranslateTypeArguments(DartType** dart_types, int length);
+
+ private:
+  TranslationHelper& translation_helper_;
+  ActiveClass* active_class_;
+  Zone* zone_;
+  AbstractType& result_;
+
+  bool finalize_;
 };
 
 
@@ -108,11 +185,15 @@ class TranslationHelper {
 // compile-time.
 class ConstantEvaluator : public ExpressionVisitor {
  public:
-  ConstantEvaluator(FlowGraphBuilder* builder, Zone* zone, TranslationHelper* h)
+  ConstantEvaluator(FlowGraphBuilder* builder,
+                    Zone* zone,
+                    TranslationHelper* h,
+                    DartTypeTranslator* type_translator)
       : builder_(builder),
         isolate_(Isolate::Current()),
         zone_(zone),
         translation_helper_(*h),
+        type_translator_(*type_translator),
         result_(dart::Instance::Handle(zone)) {}
   virtual ~ConstantEvaluator() {}
 
@@ -151,6 +232,8 @@ class ConstantEvaluator : public ExpressionVisitor {
   Isolate* isolate_;
   Zone* zone_;
   TranslationHelper& translation_helper_;
+  DartTypeTranslator& type_translator_;
+
   Instance& result_;
 };
 
@@ -332,7 +415,6 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Zone* zone_;
   TranslationHelper translation_helper_;
-  ConstantEvaluator constant_evaluator_;
 
   // The node we are currently compiling (e.g. FunctionNode, Constructor,
   // Field)
@@ -412,6 +494,10 @@ class FlowGraphBuilder : public TreeVisitor {
   // A chained list of catch blocks. Chaining and lookup is done by the
   // [CatchBlock] class.
   CatchBlock* catch_block_;
+
+  ActiveClass active_class_;
+  DartTypeTranslator type_translator_;
+  ConstantEvaluator constant_evaluator_;
 
   friend class BreakableBlock;
   friend class CatchBlock;

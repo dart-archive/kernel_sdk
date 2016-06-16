@@ -17,7 +17,7 @@ co19/Language/Classes/Constructors/Factories/redirecting_constructor_call_t01_te
 co19/Language/Classes/Constructors/Factories/redirecting_constructor_call_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Factories/redirecting_constructor_t01_test: RuntimeError
 co19/Language/Classes/Constructors/Factories/return_type_t05_test: Crash
-co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01_test: Crash
+co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/implicit_superinitializer_t01_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/implicit_superinitializer_t02_test: RuntimeError
@@ -38,8 +38,6 @@ co19/Language/Enums/declaration_equivalent_t03_test: Crash
 co19/Language/Enums/declaration_equivalent_t05_test: Crash
 co19/Language/Expressions/Additive_Expressions/syntax_t11_test: Crash
 co19/Language/Expressions/Additive_Expressions/syntax_t12_test: Crash
-co19/Language/Expressions/Additive_Expressions/syntax_t13_test: Crash
-co19/Language/Expressions/Additive_Expressions/syntax_t14_test: Crash
 co19/Language/Expressions/Assignable_Expressions/syntax_t06_test: Crash
 co19/Language/Expressions/Assignable_Expressions/syntax_t08_test: Crash
 co19/Language/Expressions/Assignable_Expressions/syntax_t09_test: Crash
@@ -64,12 +62,8 @@ co19/Language/Expressions/Assignment/setter_assignment_t09_test: Crash
 co19/Language/Expressions/Assignment/variable_assignment_t07_test: Crash
 co19/Language/Expressions/Bitwise_Expressions/syntax_t14_test: Crash
 co19/Language/Expressions/Bitwise_Expressions/syntax_t15_test: Crash
-co19/Language/Expressions/Bitwise_Expressions/syntax_t16_test: Crash
-co19/Language/Expressions/Bitwise_Expressions/syntax_t17_test: Crash
 co19/Language/Expressions/Conditional/syntax_t12_test: Crash
 co19/Language/Expressions/Conditional/syntax_t13_test: Crash
-co19/Language/Expressions/Conditional/syntax_t14_test: Crash
-co19/Language/Expressions/Conditional/syntax_t15_test: Crash
 co19/Language/Expressions/Constants/equals_expression_t01_test: Crash
 co19/Language/Expressions/Constants/identical_t01_test: Crash
 co19/Language/Expressions/Constants/identifier_denotes_a_constant_t02_test: Crash
@@ -84,8 +78,6 @@ co19/Language/Expressions/Constants/static_method_t01_test: Crash
 co19/Language/Expressions/Constants/ternary_operator_t01_test: Crash
 co19/Language/Expressions/Equality/evaluation_super_t02_test: RuntimeError
 co19/Language/Expressions/Equality/evaluation_t03_test: RuntimeError
-co19/Language/Expressions/Equality/syntax_t23_test: Crash
-co19/Language/Expressions/Equality/syntax_t24_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t04_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t05_test: Crash
@@ -107,7 +99,7 @@ co19/Language/Expressions/Identifier_Reference/evaluation_alias_t02_test: Crash
 co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t01_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t03_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_property_extraction_t03_test: RuntimeError
-co19/Language/Expressions/Identifier_Reference/evaluation_type_parameter_t01_test: Crash
+co19/Language/Expressions/Identifier_Reference/evaluation_type_parameter_t01_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_undeclared_identifier_t01_test: Crash
 co19/Language/Expressions/Identifier_Reference/evaluation_variable_or_parameter_t04_test: Crash
 co19/Language/Expressions/Identifier_Reference/qualified_identifiers_t01_test: RuntimeError
@@ -157,8 +149,6 @@ co19/Language/Expressions/Instance_Creation/malformed_or_malbounded_t03_test: Cr
 co19/Language/Expressions/Lists/static_type_dynamic_t01_test: Crash
 co19/Language/Expressions/Logical_Boolean_Expressions/syntax_t12_test: Crash
 co19/Language/Expressions/Logical_Boolean_Expressions/syntax_t13_test: Crash
-co19/Language/Expressions/Logical_Boolean_Expressions/syntax_t14_test: Crash
-co19/Language/Expressions/Logical_Boolean_Expressions/syntax_t15_test: Crash
 co19/Language/Expressions/Lookup/Method_Lookup/superclass_t07_test: RuntimeError
 co19/Language/Expressions/Lookup/Method_Lookup/superclass_t08_test: RuntimeError
 co19/Language/Expressions/Maps/static_type_dynamic_t01_test: Crash
@@ -187,8 +177,6 @@ co19/Language/Expressions/Method_Invocation/Super_Invocation/static_type_dynamic
 co19/Language/Expressions/Method_Invocation/Super_Invocation/wrong_type_t01_test: Crash
 co19/Language/Expressions/Multiplicative_Expressions/syntax_t14_test: Crash
 co19/Language/Expressions/Multiplicative_Expressions/syntax_t15_test: Crash
-co19/Language/Expressions/Multiplicative_Expressions/syntax_t16_test: Crash
-co19/Language/Expressions/Multiplicative_Expressions/syntax_t17_test: Crash
 co19/Language/Expressions/Null/instantiate_t01_test: Crash
 co19/Language/Expressions/Object_Identity/string_t01_test: RuntimeError
 co19/Language/Expressions/Postfix_Expressions/syntax_t01_test: RuntimeError
@@ -249,14 +237,9 @@ co19/Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Clo
 co19/Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/static_type_t02_test: Crash
 co19/Language/Expressions/Relational_Expressions/syntax_t20_test: Crash
 co19/Language/Expressions/Relational_Expressions/syntax_t21_test: Crash
-co19/Language/Expressions/Relational_Expressions/syntax_t22_test: Crash
-co19/Language/Expressions/Relational_Expressions/syntax_t23_test: Crash
 co19/Language/Expressions/Shift/syntax_t11_test: Crash
 co19/Language/Expressions/Shift/syntax_t12_test: Crash
-co19/Language/Expressions/Shift/syntax_t13_test: Crash
-co19/Language/Expressions/Shift/syntax_t14_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t05_test: Crash
-co19/Language/Expressions/Strings/String_Interpolation/syntax_t06_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t07_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t13_test: Crash
 co19/Language/Expressions/Strings/adjacent_strings_t02_test: RuntimeError
@@ -300,16 +283,12 @@ co19/Language/Expressions/Unary_Expressions/syntax_t10_test: RuntimeError
 co19/Language/Expressions/Unary_Expressions/syntax_t17_test: Crash
 co19/Language/Expressions/Unary_Expressions/syntax_t18_test: Crash
 co19/Language/Expressions/Unary_Expressions/syntax_t19_test: Crash
-co19/Language/Expressions/Unary_Expressions/syntax_t20_test: Crash
-co19/Language/Expressions/Unary_Expressions/syntax_t21_test: Crash
-co19/Language/Expressions/Unary_Expressions/syntax_t22_test: Crash
 co19/Language/Functions/External_Functions/not_connected_to_a_body_t01_test: RuntimeError
 co19/Language/Functions/Formal_Parameters/Optional_Formals/syntax_t06_test: Crash
 co19/Language/Functions/Formal_Parameters/Optional_Formals/syntax_t10_test: Crash
 co19/Language/Functions/Formal_Parameters/Required_Formals/syntax_t05_test: Crash
 co19/Language/Functions/Formal_Parameters/scope_t01_test: Crash
-co19/Language/Generics/malformed_t01_test: Crash
-co19/Language/Generics/malformed_t03_test: Crash
+co19/Language/Generics/malformed_t01_test: RuntimeError
 co19/Language/Generics/scope_t03_test: Crash
 co19/Language/Generics/syntax_t02_test: Crash
 co19/Language/Generics/syntax_t03_test: Crash
@@ -446,10 +425,8 @@ co19/Language/Types/Function_Types/subtype_required_args_t04_test: Crash
 co19/Language/Types/Function_Types/subtype_required_args_t05_test: Crash
 co19/Language/Types/Interface_Types/direct_supertype_t03_test: RuntimeError
 co19/Language/Types/Interface_Types/interface_supertypes_t02_test: RuntimeError
-co19/Language/Types/Interface_Types/subtype_t04_test: Crash
 co19/Language/Types/Interface_Types/subtype_t07_test: Crash
 co19/Language/Types/Interface_Types/subtype_t08_test: Crash
-co19/Language/Types/Interface_Types/subtype_t10_test: Crash
 co19/Language/Types/Interface_Types/subtype_t17_test: RuntimeError
 co19/Language/Types/Interface_Types/subtype_t20_test: Crash
 co19/Language/Types/Interface_Types/subtype_t21_test: Crash
@@ -464,7 +441,6 @@ co19/Language/Types/Interface_Types/subtype_t43_test: RuntimeError
 co19/Language/Types/Interface_Types/subtype_t44_test: RuntimeError
 co19/Language/Types/Interface_Types/subtype_t46_test: RuntimeError
 co19/Language/Types/Interface_Types/subtype_t48_test: Crash
-co19/Language/Types/Parameterized_Types/arity_mismatch_t05_test: Crash
 co19/Language/Types/Static_Types/malformed_type_t01_test: Crash
 co19/Language/Types/Type_Declarations/dynamic_param_type_t01_test: Crash
 co19/Language/Types/Type_Declarations/dynamic_param_type_t02_test: Crash
@@ -475,7 +451,6 @@ co19/Language/Types/Type_Declarations/function_type_alias_t03_test: Crash
 co19/Language/Types/Type_Declarations/self_reference_t05_test: Crash
 co19/Language/Types/Type_Declarations/self_reference_t06_test: Crash
 co19/Language/Types/Type_Declarations/self_reference_t07_test: Crash
-co19/Language/Types/Type_dynamic/dynamic_t02_test: Crash
 co19/Language/Variables/constant_initialization_t03_test: RuntimeError
 co19/Language/Variables/constant_variable_t01_test: Crash
 co19/Language/Variables/constant_variable_t02_test: Crash
