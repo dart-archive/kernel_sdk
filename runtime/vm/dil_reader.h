@@ -38,8 +38,9 @@ class Mapping {
 class DilReader {
  public:
   DilReader(const uint8_t* buffer, intptr_t len)
-      : zone_(dart::Thread::Current()->zone()),
-        isolate_(dart::Thread::Current()->isolate()),
+      : thread_(dart::Thread::Current()),
+        zone_(thread_->zone()),
+        isolate_(thread_->isolate()),
         translation_helper_(zone_, isolate_),
         type_translator_(&translation_helper_, &active_class_),
         buffer_(buffer),
@@ -80,6 +81,7 @@ class DilReader {
 
   dart::RawFunction::Kind GetFunctionType(Procedure* dil_procedure);
 
+  dart::Thread* thread_;
   dart::Zone* zone_;
   dart::Isolate* isolate_;
   ActiveClass active_class_;

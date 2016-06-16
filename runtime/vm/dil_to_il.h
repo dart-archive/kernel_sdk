@@ -85,7 +85,7 @@ class ActiveClassScope {
 
 class TranslationHelper {
  public:
-  explicit TranslationHelper(dart::Zone* zone, Isolate* isolate)
+  TranslationHelper(dart::Zone* zone, Isolate* isolate)
       : zone_(zone), isolate_(isolate) {}
 
   Zone* zone() { return zone_; }

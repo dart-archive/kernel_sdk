@@ -497,6 +497,7 @@ dart::Class& DilReader::LookupClass(Class* klass) {
     if (klass->parent()->IsCorelibrary()) {
       handle = &dart::Class::Handle(Z, library.LookupClass(name));
       classes_.Insert(klass, handle);
+      handle->EnsureIsFinalized(thread_);
     } else {
       TokenPosition pos(0);
       Script& script = Script::Handle(Z, Script::New(H.DartString(""),
