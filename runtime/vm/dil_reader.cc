@@ -248,8 +248,8 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     function.set_dil_function(reinterpret_cast<intptr_t>(dil_constructor));
     function.set_result_type(klass_type);
     SetupFunctionParameters(H, klass, function, dil_constructor->function(),
-                            true,  // is_method
-                            false); // is_clousre
+                            true,    // is_method
+                            false);  // is_closure
   }
 
   for (int i = 0; i < dil_klass->procedures().length(); i++) {
@@ -349,7 +349,8 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
                                         bool is_method,
                                         bool is_closure) {
   ASSERT(!(is_method && is_closure));
-  int extra_parameters = is_method || is_closure ? 1 : 0;
+  bool is_factory = function.IsFactory();
+  int extra_parameters = (is_method || is_closure || is_factory) ? 1 : 0;
 
   function.set_num_fixed_parameters(
       extra_parameters + node->required_parameter_count());
@@ -382,6 +383,10 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
   } else if (is_closure) {
     function.SetParameterTypeAt(pos, Object::dynamic_type());
     function.SetParameterNameAt(pos, Symbols::ClosureParameter());
+    pos++;
+  } else if (is_factory) {
+    function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
+    function.SetParameterNameAt(pos, Symbols::TypeArgumentsParameter());
     pos++;
   }
   for (int i = 0; i < node->positional_parameters().length(); i++, pos++) {
@@ -509,12 +514,15 @@ RawFunction::Kind DilReader::GetFunctionType(Procedure* dil_procedure) {
     RawFunction::kRegularFunction,  // Procedure::kIndexGetter
     RawFunction::kRegularFunction,  // Procedure::kIndexSetter
     RawFunction::kRegularFunction,  // Procedure::kOperator
-    RawFunction::kRegularFunction,  // Procedure::kFactory
+    RawFunction::kConstructor,      // Procedure::kFactory
   };
   int kind = static_cast<int>(dil_procedure->kind());
   if (kind == Procedure::kIncompleteProcedure) {
     // TODO(kustermann): Is this correct?
     return RawFunction::kSignatureFunction;
+  } else if ((kind == Procedure::kFactory) &&
+             dil_procedure->function()->type_parameters().length() == 0) {
+    return RawFunction::kRegularFunction;
   } else {
     ASSERT(0 <= kind && kind <= Procedure::kFactory);
     return static_cast<RawFunction::Kind>(lookuptable[kind]);

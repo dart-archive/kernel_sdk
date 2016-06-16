@@ -118,7 +118,7 @@ class ScopeBuilder : public RecursiveVisitor {
   const dart::String& GenerateIteratorName();
 
   void HandleLocalFunction(TreeNode* parent, FunctionNode* function);
-  void HandleThisLoad();
+  void HandleSpecialLoad(LocalVariable** variable, const dart::String& symbol);
 
   FlowGraphBuilder* builder_;
   Zone* zone_;
@@ -321,6 +321,11 @@ void ScopeBuilder::BuildScopes() {
         LocalVariable* variable = MakeVariable(Symbols::This(), klass_type);
         scope_->InsertParameterAt(pos++, variable);
         builder_->this_variable_ = variable;
+      } else if (function.IsFactory()) {
+        LocalVariable* variable = MakeVariable(
+            Symbols::TypeArgumentsParameter(), AbstractType::dynamic_type());
+        scope_->InsertParameterAt(pos++, variable);
+        builder_->type_arguments_variable_ = variable;
       }
       AddParameters(node, pos);
 
@@ -386,14 +391,21 @@ void ScopeBuilder::BuildScopes() {
 
 
 void ScopeBuilder::VisitThisExpression(ThisExpression* node) {
-  HandleThisLoad();
+  HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
 }
 
 
 void ScopeBuilder::VisitTypeParameterType(TypeParameterType* node) {
-  // The type argument vector is stored on the instance object. We therefore
-  // need to capture `this`.
-  HandleThisLoad();
+  if (builder_->parsed_function_->function().IsFactory()) {
+    // The type argument vector is passed as the very first argument to the
+    // factory constructor function.
+    HandleSpecialLoad(&builder_->type_arguments_variable_,
+                      Symbols::TypeArgumentsParameter());
+  } else {
+    // The type argument vector is stored on the instance object. We therefore
+    // need to capture `this`.
+    HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
+  }
 }
 
 
@@ -430,21 +442,21 @@ void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
 }
 
 
-void ScopeBuilder::HandleThisLoad() {
+void ScopeBuilder::HandleSpecialLoad(LocalVariable** variable,
+                                     const dart::String& symbol) {
   if (function_scope_->parent() != NULL) {
     // We are building the scope tree of a closure function and saw [node]. We
-    // lazily populate the this variable using the parent function scope.
-    if (builder_->this_variable_ == NULL) {
-      builder_->this_variable_ =
-          function_scope_->parent()->LookupVariable(Symbols::This(), true);
-      ASSERT(builder_->this_variable_ != NULL);
-      scope_->CaptureVariable(builder_->this_variable_);
+    // lazily populate the variable using the parent function scope.
+    if (*variable == NULL) {
+      *variable = function_scope_->parent()->LookupVariable(symbol, true);
+      ASSERT(*variable != NULL);
+      scope_->CaptureVariable(*variable);
     }
   } else if (scope_->function_level() > 0) {
     // We are building the scope tree of the outermost function/method (which
     // includes traversing all the nested closures as well) and [node]
     // appears inside a closure, so we capture it.
-    scope_->CaptureVariable(builder_->this_variable_);
+    scope_->CaptureVariable(*variable);
   }
 }
 
@@ -1374,6 +1386,7 @@ FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
     pending_argument_count_(0),
     graph_entry_(NULL),
     this_variable_(NULL),
+    type_arguments_variable_(NULL),
     switch_variable_(NULL),
     finally_return_variable_(NULL),
     breakable_block_(NULL),
@@ -1998,9 +2011,14 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
           : BuildGraphOfFunction(dil_function);
     }
     case RawFunction::kConstructor: {
-      ASSERT(node_->IsConstructor());
-      Constructor* constructor = Constructor::Cast(node_);
-      return BuildGraphOfFunction(constructor->function(), constructor);
+      bool is_factory = function.IsFactory();
+      if (is_factory) {
+        Procedure* procedure = Procedure::Cast(node_);
+        return BuildGraphOfFunction(procedure->function(), NULL);
+      } else {
+        Constructor* constructor = Constructor::Cast(node_);
+        return BuildGraphOfFunction(constructor->function(), constructor);
+      }
     }
     case RawFunction::kImplicitGetter:
     case RawFunction::kImplicitSetter: {

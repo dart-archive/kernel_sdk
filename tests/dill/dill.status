@@ -4,20 +4,19 @@ unsorted/invocation_errors_test: Crash
 # doesn't reuse the dil nodes.
 co19/LibTest/isolate/*: Skip
 
+# We don't have support for dart:mirrors or metadata annotations ATM.
+co19/Language/Metadata/*: Skip
+
 # This list can be generated with the following command
 # (and some search&replace)
 #
 #   ./tools/test.py -mdebug -ax64 dill/co19
 #
 co19/Language/Classes/Abstract_Instance_Members/override_default_value_t08_test: RuntimeError
-co19/Language/Classes/Constructors/Factories/arguments_type_t01_test: Crash
 co19/Language/Classes/Constructors/Factories/redirecting_constructor_call_t01_test: RuntimeError
 co19/Language/Classes/Constructors/Factories/redirecting_constructor_call_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Factories/redirecting_constructor_t01_test: RuntimeError
-co19/Language/Classes/Constructors/Factories/return_type_t04_test: Crash
 co19/Language/Classes/Constructors/Factories/return_type_t05_test: Crash
-co19/Language/Classes/Constructors/Factories/return_type_t06_test: Crash
-co19/Language/Classes/Constructors/Factories/return_type_t07_test: Crash
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01_test: Crash
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/implicit_superinitializer_t01_test: RuntimeError
@@ -126,7 +125,6 @@ co19/Language/Expressions/Instance_Creation/Const/abstract_class_t03_test: Crash
 co19/Language/Expressions/Instance_Creation/Const/canonicalized_t05_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/abstract_class_t01_test: Crash
 co19/Language/Expressions/Instance_Creation/New/abstract_class_t02_test: Crash
-co19/Language/Expressions/Instance_Creation/New/body_execution_t02_test: Crash
 co19/Language/Expressions/Instance_Creation/New/body_execution_t04_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/constructor_same_name_as_class_t01_test: Crash
 co19/Language/Expressions/Instance_Creation/New/constructor_same_name_as_class_t02_test: Crash
@@ -146,8 +144,7 @@ co19/Language/Expressions/Instance_Creation/New/evaluation_t15_test: Crash
 co19/Language/Expressions/Instance_Creation/New/execution_t09_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/named_constructor_t01_test: Crash
 co19/Language/Expressions/Instance_Creation/New/named_constructor_t02_test: Crash
-co19/Language/Expressions/Instance_Creation/New/redirecting_factory_constructor_t01_test: Crash
-co19/Language/Expressions/Instance_Creation/New/redirecting_factory_constructor_t02_test: Crash
+co19/Language/Expressions/Instance_Creation/New/redirecting_factory_constructor_t01_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/syntax_t04_test: Crash
 co19/Language/Expressions/Instance_Creation/New/type_t01_test: Crash
 co19/Language/Expressions/Instance_Creation/New/type_t02_test: Crash
@@ -354,33 +351,6 @@ co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t02_test: RuntimeErro
 co19/Language/Libraries_and_Scripts/private_access_t01_test: RuntimeError
 co19/Language/Libraries_and_Scripts/private_access_t02_test: Crash
 co19/Language/Libraries_and_Scripts/private_access_t04_test: Crash
-co19/Language/Metadata/before_class_t01_test: RuntimeError
-co19/Language/Metadata/before_ctor_t01_test: RuntimeError
-co19/Language/Metadata/before_ctor_t02_test: RuntimeError
-co19/Language/Metadata/before_export_t01_test: RuntimeError
-co19/Language/Metadata/before_factory_t01_test: RuntimeError
-co19/Language/Metadata/before_function_t01_test: RuntimeError
-co19/Language/Metadata/before_function_t02_test: RuntimeError
-co19/Language/Metadata/before_function_t03_test: RuntimeError
-co19/Language/Metadata/before_function_t04_test: RuntimeError
-co19/Language/Metadata/before_function_t05_test: RuntimeError
-co19/Language/Metadata/before_function_t06_test: RuntimeError
-co19/Language/Metadata/before_function_t07_test: RuntimeError
-co19/Language/Metadata/before_import_t01_test: RuntimeError
-co19/Language/Metadata/before_library_t01_test: RuntimeError
-co19/Language/Metadata/before_param_t01_test: RuntimeError
-co19/Language/Metadata/before_param_t02_test: RuntimeError
-co19/Language/Metadata/before_param_t03_test: RuntimeError
-co19/Language/Metadata/before_param_t04_test: Crash
-co19/Language/Metadata/before_param_t05_test: Crash
-co19/Language/Metadata/before_param_t06_test: Crash
-co19/Language/Metadata/before_param_t07_test: Crash
-co19/Language/Metadata/before_param_t08_test: Crash
-co19/Language/Metadata/before_param_t09_test: Crash
-co19/Language/Metadata/before_type_param_t01_test: RuntimeError
-co19/Language/Metadata/before_typedef_t01_test: Crash
-co19/Language/Metadata/before_variable_t01_test: RuntimeError
-co19/Language/Metadata/before_variable_t02_test: RuntimeError
 co19/Language/Mixins/Mixin_Application/abstract_t01_test: Crash
 co19/Language/Mixins/Mixin_Application/abstract_t02_test: Crash
 co19/Language/Mixins/Mixin_Application/error_t01_test: Crash

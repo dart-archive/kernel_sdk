@@ -364,6 +364,9 @@ class FlowGraphBuilder : public TreeVisitor {
   // Only non-NULL for instance functions.
   LocalVariable* this_variable_;
 
+  // Only non-NULL for factory constructor functions.
+  LocalVariable* type_arguments_variable_;
+
   // Non-NULL when the function contains a switch statement.
   LocalVariable* switch_variable_;
 
