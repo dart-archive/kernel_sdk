@@ -3071,22 +3071,38 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
 
 void FlowGraphBuilder::VisitIsExpression(IsExpression* node) {
   Fragment instructions = TranslateExpression(node->operand());
-  instructions += PushArgument();
 
-  // FIXME(kustermann):
-  instructions += NullConstant();
-  instructions += PushArgument();  // Type arguments.
+  // The VM does not like an instanceOf call with a dynamic type. We need to
+  // special case this situation.
+  const Type& object_type = Type::Handle(Z, Type::ObjectType());
+  const AbstractType& type = T.TranslateType(node->type());
+  if (type.IsInstantiated() &&
+      object_type.IsSubtypeOf(type, NULL, NULL, Heap::kOld)) {
+    // Evaluate the expression on the left but igore it's result.
+    instructions += Drop();
 
-  instructions += Constant(T.TranslateType(node->type()));
-  instructions += PushArgument();  // Type.
+    // Let condition be always true.
+    instructions += Constant(Bool::True());
+  } else {
+    instructions += PushArgument();
 
-  instructions += Constant(Bool::False());
-  instructions += PushArgument();  // Negate?.
+    // FIXME(kustermann):
+    instructions += NullConstant();
+    instructions += PushArgument();  // Type arguments.
 
-  fragment_ = instructions +
-      InstanceCall(dart::Library::PrivateCoreLibName(Symbols::_instanceOf()),
-                   Token::kIS,
-                   4);
+    instructions += Constant(type);
+    instructions += PushArgument();  // Type.
+
+    instructions += Constant(Bool::False());
+    instructions += PushArgument();  // Negate?.
+
+    instructions +=
+        InstanceCall(dart::Library::PrivateCoreLibName(Symbols::_instanceOf()),
+                     Token::kIS,
+                     4);
+  }
+
+  fragment_ = instructions;
 }
 
 

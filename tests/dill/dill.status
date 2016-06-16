@@ -268,13 +268,11 @@ co19/Language/Expressions/Type_Cast/evaluation_t04_test: Crash
 co19/Language/Expressions/Type_Cast/evaluation_t05_test: Crash
 co19/Language/Expressions/Type_Cast/evaluation_t07_test: Crash
 co19/Language/Expressions/Type_Cast/syntax_t01_test: Crash
-co19/Language/Expressions/Type_Test/definition_t01_test: Crash
-co19/Language/Expressions/Type_Test/definition_t02_test: Crash
-co19/Language/Expressions/Type_Test/evaluation_t01_test: Crash
+co19/Language/Expressions/Type_Test/evaluation_t01_test: RuntimeError
 co19/Language/Expressions/Type_Test/evaluation_t03_test: Crash
 co19/Language/Expressions/Type_Test/evaluation_t04_test: Crash
 co19/Language/Expressions/Type_Test/evaluation_t07_test: Crash
-co19/Language/Expressions/Type_Test/is_not_equivalent_t01_test: Crash
+co19/Language/Expressions/Type_Test/is_not_equivalent_t01_test: RuntimeError
 co19/Language/Expressions/Type_Test/syntax_t04_test: Crash
 co19/Language/Expressions/Unary_Expressions/syntax_t02_test: Crash
 co19/Language/Expressions/Unary_Expressions/syntax_t04_test: Crash
@@ -374,8 +372,6 @@ co19/Language/Statements/Labels/syntax_t01_test: Crash
 co19/Language/Statements/Local_Function_Declaration/reference_before_declaration_t02_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t05_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t06_test: Crash
-co19/Language/Statements/Local_Variable_Declaration/syntax_t14_test: Crash
-co19/Language/Statements/Local_Variable_Declaration/syntax_t15_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t18_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t19_test: Crash
 co19/Language/Statements/Switch/execution_case_no_default_t02_test: Crash
@@ -425,8 +421,6 @@ co19/Language/Types/Function_Types/subtype_required_args_t04_test: Crash
 co19/Language/Types/Function_Types/subtype_required_args_t05_test: Crash
 co19/Language/Types/Interface_Types/direct_supertype_t03_test: RuntimeError
 co19/Language/Types/Interface_Types/interface_supertypes_t02_test: RuntimeError
-co19/Language/Types/Interface_Types/subtype_t07_test: Crash
-co19/Language/Types/Interface_Types/subtype_t08_test: Crash
 co19/Language/Types/Interface_Types/subtype_t17_test: RuntimeError
 co19/Language/Types/Interface_Types/subtype_t20_test: Crash
 co19/Language/Types/Interface_Types/subtype_t21_test: Crash
