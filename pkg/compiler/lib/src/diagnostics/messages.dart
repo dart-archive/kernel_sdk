@@ -97,6 +97,7 @@ enum MessageKind {
   AWAIT_MEMBER_NOT_FOUND,
   AWAIT_MEMBER_NOT_FOUND_IN_CLOSURE,
   BAD_INPUT_CHARACTER,
+  MALFORMED_INPUT_CHARACTER,
   BEFORE_TOP_LEVEL,
   BINARY_OPERATOR_BAD_ARITY,
   BODY_EXPECTED,
@@ -2947,6 +2948,18 @@ main() {
             """
 main() {
   String x = ç;
+}
+"""
+          ]),
+
+      MessageKind.MALFORMED_INPUT_CHARACTER: const MessageTemplate(
+          MessageKind.MALFORMED_INPUT_CHARACTER,
+          "Malformed character.",
+          howToFix: "Is the file is encoded in UTF-8?",
+          examples: const [
+            """
+main() {
+  String x = \x7b;
 }
 """
           ]),

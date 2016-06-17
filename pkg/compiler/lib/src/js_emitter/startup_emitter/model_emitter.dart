@@ -4,7 +4,7 @@
 
 library dart2js.js_emitter.startup_emitter.model_emitter;
 
-import 'dart:convert' show JsonEncoder;
+import '../../util/convert.dart' show JsonEncoder;
 
 import 'package:js_runtime/shared/embedded_names.dart'
     show

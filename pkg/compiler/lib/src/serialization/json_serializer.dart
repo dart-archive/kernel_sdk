@@ -4,7 +4,7 @@
 
 library dart2js.serialization.json;
 
-import 'dart:convert';
+import '../util/convert.dart';
 import 'keys.dart';
 import 'serialization.dart';
 import 'values.dart';

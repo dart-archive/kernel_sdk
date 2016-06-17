@@ -4,7 +4,7 @@
 
 library dart2js.js_emitter.full_emitter;
 
-import 'dart:convert';
+import '../../util/convert.dart';
 import 'dart:collection' show HashMap;
 
 import 'package:js_runtime/shared/embedded_names.dart' as embeddedNames;

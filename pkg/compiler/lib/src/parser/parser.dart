@@ -121,8 +121,17 @@ class Parser {
     return token;
   }
 
+  Token parseBadInputStar(Token token) {
+    while (token.kind == BAD_INPUT_TOKEN) {
+      listener.reportErrorToken(token);
+      token = token.next;
+    }
+    return token;
+  }
+
   Token parseTopLevelDeclaration(Token token) {
     token = parseMetadataStar(token);
+    token = parseBadInputStar(token);
     final String value = token.stringValue;
     if ((identical(value, 'abstract') && optional('class', token.next)) ||
         identical(value, 'class')) {
@@ -333,6 +342,7 @@ class Parser {
   }
 
   Token parseMetadataStar(Token token, {bool forParameter: false}) {
+    token = parseBadInputStar(token);
     listener.beginMetadataStar(token);
     int count = 0;
     while (optional('@', token)) {
@@ -1142,23 +1152,29 @@ class Parser {
     bool hasName = false;
 
     while (token.kind != EOF_TOKEN) {
-      String value = token.stringValue;
-      if (value == 'get') {
+      if (token.kind == BAD_INPUT_TOKEN) {
+        listener.reportErrorToken(token);
+        token = token.next;
+        continue;
+      }
+      if (optional('get', token)) {
         isGetter = true;
-      } else if (hasName && (value == 'sync' || value == 'async')) {
+      } else if (hasName &&
+                 (optional("sync", token) || optional("async", token))) {
         // Skip.
         token = token.next;
-        value = token.stringValue;
-        if (value == '*') {
+        if (optional("*", token)) {
           // Skip.
           token = token.next;
         }
         continue;
-      } else if (value == '(' || value == '{' || value == '=>') {
+      } else if (optional("(", token) || optional("{", token) ||
+                 optional("=>", token)) {
         // A method.
         identifiers = identifiers.prepend(token);
         return discardNative(identifiers);
-      } else if (value == '=' || value == ';' || value == ',') {
+      } else if (optional("=", token) || optional(";", token) ||
+                 optional(",", token)) {
         // A field or abstract getter.
         identifiers = identifiers.prepend(token);
         return discardNative(identifiers);
@@ -1350,6 +1366,7 @@ class Parser {
 
   Token parseMember(Token token) {
     token = parseMetadataStar(token);
+    token = parseBadInputStar(token);
     if (isFactoryDeclaration(token)) {
       return parseFactoryMethod(token);
     }

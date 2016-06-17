@@ -4,7 +4,7 @@
 
 library dump_info;
 
-import 'dart:convert'
+import 'util/convert.dart'
     show ChunkedConversionSink, HtmlEscape, JsonEncoder, StringConversionSink;
 
 import 'package:dart2js_info/info.dart';

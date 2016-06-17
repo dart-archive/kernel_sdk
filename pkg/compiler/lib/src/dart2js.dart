@@ -5,7 +5,7 @@
 library dart2js.cmdline;
 
 import 'dart:async' show Future, EventSink;
-import 'dart:convert' show UTF8, LineSplitter;
+import 'util/convert.dart' show UTF8, LineSplitter;
 import 'dart:io'
     show
         exit,

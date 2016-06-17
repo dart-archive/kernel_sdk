@@ -4,10 +4,10 @@
 
 library dart2js.tokens;
 
-import 'dart:convert' show UTF8;
 import 'dart:collection' show HashSet;
 
 import '../common.dart';
+import '../util/convert.dart' show UTF8, UNICODE_REPLACEMENT_CHARACTER_RUNE;
 import '../util/util.dart' show computeHashCode;
 
 import 'keyword.dart' show Keyword;
@@ -194,7 +194,9 @@ class BadInputToken extends ErrorToken {
   String toString() => "BadInputToken($character)";
 
   String get assertionMessage {
-    return 'Character U+${character.toRadixString(16)} not allowed here.';
+    return (character == UNICODE_REPLACEMENT_CHARACTER_RUNE)
+        ? "Malformed character."
+        : "Character U+${character.toRadixString(16)} not allowed here.";
   }
 }
 

@@ -4,11 +4,13 @@
 
 library dart2js.scanner.utf8;
 
-import 'dart:convert' show UNICODE_BOM_CHARACTER_RUNE, UTF8;
-
 import '../io/source_file.dart' show SourceFile;
 import '../tokens/precedence.dart' show PrecedenceInfo;
 import '../tokens/token.dart' show StringToken, Token;
+import '../util/convert.dart' show
+    UNICODE_BOM_CHARACTER_RUNE,
+    UNICODE_REPLACEMENT_CHARACTER_RUNE,
+    UTF8;
 
 import 'array_based_scanner.dart' show ArrayBasedScanner;
 
@@ -117,22 +119,35 @@ class Utf8BytesScanner extends ArrayBasedScanner {
    * with the byte [nextByte]. If [advance] is true the current [byteOffset]
    * is advanced to the last byte of the code point.
    */
-  int nextCodePoint(int startOffset, int nextByte, bool advance) {
-    // The number of 1s in the first byte indicate the number of bytes, at
-    // least 2.
-    int numBytes = 2;
-    int bit = 0x20;
-    while ((nextByte & bit) != 0) {
+  int nextCodePoint(int startOffset, int nextByte) {
+    int expectedHighBytes;
+    if (nextByte < 0xC2) {
+      expectedHighBytes = 1; // Bad code unit.
+    } else if (nextByte < 0xE0) {
+      expectedHighBytes = 2;
+    } else if (nextByte < 0xF0) {
+      expectedHighBytes = 3;
+    } else if (nextByte < 0xF5) {
+      expectedHighBytes = 4;
+    } else {
+      expectedHighBytes = 1; // Bad code unit.
+    }
+    int numBytes = 0;
+    for (int i = 0; i < expectedHighBytes; i++) {
+      if (bytes[byteOffset + i] < 0x80) {
+        break;
+      }
       numBytes++;
-      bit >>= 1;
     }
     int end = startOffset + numBytes;
-    if (advance) {
-      byteOffset = end - 1;
+    byteOffset = end - 1;
+    if (expectedHighBytes == 1 || numBytes != expectedHighBytes) {
+      return UNICODE_REPLACEMENT_CHARACTER_RUNE;
     }
     // TODO(lry): measurably slow, decode creates first a Utf8Decoder and a
     // _Utf8Decoder instance. Also the sublist is eagerly allocated.
-    String codePoint = UTF8.decode(bytes.sublist(startOffset, end));
+    String codePoint =
+        UTF8.decode(bytes.sublist(startOffset, end), allowMalformed: true);
     if (codePoint.length == 0) {
       // The UTF-8 decoder discards leading BOM characters.
       // TODO(floitsch): don't just assume that removed characters were the
@@ -141,23 +156,19 @@ class Utf8BytesScanner extends ArrayBasedScanner {
       codePoint = new String.fromCharCode(UNICODE_BOM_CHARACTER_RUNE);
     }
     if (codePoint.length == 1) {
-      if (advance) {
-        utf8Slack += (numBytes - 1);
-        scanSlack = numBytes - 1;
-        scanSlackOffset = byteOffset;
-      }
+      utf8Slack += (numBytes - 1);
+      scanSlack = numBytes - 1;
+      scanSlackOffset = byteOffset;
       return codePoint.codeUnitAt(0);
     } else if (codePoint.length == 2) {
-      if (advance) {
-        utf8Slack += (numBytes - 2);
-        scanSlack = numBytes - 1;
-        scanSlackOffset = byteOffset;
-        stringOffsetSlackOffset = byteOffset;
-      }
+      utf8Slack += (numBytes - 2);
+      scanSlack = numBytes - 1;
+      scanSlackOffset = byteOffset;
+      stringOffsetSlackOffset = byteOffset;
       // In case of a surrogate pair, return a single code point.
       return codePoint.runes.single;
     } else {
-      throw "Invalid UTF-8 byte sequence: ${bytes.sublist(startOffset, end)}";
+      return UNICODE_REPLACEMENT_CHARACTER_RUNE;
     }
   }
 
@@ -166,7 +177,7 @@ class Utf8BytesScanner extends ArrayBasedScanner {
     if (next < 128) return next;
     // Check if currentAsUnicode was already invoked.
     if (byteOffset == lastUnicodeOffset) return next;
-    int res = nextCodePoint(byteOffset, next, true);
+    int res = nextCodePoint(byteOffset, next);
     lastUnicodeOffset = byteOffset;
     return res;
   }
@@ -174,7 +185,8 @@ class Utf8BytesScanner extends ArrayBasedScanner {
   void handleUnicode(int startScanOffset) {
     int end = byteOffset;
     // TODO(lry): this measurably slows down the scanner for files with unicode.
-    String s = UTF8.decode(bytes.sublist(startScanOffset, end));
+    String s =
+        UTF8.decode(bytes.sublist(startScanOffset, end), allowMalformed: true);
     utf8Slack += (end - startScanOffset) - s.length;
   }
 

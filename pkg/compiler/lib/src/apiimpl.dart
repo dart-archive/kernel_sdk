@@ -5,7 +5,7 @@
 library leg_apiimpl;
 
 import 'dart:async';
-import 'dart:convert';
+import 'util/convert.dart';
 
 import 'package:package_config/packages.dart';
 import 'package:package_config/packages_file.dart' as pkgs;

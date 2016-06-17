@@ -9,7 +9,7 @@
 library sha1;
 
 import 'dart:math' show pow;
-import 'dart:convert';
+import '../util/convert.dart';
 
 import '../io/code_output.dart' show CodeOutputListener;
 
@@ -25,7 +25,7 @@ class Hasher implements CodeOutputListener {
   @override
   void onText(String text) {
     if (_hasher != null) {
-      _hasher.add(const Utf8Encoder().convert(text));
+      _hasher.add(UTF8.encode(text));
     }
   }
 

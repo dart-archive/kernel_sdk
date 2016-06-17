@@ -8,6 +8,7 @@ import '../common.dart';
 import '../diagnostics/messages.dart' show MessageTemplate;
 import '../tokens/precedence_constants.dart' as Precedence
     show EOF_INFO, IDENTIFIER_INFO, STRING_INFO;
+import '../tokens/precedence.dart' show PrecedenceInfo;
 import '../tokens/token.dart'
     show
         BadInputToken,
@@ -18,6 +19,7 @@ import '../tokens/token.dart'
         UnmatchedToken,
         UnterminatedToken;
 import '../tree/tree.dart';
+import '../util/convert.dart' show UNICODE_REPLACEMENT_CHARACTER_RUNE;
 
 const bool VERBOSE = false;
 
@@ -434,18 +436,33 @@ class Listener {
     return skipToEof(token);
   }
 
-  Token synthesizeIdentifier(Token token) {
-    Token synthesizedToken = new StringToken.fromString(
-        Precedence.IDENTIFIER_INFO, '?', token.charOffset);
-    synthesizedToken.next = token.next;
+  Token skipBadInput(Token token, StringBuffer buffer) {
+    buffer.write('?');
+    token = token.next;
+    while (token is BadInputToken) {
+      // TODO(ahe): We could report additional errors here, but they would be
+      // suppressed by `currentMemberHasParseError` in `ElementListener`.
+      buffer.write('?');
+      token = token.next;
+    }
+    return token;
+  }
+
+  Token synthesizeStringToken(Token token, PrecedenceInfo info) {
+    StringBuffer buffer = new StringBuffer();
+    Token next = skipBadInput(token, buffer);
+    Token synthesizedToken =
+        new StringToken.fromString(info, '$buffer', token.charOffset);
+    synthesizedToken.next = next;
     return synthesizedToken;
   }
 
+  Token synthesizeIdentifier(Token token) {
+    return synthesizeStringToken(token, Precedence.IDENTIFIER_INFO);
+  }
+
   Token synthesizeString(Token token) {
-    Token synthesizedToken = new StringToken.fromString(
-        Precedence.STRING_INFO, '?', token.charOffset);
-    synthesizedToken.next = token.next;
-    return synthesizedToken;
+    return synthesizeStringToken(token, Precedence.STRING_INFO);
   }
 
   Token expectedIdentifier(Token token) {
@@ -579,13 +596,19 @@ class Listener {
 
   void reportErrorToken(ErrorToken token) {
     if (token is BadInputToken) {
-      String hex = token.character.toRadixString(16);
-      if (hex.length < 4) {
-        String padding = "0000".substring(hex.length);
-        hex = "$padding$hex";
+      int character = token.character;
+      if (character == UNICODE_REPLACEMENT_CHARACTER_RUNE) {
+        reportError(
+            token, MessageKind.MALFORMED_INPUT_CHARACTER);
+      } else {
+        String hex = token.character.toRadixString(16);
+        if (hex.length < 4) {
+          String padding = "0000".substring(hex.length);
+          hex = "$padding$hex";
+        }
+        reportError(
+            token, MessageKind.BAD_INPUT_CHARACTER, {'characterHex': hex});
       }
-      reportError(
-          token, MessageKind.BAD_INPUT_CHARACTER, {'characterHex': hex});
     } else if (token is UnterminatedToken) {
       MessageKind kind;
       var arguments = const {};

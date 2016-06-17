@@ -4,7 +4,7 @@
 
 import 'dart:async' show EventSink;
 import 'dart:collection';
-import 'dart:convert';
+import '../util/convert.dart';
 
 import '../../compiler.dart';
 import '../common.dart';

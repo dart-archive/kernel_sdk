@@ -5,7 +5,7 @@
 library source_file_provider;
 
 import 'dart:async';
-import 'dart:convert';
+import 'util/convert.dart';
 import 'dart:io';
 import 'dart:math' as math;
 
