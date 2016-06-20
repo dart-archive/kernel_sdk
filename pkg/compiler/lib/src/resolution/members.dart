@@ -484,7 +484,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   }
 
   ResolutionResult visitCascadeReceiver(CascadeReceiver node) {
-    visit(node.expression);
+    visitInExpressionContext(node.expression);
     return const NoneResult();
   }
 
@@ -3749,16 +3749,23 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     return const NoneResult();
   }
 
-  ResolutionResult visitParenthesizedExpression(ParenthesizedExpression node) {
+  ResolutionResult visitInExpressionContext(Expression expression) {
     bool oldSendIsMemberAccess = sendIsMemberAccess;
     sendIsMemberAccess = false;
     var oldCategory = allowedCategory;
     allowedCategory = ElementCategory.VARIABLE |
         ElementCategory.FUNCTION |
         ElementCategory.IMPLIES_TYPE;
-    ResolutionResult result = visit(node.expression);
-    allowedCategory = oldCategory;
-    sendIsMemberAccess = oldSendIsMemberAccess;
+    try {
+      return visit(expression);
+    } finally {
+      allowedCategory = oldCategory;
+      sendIsMemberAccess = oldSendIsMemberAccess;
+    }
+  }
+
+  ResolutionResult visitParenthesizedExpression(ParenthesizedExpression node) {
+    ResolutionResult result = visitInExpressionContext(node.expression);
     if (result.kind == ResultKind.CONSTANT) {
       return result;
     }
