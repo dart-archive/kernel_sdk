@@ -1196,8 +1196,9 @@ class Parser {
             BeginGroupToken beginGroup = token.next;
             if (beginGroup.endGroup == null) {
               listener.unmatched(beginGroup);
+            } else {
+              token = beginGroup.endGroup;
             }
-            token = beginGroup.endGroup;
           }
         }
       }
