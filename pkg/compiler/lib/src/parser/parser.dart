@@ -2014,11 +2014,12 @@ class Parser {
         } else if (identical(tokenLevel, POSTFIX_PRECEDENCE)) {
           if (identical(info, PERIOD_INFO) ||
               identical(info, QUESTION_PERIOD_INFO)) {
-            // Left associative, so we recurse at the next higher
-            // precedence level. However, POSTFIX_PRECEDENCE is the
-            // highest level, so we just call parseUnaryExpression
-            // directly.
-            token = parseUnaryExpression(token.next, allowCascades);
+            // Left associative, so we recurse at the next higher precedence
+            // level. However, POSTFIX_PRECEDENCE is the highest level, so we
+            // should just call [parseUnaryExpression] directly. However, a
+            // unary expression isn't legal after a period, so we call
+            // [parsePrimary] instead.
+            token = parsePrimary(token.next);
             listener.handleBinaryExpression(operator);
           } else if ((identical(info, OPEN_PAREN_INFO)) ||
               (identical(info, OPEN_SQUARE_BRACKET_INFO))) {
