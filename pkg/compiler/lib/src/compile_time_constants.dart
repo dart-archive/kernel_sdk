@@ -1206,7 +1206,7 @@ class ConstructorEvaluator extends CompileTimeConstantEvaluator {
           // A super initializer or constructor redirection.
           Send call = link.head;
           FunctionElement target = elements[call];
-          if (!target.isMalformed) {
+          if (target != null && !target.isMalformed) {
             List<AstConstant> compiledArguments =
                 evaluateArgumentsToConstructor(
                     call,
