@@ -53,6 +53,9 @@ class ScopeBuilder : public RecursiveVisitor {
   virtual void VisitTypeParameterType(TypeParameterType* node);
   virtual void VisitVariableGet(VariableGet* node);
   virtual void VisitVariableSet(VariableSet* node);
+  virtual void VisitSuperPropertyGet(SuperPropertyGet* node);
+  virtual void VisitSuperPropertySet(SuperPropertySet* node);
+  virtual void VisitSuperMethodInvocation(SuperMethodInvocation* node);
   virtual void VisitFunctionExpression(FunctionExpression* node);
   virtual void VisitLet(Let* node);
   virtual void VisitBlock(Block* node);
@@ -392,6 +395,24 @@ void ScopeBuilder::VisitVariableGet(VariableGet* node) {
 
 void ScopeBuilder::VisitVariableSet(VariableSet* node) {
   LookupVariable(node->variable());
+  node->VisitChildren(this);
+}
+
+
+void ScopeBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
+  HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
+  node->VisitChildren(this);
+}
+
+
+void ScopeBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
+  HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
+  node->VisitChildren(this);
+}
+
+
+void ScopeBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
+  HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
   node->VisitChildren(this);
 }
 
@@ -3005,11 +3026,21 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
 
 
 void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
-  const dart::String& method_name =
-      H.DartGetterName(node->target()->name()->string());
-  const Function& target = Function::ZoneHandle(Z,
-      LookupMethodByMember(node->target(), method_name));
-  ASSERT(target.IsGetterFunction() || target.IsImplicitGetterFunction());
+  Function& target = Function::ZoneHandle(Z);
+  if (node->target()->IsProcedure()) {
+    // This will create a "method extractor" for the for the super method.
+    dart::Class& klass = dart::Class::Handle(Z,
+        H.LookupClassByDilClass(Class::Cast(node->target()->parent())));
+    const dart::String& getter_name = H.DartGetterName(
+        node->target()->name()->string());
+    target = Resolver::ResolveDynamicAnyArgs(klass, getter_name);
+  } else {
+    ASSERT(node->target()->IsField());
+    const dart::String& getter_name = H.DartGetterName(
+        node->target()->name()->string());
+    target = LookupMethodByMember(node->target(), getter_name);
+    ASSERT(target.IsGetterFunction() || target.IsImplicitGetterFunction());
+  }
 
   Fragment instructions = LoadLocal(this_variable_);
   instructions += PushArgument();

@@ -4,7 +4,11 @@
 
 import 'expect.dart';
 
-class Foo {
+class Base {
+  int constant1000() => 1000;
+}
+
+class Foo extends Base {
   final int base;
   Foo(this.base);
 
@@ -14,6 +18,17 @@ class Foo {
       var result2 = c + d;
       return () {
         return base + result + result2 + e;
+      };
+    };
+  }
+
+  nestedAdderFunction2(a, b, c, d, e) {
+    var result = a + b;
+    return () {
+      var base = super.constant1000;
+      var result2 = c + d;
+      return () {
+        return base() + result + result2 + e;
       };
     };
   }
@@ -34,4 +49,5 @@ main() {
 
   var foo = new Foo(100);
   Expect.isTrue(foo.nestedAdderFunction(1, 2, 3, 4, 5)()() == 115);
+  Expect.isTrue(foo.nestedAdderFunction2(1, 2, 3, 4, 5)()() == 1015);
 }
