@@ -3263,7 +3263,7 @@ void FlowGraphBuilder::VisitIsExpression(IsExpression* node) {
   const AbstractType& type = T.TranslateType(node->type());
   if (type.IsInstantiated() &&
       object_type.IsSubtypeOf(type, NULL, NULL, Heap::kOld)) {
-    // Evaluate the expression on the left but igore it's result.
+    // Evaluate the expression on the left but ignore it's result.
     instructions += Drop();
 
     // Let condition be always true.
@@ -3293,19 +3293,30 @@ void FlowGraphBuilder::VisitIsExpression(IsExpression* node) {
 
 void FlowGraphBuilder::VisitAsExpression(AsExpression* node) {
   Fragment instructions = TranslateExpression(node->operand());
-  instructions += PushArgument();
 
-  // FIXME(kustermann):
-  instructions += NullConstant();
-  instructions += PushArgument();  // Type arguments.
+  // The VM does not like an Object_as call with a dynamic type. We need to
+  // special case this situation.
+  const Type& object_type = Type::Handle(Z, Type::ObjectType());
+  const AbstractType& type = T.TranslateType(node->type());
+  if (type.IsInstantiated() &&
+      object_type.IsSubtypeOf(type, NULL, NULL, Heap::kOld)) {
+    // We already evaluated the operand on the left and just leave it there as
+    // the result of the `obj as dynamic` expression.
+  } else {
+    instructions += PushArgument();
 
-  instructions += Constant(T.TranslateType(node->type()));
-  instructions += PushArgument();  // Type.
+    // TODO(kustermann):
+    instructions += NullConstant();
+    instructions += PushArgument();  // Type arguments.
 
-  fragment_ = instructions +
-      InstanceCall(dart::Library::PrivateCoreLibName(Symbols::_as()),
-                   Token::kAS,
-                   3);
+    instructions += Constant(T.TranslateType(node->type()));
+    instructions += PushArgument();  // Type.
+
+    instructions += InstanceCall(
+        dart::Library::PrivateCoreLibName(Symbols::_as()), Token::kAS, 3);
+  }
+
+  fragment_ = instructions;
 }
 
 
