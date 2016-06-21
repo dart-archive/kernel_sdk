@@ -1134,6 +1134,13 @@ Instance& ConstantEvaluator::EvaluateMapLiteral(MapLiteral* node) {
 }
 
 
+void ConstantEvaluator::VisitBigintLiteral(BigintLiteral* node) {
+  const dart::String& value = H.DartString(node->value());
+  result_ = Integer::New(value, Heap::kOld);
+  result_ = Canonicalize(result_);
+}
+
+
 void ConstantEvaluator::VisitBoolLiteral(BoolLiteral* node) {
   result_ = dart::Bool::Get(node->value()).raw();
 }

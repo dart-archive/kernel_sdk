@@ -204,7 +204,7 @@ class ConstantEvaluator : public ExpressionVisitor {
 
   virtual void VisitDefaultExpression(Expression* node) { UNREACHABLE(); }
 
-  // virtual void VisitBigintLiteral(BigintLiteral* node);
+  virtual void VisitBigintLiteral(BigintLiteral* node);
   virtual void VisitBoolLiteral(BoolLiteral* node);
   virtual void VisitDoubleLiteral(DoubleLiteral* node);
   virtual void VisitIntLiteral(IntLiteral* node);
