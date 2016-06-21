@@ -3945,7 +3945,12 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
 
     if (switch_case->is_default()) {
       ASSERT(i == (node->cases().length() - 1));
-      ASSERT(switch_case->expressions().length() == 0);
+
+      // Evaluate the conditions for the default [SwitchCase] just for the
+      // purpose of potentially triggering a compile-time error.
+      for (intptr_t k = 0; k < switch_case->expressions().length(); k++) {
+        constant_evaluator_.EvaluateExpression(switch_case->expressions()[k]);
+      }
 
       if (block.HadJumper(switch_case)) {
         // There are several branches to the body, so we will make a goto to
