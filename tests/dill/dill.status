@@ -66,8 +66,6 @@ co19/Language/Expressions/Conditional/syntax_t12_test: Crash
 co19/Language/Expressions/Conditional/syntax_t13_test: Crash
 co19/Language/Expressions/Constants/identifier_denotes_a_constant_t04_test: Crash
 co19/Language/Expressions/Constants/identifier_denotes_a_constant_t05_test: Crash
-co19/Language/Expressions/Constants/literal_number_t01_test: Crash
-co19/Language/Expressions/Constants/math_operators_t01_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t04_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t05_test: Crash
@@ -268,8 +266,6 @@ co19/Language/Functions/Formal_Parameters/Required_Formals/syntax_t05_test: Cras
 co19/Language/Functions/Formal_Parameters/scope_t01_test: Crash
 co19/Language/Generics/malformed_t01_test: RuntimeError
 co19/Language/Generics/scope_t03_test: Crash
-co19/Language/Generics/syntax_t02_test: Crash
-co19/Language/Generics/syntax_t03_test: Crash
 co19/Language/Interfaces/Superinterfaces/Inheritance_and_Overriding/not_overriden_members_t02_test: Crash
 co19/Language/Libraries_and_Scripts/Exports/reexport__itself_t02_test: Crash
 co19/Language/Libraries_and_Scripts/Exports/show_hide_t01_test: Crash
@@ -354,11 +350,8 @@ co19/Language/Statements/Local_Variable_Declaration/syntax_t05_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t06_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t18_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t19_test: Crash
-co19/Language/Statements/Switch/execution_case_no_default_t02_test: Crash
 co19/Language/Statements/Switch/execution_case_t02_test: Crash
-co19/Language/Statements/Switch/last_statement_t01_test: Crash
 co19/Language/Statements/Switch/scope_t02_test: Crash
-co19/Language/Statements/Switch/syntax_t01_test: Crash
 co19/Language/Statements/Try/malformed_type_t01_test: Crash
 co19/Language/Statements/Try/malformed_type_t02_test: Crash
 co19/Language/Statements/Try/malformed_type_t03_test: Crash
@@ -435,7 +428,6 @@ co19/Language/Variables/constant_variable_t10_test: Crash
 co19/Language/Variables/local_variable_t03_test: Crash
 co19/LibTest/async/DeferredLibrary/DeferredLibrary_A01_t01_test: RuntimeError
 co19/LibTest/async/Stream/Stream_A01_t01_test: Crash
-co19/LibTest/async/Stream/asBroadcastStream_A01_t04_test: Crash
 co19/LibTest/async/Stream/contains_A02_t01_test: Crash
 co19/LibTest/async/Stream/elementAt_A02_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t01_test: Crash
@@ -532,7 +524,6 @@ co19/LibTest/collection/Queue/Queue_class_A01_t01_test: Crash
 co19/LibTest/convert/JsonDecoder/fuse_A01_t01_test: Crash
 co19/LibTest/convert/JsonEncoder/fuse_A01_t01_test: Crash
 co19/LibTest/core/DateTime/DateTime.now_A01_t02_test: Crash
-co19/LibTest/core/FallThroughError/toString_A01_t02_test: Crash
 co19/LibTest/core/Invocation/isAccessor_A01_t01_test: Crash
 co19/LibTest/core/Invocation/isAccessor_A01_t02_test: Crash
 co19/LibTest/core/Invocation/isGetter_A01_t01_test: Crash
@@ -549,15 +540,11 @@ co19/LibTest/core/Iterable/toSet_A01_t01.test_test: Crash
 co19/LibTest/core/List/Iterable_A01_t01.test_test: Crash
 co19/LibTest/core/List/List.from_A01_t01_test: Crash
 co19/LibTest/core/List/List.generate_A01_t01_test: Crash
-co19/LibTest/core/List/List.generate_A01_t02_test: Crash
 co19/LibTest/core/List/List_class_A01_t01_test: Crash
-co19/LibTest/core/List/List_class_A01_t02_test: Crash
 co19/LibTest/core/List/iterator_current_A01_t01.test_test: Crash
 co19/LibTest/core/List/iterator_moveNext_A01_t01.test_test: Crash
 co19/LibTest/core/Map/Map_A01_t01_test: Crash
 co19/LibTest/core/Map/Map_class_A01_t04_test: Crash
-co19/LibTest/core/Object/operator_equality_A01_t01_test: Crash
-co19/LibTest/core/Object/toString_A01_t01_test: Crash
 co19/LibTest/core/RegExp/Pattern_semantics/firstMatch_CharacterClassEscape_A01_t01_test: Crash
 co19/LibTest/core/RegExp/Pattern_semantics/firstMatch_CharacterClassEscape_A02_t01_test: Crash
 co19/LibTest/core/RegExp/Pattern_semantics/firstMatch_CharacterClassEscape_A03_t01_test: Crash
@@ -572,31 +559,14 @@ co19/LibTest/core/Uri/Uri_A06_t03_test: Crash
 co19/LibTest/core/Uri/encodeComponent_A01_t02_test: Crash
 co19/LibTest/core/Uri/encodeFull_A01_t02_test: Crash
 co19/LibTest/core/Uri/encodeQueryComponent_A01_t02_test: Crash
-co19/LibTest/math/MutableRectangle/MutableRectangle.fromPoints_A01_t01_test: Crash
-co19/LibTest/math/MutableRectangle/MutableRectangle_A01_t01_test: Crash
-co19/LibTest/math/MutableRectangle/boundingBox_A01_t01_test: Crash
-co19/LibTest/math/MutableRectangle/boundingBox_A01_t02_test: Crash
-co19/LibTest/math/MutableRectangle/operator_equality_A01_t01_test: Crash
 co19/LibTest/math/MutableRectangle/operator_equality_A02_t01_test: Crash
 co19/LibTest/math/MutableRectangle/operator_equality_A04_t01_test: Crash
-co19/LibTest/math/Point/distanceTo_A01_t01_test: Crash
-co19/LibTest/math/Point/operator_addition_A01_t01_test: Crash
 co19/LibTest/math/Point/operator_addition_A02_t01_test: Crash
-co19/LibTest/math/Point/operator_equality_A01_t01_test: Crash
 co19/LibTest/math/Point/operator_equality_A02_t01_test: Crash
 co19/LibTest/math/Point/operator_equality_A04_t01_test: Crash
-co19/LibTest/math/Point/operator_mult_A01_t01_test: Crash
 co19/LibTest/math/Point/operator_mult_A03_t01_test: Crash
-co19/LibTest/math/Point/operator_subtraction_A01_t01_test: Crash
 co19/LibTest/math/Point/operator_subtraction_A02_t01_test: Crash
-co19/LibTest/math/Point/squaredDistanceTo_A01_t01_test: Crash
-co19/LibTest/math/Rectangle/Rectangle.fromPoints_A01_t01_test: Crash
-co19/LibTest/math/Rectangle/Rectangle_A01_t01_test: Crash
-co19/LibTest/math/Rectangle/boundingBox_A01_t01_test: Crash
-co19/LibTest/math/Rectangle/boundingBox_A01_t02_test: Crash
-co19/LibTest/math/Rectangle/operator_equality_A01_t01_test: Crash
 co19/LibTest/math/Rectangle/operator_equality_A02_t01_test: Crash
 co19/LibTest/math/Rectangle/operator_equality_A04_t01_test: Crash
-co19/LibTest/typed_data/Float32x4List/toSet_A01_t01_test: Crash
 
 

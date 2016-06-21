@@ -1482,14 +1482,18 @@ const Object& ConstantEvaluator::RunFunction(const Function& function,
 }
 
 
-FlowGraphBuilder::FlowGraphBuilder(TreeNode* node,
-                                   ParsedFunction* parsed_function,
-                                   int first_block_id)
+FlowGraphBuilder::FlowGraphBuilder(
+    TreeNode* node,
+    ParsedFunction* parsed_function,
+    const ZoneGrowableArray<const ICData*>& ic_data_array,
+    intptr_t osr_id,
+    int first_block_id)
   : zone_(Thread::Current()->zone()),
     translation_helper_(zone_, Thread::Current()->isolate()),
     node_(node),
     parsed_function_(parsed_function),
-    ic_data_array_(Z, 0),
+    osr_id_(osr_id),
+    ic_data_array_(ic_data_array),
     next_block_id_(first_block_id),
     next_function_id_(0),
     context_depth_(0),

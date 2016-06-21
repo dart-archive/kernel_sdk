@@ -260,6 +260,8 @@ class FlowGraphBuilder : public TreeVisitor {
  public:
   FlowGraphBuilder(TreeNode* node,
                    ParsedFunction* parsed_function,
+                   const ZoneGrowableArray<const ICData*>& ic_data_array,
+                   intptr_t osr_id,
                    int first_block_id = 1);
   virtual ~FlowGraphBuilder();
 
@@ -437,7 +439,8 @@ class FlowGraphBuilder : public TreeVisitor {
   TreeNode* node_;
 
   ParsedFunction* parsed_function_;
-  const ZoneGrowableArray<const ICData*> ic_data_array_;
+  intptr_t osr_id_;
+  const ZoneGrowableArray<const ICData*>& ic_data_array_;
 
   int next_block_id_;
   int AllocateBlockId() { return next_block_id_++; }

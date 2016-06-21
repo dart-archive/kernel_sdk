@@ -104,7 +104,7 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
   if (UseDilFrontEndFor(parsed_function)) {
     dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(
         parsed_function->function().dil_function());
-    dil::FlowGraphBuilder builder(node, parsed_function);
+    dil::FlowGraphBuilder builder(node, parsed_function, ic_data_array, osr_id);
     FlowGraph* graph = builder.BuildGraph();
     if (graph != NULL) return graph;
   }
