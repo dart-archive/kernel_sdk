@@ -125,6 +125,7 @@ namespace dil {
 
 class Reader;
 class TreeNode;
+class TypeParameter;
 class Writer;
 
 // Boxes a value of type `T*` and `delete`s it on destruction.
@@ -223,6 +224,12 @@ class List {
 
   T** array_;
   int length_;
+};
+
+class TypeParameterList : public List<TypeParameter> {
+ public:
+  void ReadFrom(Reader* reader);
+  void WriteTo(Writer* writer);
 };
 
 template<typename A, typename B>
@@ -426,7 +433,7 @@ class NormalClass : public Class {
   virtual void AcceptReferenceVisitor(ClassReferenceVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
 
-  virtual List<TypeParameter>& type_parameters() { return type_parameters_; }
+  virtual TypeParameterList& type_parameters() { return type_parameters_; }
   InterfaceType* super_class() { return super_class_; }
   virtual List<InterfaceType>& implemented_classes() { return implemented_classes_; }
   virtual List<Constructor>& constructors() { return constructors_; }
@@ -440,7 +447,7 @@ class NormalClass : public Class {
   template<typename T>
   friend class List;
 
-  List<TypeParameter> type_parameters_;
+  TypeParameterList type_parameters_;
   Child<InterfaceType> super_class_;
   List<InterfaceType> implemented_classes_;
   List<Constructor> constructors_;
@@ -461,7 +468,7 @@ class MixinClass : public Class {
   virtual void AcceptReferenceVisitor(ClassReferenceVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
 
-  virtual List<TypeParameter>& type_parameters() { return type_parameters_; }
+  virtual TypeParameterList&  type_parameters() { return type_parameters_; }
   InterfaceType* first() { return first_; }
   InterfaceType* second() { return second_; }
   virtual List<InterfaceType>& implemented_classes() { return implemented_classes_; }
@@ -478,7 +485,7 @@ class MixinClass : public Class {
 
   bool is_abstract_;
   Ref<String> name_;
-  List<TypeParameter> type_parameters_;
+  TypeParameterList type_parameters_;
   Child<InterfaceType> first_;
   Child<InterfaceType> second_;
   List<InterfaceType> implemented_classes_;
@@ -742,7 +749,7 @@ class FunctionNode : public TreeNode {
   virtual void VisitChildren(Visitor* visitor);
 
   AsyncMarker async_marker() { return async_marker_; }
-  List<TypeParameter>& type_parameters() { return type_parameters_; }
+  TypeParameterList& type_parameters() { return type_parameters_; }
   int required_parameter_count() { return required_parameter_count_; }
   List<VariableDeclaration>& positional_parameters() { return positional_parameters_; }
   List<VariableDeclaration>& named_parameters() { return named_parameters_; }
@@ -754,7 +761,7 @@ class FunctionNode : public TreeNode {
   FunctionNode() {}
 
   AsyncMarker async_marker_;
-  List<TypeParameter> type_parameters_;
+  TypeParameterList type_parameters_;
   int required_parameter_count_;
   List<VariableDeclaration> positional_parameters_;
   List<VariableDeclaration> named_parameters_;
@@ -2255,7 +2262,7 @@ class FunctionType : public DartType {
   virtual void AcceptDartTypeVisitor(DartTypeVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
 
-  List<TypeParameter>& type_parameters() { return type_parameters_; }
+  TypeParameterList& type_parameters() { return type_parameters_; }
   int required_parameter_count() { return required_parameter_count_; }
   List<DartType>& positional_parameters() { return positional_parameters_; }
   List<Tuple<String, DartType> >& named_parameters() { return named_parameters_; }
@@ -2265,7 +2272,7 @@ class FunctionType : public DartType {
   DISALLOW_COPY_AND_ASSIGN(FunctionType);
   FunctionType() {}
 
-  List<TypeParameter> type_parameters_;
+  TypeParameterList type_parameters_;
   int required_parameter_count_;
   List<DartType> positional_parameters_;
   List<Tuple<String, DartType> > named_parameters_;
@@ -2295,7 +2302,7 @@ class TypeParameterType : public DartType {
 
 class TypeParameter : public TreeNode {
  public:
-  static TypeParameter* ReadFrom(Reader* reader);
+  TypeParameter* ReadFrom(Reader* reader);
   void WriteTo(Writer* writer);
 
   virtual ~TypeParameter();
@@ -2314,6 +2321,7 @@ class TypeParameter : public TreeNode {
 
   template<typename T>
   friend class List;
+  friend class TypeParameterList;
 
   Ref<String> name_;
   Child<DartType> bound_;

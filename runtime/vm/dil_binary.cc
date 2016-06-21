@@ -756,6 +756,41 @@ void List<T>::WriteToStatic(Writer* writer) {
   }
 }
 
+void TypeParameterList::ReadFrom(Reader* reader) {
+  // It is possible for the bound of the first type parameter to refer to
+  // the second type parameter. This means we need to create [TypeParameter]
+  // objects before reading the bounds.
+  int length = reader->ReadListLength();
+  EnsureInitialized(length);
+
+  // Make all [TypeParameter]s available in scope.
+  for (int i = 0; i < length; i++) {
+    TypeParameter* parameter = (*this)[i] = new TypeParameter();
+    reader->helper()->type_parameters().Push(parameter);
+  }
+
+  // Read all [TypeParameter]s and their bounds.
+  for (int i = 0; i < length; i++) {
+    (*this)[i]->ReadFrom(reader);
+  }
+}
+
+void TypeParameterList::WriteTo(Writer* writer) {
+  writer->WriteListLength(length());
+
+  // Make all [TypeParameter]s available in scope.
+  for (int i = 0; i < length(); i++) {
+    TypeParameter* parameter = (*this)[i];
+    writer->helper()->type_parameters().Push(parameter);
+  }
+
+  // Write all [TypeParameter]s and their bounds.
+  for (int i = 0; i < length(); i++) {
+    TypeParameter* parameter = (*this)[i];
+    parameter->WriteTo(writer);
+  }
+}
+
 template<typename A, typename B>
 Tuple<A, B>* Tuple<A, B>::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
@@ -906,7 +941,7 @@ NormalClass* NormalClass::ReadFrom(Reader* reader) {
   Class::ReadFrom(reader);
   TypeParameterScope<ReaderHelper> scope(reader->helper());
 
-  type_parameters_.ReadFromStatic<TypeParameter>(reader);
+  type_parameters_.ReadFrom(reader);
   DartType* type = reader->ReadOptional<DartType>();
 
   super_class_ = InterfaceType::Cast(type);
@@ -939,7 +974,7 @@ MixinClass* MixinClass::ReadFrom(Reader* reader) {
 
   is_abstract_ = reader->ReadBool();
   name_ = Reference::ReadStringFrom(reader);
-  type_parameters_.ReadFromStatic<TypeParameter>(reader);
+  type_parameters_.ReadFrom(reader);
   first_ = InterfaceType::Cast(DartType::ReadFrom(reader));
   second_ = InterfaceType::Cast(DartType::ReadFrom(reader));
   implemented_classes_.ReadFromStatic<DowncastReader<DartType, InterfaceType> >(
@@ -2421,7 +2456,7 @@ void InterfaceType::WriteTo(Writer* writer) {
 FunctionType* FunctionType::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   FunctionType* type = new FunctionType();
-  type->type_parameters().ReadFromStatic<TypeParameter>(reader);
+  type->type_parameters().ReadFrom(reader);
   type->required_parameter_count_ = reader->ReadUInt();
   type->positional_parameters().ReadFromStatic<DartType>(reader);
   type->named_parameters().ReadFromStatic<Tuple<String, DartType> >(reader);
@@ -2516,7 +2551,7 @@ FunctionNode* FunctionNode::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   FunctionNode* function = new FunctionNode();
   function->async_marker_ = static_cast<FunctionNode::AsyncMarker>(reader->ReadByte());
-  function->type_parameters().ReadFromStatic<TypeParameter>(reader);
+  function->type_parameters().ReadFrom(reader);
   function->required_parameter_count_ = reader->ReadUInt();
   function->positional_parameters().ReadFromStatic<VariableDeclarationImpl>(reader);
   function->named_parameters().ReadFromStatic<VariableDeclarationImpl>(reader);
@@ -2542,16 +2577,13 @@ void FunctionNode::WriteTo(Writer* writer) {
 
 TypeParameter* TypeParameter::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  TypeParameter* param = new TypeParameter();
-  reader->helper()->type_parameters().Push(param);
-  param->name_ = Reference::ReadStringFrom(reader);
-  param->bound_ = DartType::ReadFrom(reader);
-  return param;
+  name_ = Reference::ReadStringFrom(reader);
+  bound_ = DartType::ReadFrom(reader);
+  return this;
 }
 
 void TypeParameter::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->helper()->type_parameters().Push(this);
   name_->WriteTo(writer);
   bound_->WriteTo(writer);
 }
