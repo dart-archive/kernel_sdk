@@ -4097,6 +4097,13 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
     Catch* catch_clause = node->catches()[i];
 
     Fragment catch_handler_body;
+
+    int context_size = scopes_[catch_clause]->num_context_variables();
+    if (context_size > 0) {
+      catch_handler_body += PushContext(context_size);
+      catch_handler_body += Drop();
+    }
+
     if (catch_clause->exception() != NULL) {
       catch_handler_body += LoadLocal(CurrentException());
       catch_handler_body +=
@@ -4125,6 +4132,14 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
       catch_handler_body += TranslateStatement(catch_clause->body());
       if (catch_handler_body.is_open()) {
         catch_handler_body += Goto(after_try);
+      }
+    }
+
+    if (context_size > 0) {
+      if (catch_handler_body.is_open()) {
+        catch_handler_body += PopContext();
+      } else {
+        --context_depth_;
       }
     }
 
