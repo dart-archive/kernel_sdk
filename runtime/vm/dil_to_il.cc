@@ -288,7 +288,9 @@ void ScopeBuilder::BuildScopes() {
       if (function.IsClosureFunction()) {
         LocalVariable* variable = MakeVariable(Symbols::ClosureParameter());
         scope_->InsertParameterAt(pos++, variable);
-      } else if (!function.IsStaticFunction()) {
+      } else if (!function.is_static()) {
+        // We use [is_static] instead of [IsStaticFunction] because the latter
+        // returns `false` for constructors.
         dart::Class& klass = dart::Class::Handle(Z, function.Owner());
         Type& klass_type =
             Type::ZoneHandle(Z, Type::NewNonParameterizedType(klass));
