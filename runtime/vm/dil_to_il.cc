@@ -1628,17 +1628,17 @@ Fragment FlowGraphBuilder::BooleanNegate() {
 }
 
 
-Fragment FlowGraphBuilder::Boolify() {
-  Fragment instructions = Constant(Bool::True());
-  Value* constant_value = Pop();
+Fragment FlowGraphBuilder::StrictCompare() {
+  Value* right = Pop();
+  Value* left = Pop();
   StrictCompareInstr* compare =
       new(Z) StrictCompareInstr(TokenPosition::kNoSource,
                                 Token::kEQ_STRICT,
-                                Pop(),
-                                constant_value,
+                                left,
+                                right,
                                 false);
   Push(compare);
-  return instructions << compare;
+  return Fragment(compare);
 }
 
 
@@ -2232,6 +2232,40 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
   if (constructor != NULL) {
     Class* dil_klass = Class::Cast(constructor->parent());
     body += TranslateInitializers(dil_klass, &constructor->initializers());
+  }
+
+  // The specificaion defines the result of `a == b` to be:
+  //
+  //   a) if either side is `null` then the result is `identical(a, b)`.
+  //   b) else the result is `a.operator==(b)`
+  //
+  // For user-defined implementations of `operator==` we need therefore
+  // implement the handling of a).
+  //
+  // The default `operator==` implementation in `Object` is implemented in terms
+  // of identical (which we assume here!) which means that case a) is actually
+  // included in b).  So we just use the normal implementation in the body.
+  const Function& f = parsed_function_->function();
+  if ((f.NumParameters() == 2) &&
+      (f.name() == Symbols::EqualOperator().raw()) &&
+      (f.Owner() != I->object_store()->object_class())) {
+    LocalVariable* parameter =
+        LookupVariable(function->positional_parameters()[0]);
+
+    TargetEntryInstr* null_entry;
+    TargetEntryInstr* non_null_entry;
+
+    body += LoadLocal(parameter);
+    body += BranchIfNull(&null_entry, &non_null_entry);
+
+    // The argument was `null` and the receiver is not the null class (we only
+    // go into this branch for user-defined == operators) so we can return
+    // false.
+    Fragment null_fragment(null_entry);
+    null_fragment += Constant(Bool::False());
+    null_fragment += Return();
+
+    body = Fragment(non_null_entry);
   }
   if (function->body() != NULL) {
     body += TranslateStatement(function->body());
@@ -3311,7 +3345,8 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
     Value* top = stack_;
     Fragment right_fragment(right_entry);
     right_fragment += TranslateExpression(node->right());
-    right_fragment += Boolify();
+    right_fragment += Constant(Bool::True());
+    right_fragment += StrictCompare();
     right_fragment += StoreLocal(parsed_function_->expression_temp_var());
     right_fragment += Drop();
 

@@ -68,8 +68,6 @@ co19/Language/Expressions/Constants/identifier_denotes_a_constant_t04_test: Cras
 co19/Language/Expressions/Constants/identifier_denotes_a_constant_t05_test: Crash
 co19/Language/Expressions/Constants/literal_number_t01_test: Crash
 co19/Language/Expressions/Constants/math_operators_t01_test: Crash
-co19/Language/Expressions/Equality/evaluation_super_t02_test: RuntimeError
-co19/Language/Expressions/Equality/evaluation_t03_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t04_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t05_test: Crash
@@ -172,9 +170,6 @@ co19/Language/Expressions/Postfix_Expressions/syntax_t01_test: RuntimeError
 co19/Language/Expressions/Postfix_Expressions/syntax_t02_test: Crash
 co19/Language/Expressions/Postfix_Expressions/syntax_t03_test: Crash
 co19/Language/Expressions/Postfix_Expressions/syntax_t05_test: Crash
-co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A03_t01_test: Crash
-co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A03_t02_test: Crash
-co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A03_t03_test: Crash
 co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A04_t02_test: Crash
 co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A04_t03_test: Crash
 co19/Language/Expressions/Property_Extraction/General_Closurization/expression_evaluation_t01_test: RuntimeError
@@ -219,11 +214,8 @@ co19/Language/Expressions/Property_Extraction/Named_Constructor_Extraction/malfo
 co19/Language/Expressions/Property_Extraction/Named_Constructor_Extraction/malformed_type_t02_test: Crash
 co19/Language/Expressions/Property_Extraction/Named_Constructor_Extraction/not_class_t02_test: Crash
 co19/Language/Expressions/Property_Extraction/Named_Constructor_Extraction/not_class_t03_test: Crash
-co19/Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/method_extraction_t01_test: Crash
-co19/Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/method_extraction_t02_test: Crash
 co19/Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_instance_t01_test: Crash
 co19/Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t01_test: Crash
-co19/Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/static_type_t02_test: Crash
 co19/Language/Expressions/Relational_Expressions/syntax_t20_test: Crash
 co19/Language/Expressions/Relational_Expressions/syntax_t21_test: Crash
 co19/Language/Expressions/Shift/syntax_t11_test: Crash
@@ -449,7 +441,6 @@ co19/LibTest/async/Stream/elementAt_A02_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t02_test: Crash
 co19/LibTest/async/Zone/ROOT_A01_t01_test: Crash
-co19/LibTest/async/Zone/handleUncaughtError_A01_t04_test: Crash
 co19/LibTest/async/Zone/registerBinaryCallback_A01_t01_test: Crash
 co19/LibTest/async/Zone/registerCallback_A01_t01_test: Crash
 co19/LibTest/async/Zone/registerUnaryCallback_A01_t01_test: Crash
