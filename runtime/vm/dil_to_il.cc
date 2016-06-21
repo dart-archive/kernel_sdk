@@ -3936,9 +3936,50 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
   //   * `case e1: case e2: body`
   Fragment* body_fragments = new Fragment[node->cases().length()];
 
-  for (int i = 0; i < node->cases().length(); i++) {
+  for (intptr_t i = 0; i < node->cases().length(); i++) {
     SwitchCase* switch_case = node->cases()[i];
-    body_fragments[i] = TranslateStatement(switch_case->body());
+    Fragment& body_fragment = body_fragments[i] =
+        TranslateStatement(switch_case->body());
+
+    // The Dart language specification mandates fall-throughs in [SwitchCase]es
+    // to be runtime errors.
+    if (!switch_case->is_default() &&
+        body_fragment.is_open() &&
+        (i < (node->cases().length() - 1))) {
+      const dart::Class& klass = dart::Class::ZoneHandle(Z,
+          dart::Library::LookupCoreClass(Symbols::FallThroughError()));
+      ASSERT(!klass.IsNull());
+      const dart::Function& constructor = dart::Function::ZoneHandle(Z,
+          klass.LookupConstructorAllowPrivate(
+            H.DartSymbol("FallThroughError._create")));
+      ASSERT(!constructor.IsNull());
+      const dart::String& url = H.DartString(
+          parsed_function_->function().ToLibNamePrefixedQualifiedCString(),
+          Heap::kOld);
+
+      // Create instance of _FallThroughError
+      body_fragment += AllocateObject(klass, 0);
+      LocalVariable* instance = MakeTemporary();
+
+      // Call _AssertionError._create constructor.
+      body_fragment += LoadLocal(instance);
+      body_fragment += PushArgument();  // this
+
+      body_fragment += Constant(url);
+      body_fragment += PushArgument();  // url
+
+      body_fragment += NullConstant();
+      body_fragment += PushArgument();  // line
+
+      body_fragment += StaticCall(constructor, 3);
+      body_fragment += Drop();
+
+      // Throw the exception
+      body_fragment += PushArgument();
+      body_fragment += ThrowException();
+      body_fragment += Drop();
+    }
+
     // If there is an implicit fall-through we have one [SwitchCase] and
     // multiple expressions, e.g.
     //
@@ -3954,8 +3995,6 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
     if (switch_case->expressions().length() > 1) {
       block.Destination(switch_case);
     }
-
-    ASSERT(i == (node->cases().length() - 1) || body_fragments[i].is_closed());
   }
 
   // Phase 2: Generate everything except the real bodies:

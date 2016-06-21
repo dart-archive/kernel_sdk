@@ -350,7 +350,6 @@ co19/Language/Statements/Local_Variable_Declaration/syntax_t05_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t06_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t18_test: Crash
 co19/Language/Statements/Local_Variable_Declaration/syntax_t19_test: Crash
-co19/Language/Statements/Switch/execution_case_t02_test: Crash
 co19/Language/Statements/Switch/scope_t02_test: Crash
 co19/Language/Statements/Try/malformed_type_t01_test: Crash
 co19/Language/Statements/Try/malformed_type_t02_test: Crash
