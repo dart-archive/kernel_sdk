@@ -355,6 +355,9 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Fragment TranslateFunctionNode(FunctionNode* node, TreeNode* parent);
 
+  Fragment EnterScope(TreeNode* node, bool* new_context = NULL);
+  Fragment ExitScope(TreeNode* node);
+
   Fragment LoadContextAt(int depth);
   Fragment AdjustContextTo(int depth);
 

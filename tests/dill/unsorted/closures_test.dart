@@ -50,4 +50,16 @@ main() {
   var foo = new Foo(100);
   Expect.isTrue(foo.nestedAdderFunction(1, 2, 3, 4, 5)()() == 115);
   Expect.isTrue(foo.nestedAdderFunction2(1, 2, 3, 4, 5)()() == 1015);
+
+  var funs = [];
+  for (int i = 0; i < 3; i++) {
+    funs.add(() => i);
+  }
+  Expect.isTrue((funs[0]() + funs[1]() + funs[2]()) == 3);
+
+  var funs2 = [];
+  for (var i in [0, 1, 2]) {
+    funs2.add(() => i);
+  }
+  Expect.isTrue((funs2[0]() + funs2[1]() + funs2[2]()) == 3);
 }

@@ -253,7 +253,6 @@ co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t01_
 co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t03_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_property_extraction_t03_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_type_parameter_t01_test: RuntimeError
-co19/Language/Expressions/Identifier_Reference/evaluation_variable_or_parameter_t04_test: Crash
 co19/Language/Expressions/Identifier_Reference/qualified_identifiers_t01_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/static_type_t01_test: Crash
 co19/Language/Expressions/Instance_Creation/Const/canonicalized_t05_test: RuntimeError
@@ -449,7 +448,6 @@ co19/Language/Variables/constant_variable_t09_test: RuntimeError
 co19/LibTest/async/DeferredLibrary/DeferredLibrary_A01_t01_test: RuntimeError
 co19/LibTest/async/Stream/Stream_A01_t01_test: Crash
 co19/LibTest/async/Stream/contains_A02_t01_test: Crash
-co19/LibTest/async/Stream/elementAt_A02_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t01_test: Crash
 co19/LibTest/async/Stream/isBroadcast_A01_t02_test: Crash
 co19/LibTest/async/Zone/registerBinaryCallback_A01_t01_test: Crash

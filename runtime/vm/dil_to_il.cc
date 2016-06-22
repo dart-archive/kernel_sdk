@@ -1561,6 +1561,30 @@ Fragment FlowGraphBuilder::TranslateFinallyFinalizers(
 }
 
 
+Fragment FlowGraphBuilder::EnterScope(TreeNode* node, bool* new_context) {
+  Fragment instructions;
+  const intptr_t context_size = scopes_[node]->num_context_variables();
+  if (context_size > 0) {
+    instructions += PushContext(context_size);
+    instructions += Drop();
+    if (new_context != NULL) {
+      *new_context = true;
+    }
+  }
+  return instructions;
+}
+
+
+Fragment FlowGraphBuilder::ExitScope(TreeNode* node) {
+  Fragment instructions;
+  const intptr_t context_size = scopes_[node]->num_context_variables();
+  if (context_size > 0) {
+    instructions += PopContext();
+  }
+  return instructions;
+}
+
+
 Fragment FlowGraphBuilder::LoadContextAt(int depth) {
   int delta = context_depth_ - depth;
   ASSERT(delta >= 0);
@@ -1731,8 +1755,17 @@ Fragment FlowGraphBuilder::CheckStackOverflow() {
 
 
 Fragment FlowGraphBuilder::CloneContext() {
-  Fragment instructions = LoadLocal(parsed_function_->current_context_var());
-  instructions <<= new(Z) CloneContextInstr(TokenPosition::kNoSource, Pop());
+  LocalVariable* context_variable = parsed_function_->current_context_var();
+
+  Fragment instructions = LoadLocal(context_variable);
+
+  CloneContextInstr* clone_instruction =
+      new(Z) CloneContextInstr(TokenPosition::kNoSource, Pop());
+  instructions <<= clone_instruction;
+  Push(clone_instruction);
+
+  instructions += StoreLocal(context_variable);
+  instructions += Drop();
   return instructions;
 }
 
@@ -3617,24 +3650,13 @@ void FlowGraphBuilder::VisitEmptyStatement(EmptyStatement* node) {
 void FlowGraphBuilder::VisitBlock(Block* node) {
   Fragment instructions;
 
-  int context_size = scopes_[node]->num_context_variables();
-  if (context_size > 0) {
-    instructions += PushContext(context_size);
-    instructions += Drop();
-  }
-
+  instructions += EnterScope(node);
   List<Statement>& statements = node->statements();
   for (int i = 0; i < statements.length(); ++i) {
     instructions += TranslateStatement(statements[i]);
   }
+  instructions += ExitScope(node);
 
-  if (context_size > 0) {
-    if (instructions.is_open()) {
-      instructions += PopContext();
-    } else {
-      --context_depth_;
-    }
-  }
   fragment_ = instructions;
 }
 
@@ -3786,10 +3808,12 @@ void FlowGraphBuilder::VisitDoStatement(DoStatement* node) {
 
 void FlowGraphBuilder::VisitForStatement(ForStatement* node) {
   Fragment declarations;
+
+  bool new_context = false;
+  declarations += EnterScope(node, &new_context);
+
   List<VariableDeclaration>& variables = node->variables();
-  bool captured = false;
   for (int i = 0; i < variables.length(); ++i) {
-    captured = captured || LookupVariable(variables[i])->is_captured();
     declarations += TranslateStatement(variables[i]);
   }
 
@@ -3805,7 +3829,13 @@ void FlowGraphBuilder::VisitForStatement(ForStatement* node) {
   body += TranslateStatement(node->body());
 
   if (body.is_open()) {
-    if (captured) body += CloneContext();
+    // We allocated a fresh context before the loop which contains captured
+    // [ForStatement] variables.  Before jumping back to the loop entry we clone
+    // the context object (at same depth) which ensures the next iteration of
+    // the body gets a fresh set of [ForStatement] variables (with the old
+    // (possibly updated) values).
+    if (new_context) body += CloneContext();
+
     List<Expression>& updates = node->updates();
     for (int i = 0; i < updates.length(); ++i) {
       body += TranslateExpression(updates[i]);
@@ -3822,8 +3852,12 @@ void FlowGraphBuilder::VisitForStatement(ForStatement* node) {
     declarations += condition;
   }
 
-  fragment_ = Fragment(declarations.entry, loop_exit);
+  Fragment loop(declarations.entry, loop_exit);
   --loop_depth_;
+
+  loop += ExitScope(node);
+
+  fragment_ = loop;
 }
 
 
@@ -3848,11 +3882,7 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   condition += Branch(&body_entry, &loop_exit);
 
   Fragment body(body_entry);
-  int context_size = scopes_[node]->num_context_variables();
-  if (context_size > 0) {
-    body += PushContext(context_size);
-    body += Drop();
-  }
+  body += EnterScope(node);
   body += LoadLocal(iterator);
   body += PushArgument();
   const dart::String& current_getter = dart::String::ZoneHandle(Z,
@@ -3861,14 +3891,7 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   body += StoreLocal(LookupVariable(node->variable()));
   body += Drop();
   body += TranslateStatement(node->body());
-
-  if (context_size > 0) {
-    if (body.is_open()) {
-      body += PopContext();
-    } else {
-      --context_depth_;
-    }
-  }
+  body += ExitScope(node);
 
   if (body.is_open()) {
     JoinEntryInstr* join = BuildJoinEntry();
@@ -4242,11 +4265,7 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
 
     Fragment catch_handler_body;
 
-    int context_size = scopes_[catch_clause]->num_context_variables();
-    if (context_size > 0) {
-      catch_handler_body += PushContext(context_size);
-      catch_handler_body += Drop();
-    }
+    catch_handler_body += EnterScope(catch_clause);
 
     if (catch_clause->exception() != NULL) {
       catch_handler_body += LoadLocal(CurrentException());
@@ -4279,13 +4298,7 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
       }
     }
 
-    if (context_size > 0) {
-      if (catch_handler_body.is_open()) {
-        catch_handler_body += PopContext();
-      } else {
-        --context_depth_;
-      }
-    }
+    catch_handler_body += ExitScope(catch_clause);
 
     if (type_guard != NULL) {
       catch_body += LoadLocal(CurrentException());
