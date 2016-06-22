@@ -161,7 +161,7 @@ P(use_cha_deopt, bool, true,                                                   \
   "Use class hierarchy analysis even if it can cause deoptimization.")         \
 P(use_field_guards, bool, true,                                                \
   "Use field guards and track field types")                                    \
-C(use_osr, false, true, bool, true,                                            \
+C(use_osr, false, false, bool, false,                                          \
   "Use OSR")                                                                   \
 P(verbose_gc, bool, false,                                                     \
   "Enables verbose GC.")                                                       \
