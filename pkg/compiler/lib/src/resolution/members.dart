@@ -4133,7 +4133,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     List<ConstantExpression> parts = <ConstantExpression>[];
 
     void resolvePart(Node subnode) {
-      ResolutionResult result = visit(subnode);
+      ResolutionResult result = visitInExpressionContext(subnode);
       if (isValidAsConstant && result.isConstant) {
         parts.add(result.constant);
       } else {
