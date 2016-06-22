@@ -95,7 +95,6 @@ co19/Language/Expressions/Method_Invocation/Super_Invocation/method_lookup_faile
 co19/Language/Expressions/Method_Invocation/Super_Invocation/static_type_dynamic_t02_test: CompileTimeError
 co19/Language/Expressions/Method_Invocation/Super_Invocation/wrong_type_t01_test: CompileTimeError
 co19/Language/Expressions/Null/instantiate_t01_test: CompileTimeError
-co19/Language/Expressions/Postfix_Expressions/syntax_t02_test: CompileTimeError
 co19/Language/Expressions/Postfix_Expressions/syntax_t03_test: CompileTimeError
 co19/Language/Expressions/Postfix_Expressions/syntax_t05_test: CompileTimeError
 co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A04_t03_test: CompileTimeError
@@ -124,7 +123,6 @@ co19/Language/Expressions/Top_level_Getter_Invocation/17_Getter_Invocation_A05_t
 co19/Language/Expressions/Top_level_Getter_Invocation/17_Getter_Invocation_A07_t02_test: CompileTimeError
 co19/Language/Expressions/Top_level_Getter_Invocation/17_Getter_Invocation_A08_t01_test: CompileTimeError
 co19/Language/Expressions/Unary_Expressions/syntax_t02_test: CompileTimeError
-co19/Language/Expressions/Unary_Expressions/syntax_t04_test: CompileTimeError
 co19/Language/Expressions/Unary_Expressions/syntax_t05_test: CompileTimeError
 co19/Language/Functions/Formal_Parameters/Optional_Formals/syntax_t06_test: CompileTimeError
 co19/Language/Functions/Formal_Parameters/Optional_Formals/syntax_t10_test: CompileTimeError
@@ -163,24 +161,14 @@ co19/Language/Overview/Privacy/private_and_public_t19_test: CompileTimeError
 co19/Language/Overview/Privacy/private_and_public_t20_test: CompileTimeError
 co19/Language/Overview/Scoping/hiding_declaration_t05_test: CompileTimeError
 co19/Language/Overview/Scoping/hiding_declaration_t06_test: CompileTimeError
-co19/Language/Overview/Scoping/hiding_declaration_t11_test: CompileTimeError
-co19/Language/Overview/Scoping/hiding_declaration_t12_test: CompileTimeError
-co19/Language/Overview/Scoping/hiding_declaration_t14_test: CompileTimeError
-co19/Language/Overview/Scoping/hiding_declaration_t16_test: CompileTimeError
 co19/Language/Overview/Scoping/hiding_declaration_t28_test: CompileTimeError
-co19/Language/Statements/Do/execution_t04_test: CompileTimeError
-co19/Language/Statements/For/For_Loop/execution_t10_test: CompileTimeError
 co19/Language/Statements/For/syntax_t07_test: CompileTimeError
-co19/Language/Statements/If/execution_t03_test: CompileTimeError
-co19/Language/Statements/Labels/namespace_t01_test: CompileTimeError
-co19/Language/Statements/Labels/syntax_t01_test: CompileTimeError
 co19/Language/Statements/Local_Function_Declaration/reference_before_declaration_t02_test: CompileTimeError
 co19/Language/Statements/Local_Variable_Declaration/syntax_t05_test: CompileTimeError
 co19/Language/Statements/Local_Variable_Declaration/syntax_t06_test: CompileTimeError
 co19/Language/Statements/Local_Variable_Declaration/syntax_t18_test: CompileTimeError
 co19/Language/Statements/Local_Variable_Declaration/syntax_t19_test: CompileTimeError
 co19/Language/Statements/Switch/scope_t02_test: CompileTimeError
-co19/Language/Statements/While/execution_t03_test: CompileTimeError
 co19/Language/Variables/constant_variable_t01_test: CompileTimeError
 co19/Language/Variables/constant_variable_t02_test: CompileTimeError
 co19/Language/Variables/constant_variable_t03_test: CompileTimeError
@@ -207,11 +195,16 @@ co19/LibTest/math/Point/operator_subtraction_A02_t01_test: CompileTimeError
 #
 #   ./tools/test.py -mdebug -ax64 dill/co19
 #
-co19/Language/Classes/Abstract_Instance_Members/override_default_value_t08_test: RuntimeError
-co19/Language/Classes/Constructors/Factories/redirecting_constructor_call_t01_test: RuntimeError
-co19/Language/Classes/Constructors/Factories/redirecting_constructor_call_t02_test: RuntimeError
-co19/Language/Classes/Constructors/Factories/redirecting_constructor_t01_test: RuntimeError
+co19/Language/Classes/Constructors/Factories/accessible_class_t01_test: Crash
+co19/Language/Classes/Constructors/Factories/accessible_class_t02_test: Crash
+co19/Language/Classes/Constructors/Factories/accessible_class_t03_test: Crash
+co19/Language/Classes/Constructors/Factories/accessible_class_t04_test: Crash
+co19/Language/Classes/Constructors/Factories/arguments_type_t01_test: Crash
+co19/Language/Classes/Constructors/Factories/redirecting_constructor_call_t02_test: Crash
+co19/Language/Classes/Constructors/Factories/return_type_t04_test: Crash
 co19/Language/Classes/Constructors/Factories/return_type_t05_test: Crash
+co19/Language/Classes/Constructors/Factories/return_type_t06_test: Crash
+co19/Language/Classes/Constructors/Factories/return_type_t07_test: Crash
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/implicit_superinitializer_t01_test: RuntimeError
@@ -227,9 +220,6 @@ co19/Language/Classes/implicit_interface_t01_test: RuntimeError
 co19/Language/Enums/declaration_equivalent_t01_test: RuntimeError
 co19/Language/Expressions/Additive_Expressions/syntax_t11_test: Crash
 co19/Language/Expressions/Additive_Expressions/syntax_t12_test: Crash
-co19/Language/Expressions/Assignment/indexed_expression_t01_test: RuntimeError
-co19/Language/Expressions/Assignment/indexed_expression_t02_test: RuntimeError
-co19/Language/Expressions/Assignment/indexed_expression_t04_test: RuntimeError
 co19/Language/Expressions/Bitwise_Expressions/syntax_t14_test: Crash
 co19/Language/Expressions/Bitwise_Expressions/syntax_t15_test: Crash
 co19/Language/Expressions/Conditional/syntax_t12_test: Crash
@@ -249,21 +239,21 @@ co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t04_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Unqualified_Invocation/invocation_t07_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_alias_t02_test: Crash
-co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t01_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_library_or_getter_t03_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_property_extraction_t03_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/evaluation_type_parameter_t01_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/qualified_identifiers_t01_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/static_type_t01_test: Crash
+co19/Language/Expressions/Instance_Creation/New/body_execution_t02_test: Crash
 co19/Language/Expressions/Instance_Creation/Const/canonicalized_t05_test: RuntimeError
-co19/Language/Expressions/Instance_Creation/New/body_execution_t04_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/evaluation_t07_test: Crash
 co19/Language/Expressions/Instance_Creation/New/evaluation_t08_test: Crash
 co19/Language/Expressions/Instance_Creation/New/evaluation_t09_test: Crash
 co19/Language/Expressions/Instance_Creation/New/evaluation_t13_test: Crash
 co19/Language/Expressions/Instance_Creation/New/evaluation_t14_test: Crash
 co19/Language/Expressions/Instance_Creation/New/execution_t09_test: RuntimeError
-co19/Language/Expressions/Instance_Creation/New/redirecting_factory_constructor_t01_test: RuntimeError
+co19/Language/Expressions/Instance_Creation/New/redirecting_factory_constructor_t01_test: Crash
+co19/Language/Expressions/Instance_Creation/New/redirecting_factory_constructor_t02_test: Crash
 co19/Language/Expressions/Logical_Boolean_Expressions/syntax_t12_test: Crash
 co19/Language/Expressions/Logical_Boolean_Expressions/syntax_t13_test: Crash
 co19/Language/Expressions/Lookup/Method_Lookup/superclass_t07_test: RuntimeError
@@ -277,6 +267,7 @@ co19/Language/Expressions/Multiplicative_Expressions/syntax_t14_test: Crash
 co19/Language/Expressions/Multiplicative_Expressions/syntax_t15_test: Crash
 co19/Language/Expressions/Object_Identity/string_t01_test: RuntimeError
 co19/Language/Expressions/Postfix_Expressions/syntax_t01_test: RuntimeError
+co19/Language/Expressions/Postfix_Expressions/syntax_t02_test: Crash
 co19/Language/Expressions/Property_Extraction/13_Property_Extraction_A04_t02_test: Crash
 co19/Language/Expressions/Property_Extraction/General_Closurization/expression_evaluation_t01_test: RuntimeError
 co19/Language/Expressions/Property_Extraction/General_Closurization/expression_evaluation_t02_test: RuntimeError
@@ -325,6 +316,7 @@ co19/Language/Expressions/Type_Test/evaluation_t04_test: Crash
 co19/Language/Expressions/Type_Test/evaluation_t07_test: Crash
 co19/Language/Expressions/Type_Test/is_not_equivalent_t01_test: RuntimeError
 co19/Language/Expressions/Type_Test/syntax_t04_test: Crash
+co19/Language/Expressions/Unary_Expressions/syntax_t04_test: Crash
 co19/Language/Expressions/Unary_Expressions/syntax_t10_test: RuntimeError
 co19/Language/Expressions/Unary_Expressions/syntax_t17_test: Crash
 co19/Language/Expressions/Unary_Expressions/syntax_t18_test: Crash
@@ -335,7 +327,6 @@ co19/Language/Generics/scope_t03_test: Crash
 co19/Language/Libraries_and_Scripts/Exports/reexport__itself_t02_test: Crash
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t02_test: RuntimeError
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t06_test: Crash
-co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t18_test: RuntimeError
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t27_test: Crash
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t28_test: Crash
 co19/Language/Libraries_and_Scripts/Imports/same_name_t02_test: Crash
@@ -343,7 +334,7 @@ co19/Language/Libraries_and_Scripts/Imports/same_name_t05_test: Crash
 co19/Language/Libraries_and_Scripts/Imports/same_name_t12_test: Crash
 co19/Language/Libraries_and_Scripts/Imports/same_name_t15_test: Crash
 co19/Language/Libraries_and_Scripts/Imports/same_name_t19_test: Crash
-co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t02_test: RuntimeError
+co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t02_test: Crash
 co19/Language/Libraries_and_Scripts/private_access_t01_test: RuntimeError
 co19/Language/Libraries_and_Scripts/private_access_t02_test: Crash
 co19/Language/Mixins/Mixin_Application/abstract_t01_test: Crash
@@ -365,8 +356,8 @@ co19/Language/Overview/Privacy/private_and_public_t06_test: Crash
 co19/Language/Overview/Privacy/private_and_public_t08_test: RuntimeError
 co19/Language/Overview/Privacy/private_and_public_t21_test: RuntimeError
 co19/Language/Statements/For/For_Loop/execution_t09_test: Crash
-co19/Language/Statements/Labels/scope_t01_test: RuntimeError
-co19/Language/Statements/Labels/scope_t07_test: RuntimeError
+co19/Language/Statements/Labels/scope_t01_test: Crash
+co19/Language/Statements/Labels/scope_t07_test: Crash
 co19/Language/Statements/Try/malformed_type_t01_test: Crash
 co19/Language/Statements/Try/malformed_type_t02_test: Crash
 co19/Language/Statements/Try/malformed_type_t03_test: Crash
@@ -432,8 +423,6 @@ co19/Language/Types/Type_Declarations/function_type_alias_t03_test: Crash
 co19/Language/Types/Type_Declarations/self_reference_t05_test: Crash
 co19/Language/Types/Type_Declarations/self_reference_t06_test: Crash
 co19/Language/Types/Type_Declarations/self_reference_t07_test: Crash
-co19/Language/Variables/constant_initialization_t03_test: RuntimeError
-co19/Language/Variables/constant_variable_t09_test: RuntimeError
 co19/LibTest/async/DeferredLibrary/DeferredLibrary_A01_t01_test: RuntimeError
 co19/LibTest/async/Stream/Stream_A01_t01_test: Crash
 co19/LibTest/async/Stream/contains_A02_t01_test: Crash

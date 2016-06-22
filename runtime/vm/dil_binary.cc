@@ -152,6 +152,7 @@ enum Tag {
   kSuperInitializer = 9,
   kRedirectingInitializer = 10,
 
+  kConstStaticInvocation = 18,
   kInvalidExpression = 19,
   kVariableGet = 20,
   kVariableSet = 21,
@@ -1297,7 +1298,9 @@ Expression* Expression::ReadFrom(Reader* reader) {
     case kSuperMethodInvocation:
       return SuperMethodInvocation::ReadFrom(reader);
     case kStaticInvocation:
-      return StaticInvocation::ReadFrom(reader);
+      return StaticInvocation::ReadFrom(reader, false);
+    case kConstStaticInvocation:
+      return StaticInvocation::ReadFrom(reader, true);
     case kConstructorInvocation:
       return ConstructorInvocation::ReadFrom(reader, false);
     case kConstConstructorInvocation:
@@ -1574,18 +1577,18 @@ void SuperMethodInvocation::WriteTo(Writer* writer) {
   arguments_->WriteTo(writer);
 }
 
-StaticInvocation* StaticInvocation::ReadFrom(Reader* reader) {
+StaticInvocation* StaticInvocation::ReadFrom(Reader* reader, bool is_const) {
   TRACE_READ_OFFSET();
 
   Member* member = Reference::ReadMemberFrom(reader);
   Arguments* args = Arguments::ReadFrom(reader);
 
-  return new StaticInvocation(Procedure::Cast(member), args);
+  return new StaticInvocation(Procedure::Cast(member), args, is_const);
 }
 
 void StaticInvocation::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kStaticInvocation);
+  writer->WriteTag(is_const_ ? kConstStaticInvocation : kStaticInvocation);
   Reference::WriteMemberTo(writer, procedure_);
   arguments_->WriteTo(writer);
 }
@@ -2251,7 +2254,7 @@ Catch* Catch::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   VariableScope<ReaderHelper> vars(reader->helper());
   Catch* c = new Catch();
-  c->guard_ = reader->ReadOptional<DartType>();
+  c->guard_ = DartType::ReadFrom(reader);
   c->exception_ = reader->ReadOptional<VariableDeclaration, VariableDeclarationImpl>();
   c->stack_trace_ = reader->ReadOptional<VariableDeclaration, VariableDeclarationImpl>();
   c->body_ = Statement::ReadFrom(reader);
@@ -2261,7 +2264,7 @@ Catch* Catch::ReadFrom(Reader* reader) {
 void Catch::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   VariableScope<WriterHelper> vars(writer->helper());
-  writer->WriteOptional<DartType>(guard_);
+  guard_->WriteTo(writer);
   writer->WriteOptionalStatic<VariableDeclaration, VariableDeclarationImpl>(exception_);
   writer->WriteOptionalStatic<VariableDeclaration, VariableDeclarationImpl>(stack_trace_);
   body_->WriteTo(writer);
@@ -2309,7 +2312,7 @@ VariableDeclaration* VariableDeclaration::ReadFromImpl(Reader* reader) {
   VariableDeclaration* decl = new VariableDeclaration();
   decl->flags_ = reader->ReadFlags();
   decl->name_ = Reference::ReadStringFrom(reader);
-  decl->type_ = reader->ReadOptional<DartType>();
+  decl->type_ = DartType::ReadFrom(reader);
   decl->initializer_ = reader->ReadOptional<Expression>();
   reader->helper()->variables().Push(decl);
   return decl;
@@ -2325,7 +2328,7 @@ void VariableDeclaration::WriteToImpl(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
-  writer->WriteOptional<DartType>(type_);
+  type_->WriteTo(writer);
   writer->WriteOptional<Expression>(initializer_);
   writer->helper()->variables().Push(this);
 }
@@ -2555,7 +2558,7 @@ FunctionNode* FunctionNode::ReadFrom(Reader* reader) {
   function->required_parameter_count_ = reader->ReadUInt();
   function->positional_parameters().ReadFromStatic<VariableDeclarationImpl>(reader);
   function->named_parameters().ReadFromStatic<VariableDeclarationImpl>(reader);
-  function->return_type_ = reader->ReadOptional<DartType>();
+  function->return_type_ = DartType::ReadFrom(reader);
 
   VariableScope<ReaderHelper> vars(reader->helper());
   function->body_ = reader->ReadOptional<Statement>();
@@ -2569,7 +2572,7 @@ void FunctionNode::WriteTo(Writer* writer) {
   writer->WriteUInt(required_parameter_count());
   positional_parameters().WriteToStatic<VariableDeclarationImpl>(writer);
   named_parameters().WriteToStatic<VariableDeclarationImpl>(writer);
-  writer->WriteOptional<DartType>(return_type_);
+  return_type_->WriteTo(writer);
 
   VariableScope<WriterHelper> vars(writer->helper());
   writer->WriteOptional<Statement>(body_);

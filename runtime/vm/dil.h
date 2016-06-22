@@ -589,7 +589,8 @@ class Procedure : public Member {
   enum Flags {
     kFlagStatic = 1 << 0,
     kFlagAbstract = 1 << 1,
-    kFlagExternal = 1 << 2
+    kFlagExternal = 1 << 2,
+    kFlagConst = 1 << 3,  // Only for external const factories.
   };
 
   // Keep in sync with package:dynamo/lib/ast.dart:ProcedureKind
@@ -597,8 +598,6 @@ class Procedure : public Member {
     kMethod,
     kGetter,
     kSetter,
-    kIndexGetter,
-    kIndexSetter,
     kOperator,
     kFactory,
 
@@ -622,6 +621,7 @@ class Procedure : public Member {
   bool IsStatic() { return (flags_ & kFlagStatic) == kFlagStatic; }
   bool IsAbstract() { return (flags_ & kFlagAbstract) == kFlagAbstract; }
   bool IsExternal() { return (flags_ & kFlagExternal) == kFlagExternal; }
+  bool IsConst() { return (flags_ & kFlagConst) == kFlagConst; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Procedure);
@@ -1078,11 +1078,13 @@ class SuperMethodInvocation : public Expression {
 
 class StaticInvocation : public Expression {
  public:
-  static StaticInvocation* ReadFrom(Reader* reader);
+  static StaticInvocation* ReadFrom(Reader* reader, bool is_const);
   virtual void WriteTo(Writer* writer);
 
-  explicit StaticInvocation(Procedure* procedure, Arguments* args)
-      : procedure_(procedure), arguments_(args) {}
+  explicit StaticInvocation(Procedure* procedure,
+                            Arguments* args,
+                            bool is_const)
+      : procedure_(procedure), arguments_(args), is_const_(is_const) {}
   ~StaticInvocation();
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
@@ -1090,6 +1092,7 @@ class StaticInvocation : public Expression {
 
   Procedure* procedure() { return procedure_; }
   Arguments* arguments() { return arguments_; }
+  bool is_const() { return is_const_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(StaticInvocation);
@@ -1097,6 +1100,7 @@ class StaticInvocation : public Expression {
 
   Ref<Procedure> procedure_;
   Child<Arguments> arguments_;
+  bool is_const_;
 };
 
 class ConstructorInvocation : public Expression {
