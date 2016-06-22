@@ -1164,8 +1164,7 @@ void ConstantEvaluator::VisitNullLiteral(NullLiteral* node) {
 
 
 void ConstantEvaluator::VisitStringLiteral(StringLiteral* node) {
-  result_ = H.DartString(node->value(), Heap::kOld).raw();
-  result_ = Canonicalize(result_);
+  result_ = H.DartSymbol(node->value()).raw();
 }
 
 
@@ -2879,7 +2878,7 @@ void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
 
 
 void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
-  fragment_ = Fragment(Constant(H.DartString(node->value(), Heap::kOld)));
+  fragment_ = Constant(H.DartSymbol(node->value()));
 }
 
 
@@ -3018,17 +3017,21 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
     Field* dil_field = Field::Cast(target);
     const dart::Field& field =
         dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
-    const dart::Class& owner = dart::Class::Handle(Z, field.Owner());
-    const dart::String& getter_name =
-        H.DartGetterName(dil_field->name()->string());
-    const Function& getter =
-        Function::ZoneHandle(Z, owner.LookupStaticFunction(getter_name));
-    if (getter.IsNull() || !field.has_initializer()) {
-      Fragment instructions = Constant(field);
-      fragment_ = instructions + LoadStaticField();
+    if (dil_field->IsConst()) {
+      fragment_ = Constant(constant_evaluator_.EvaluateExpression(node));
     } else {
-      // TODO(kmillikin): figure out how to trigger this case and add tests.
-      fragment_ = StaticCall(getter, 0);
+      const dart::Class& owner = dart::Class::Handle(Z, field.Owner());
+      const dart::String& getter_name =
+          H.DartGetterName(dil_field->name()->string());
+      const Function& getter =
+          Function::ZoneHandle(Z, owner.LookupStaticFunction(getter_name));
+      if (getter.IsNull() || !field.has_initializer()) {
+        Fragment instructions = Constant(field);
+        fragment_ = instructions + LoadStaticField();
+      } else {
+        // TODO(kmillikin): figure out how to trigger this case and add tests.
+        fragment_ = StaticCall(getter, 0);
+      }
     }
   } else {
     Procedure* procedure = Procedure::Cast(target);

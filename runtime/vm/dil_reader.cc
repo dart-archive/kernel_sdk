@@ -56,7 +56,7 @@ class SimpleExpressionConverter : public ExpressionVisitor {
 
   virtual void VisitStringLiteral(StringLiteral* node) {
     is_simple_ = true;
-    simple_value_ = &H.DartString(node->value(), Heap::kOld);
+    simple_value_ = &H.DartSymbol(node->value());
   }
 
   bool IsSimple(Expression* expression) {

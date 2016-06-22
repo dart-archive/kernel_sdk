@@ -310,17 +310,6 @@ co19/Language/Expressions/Shift/syntax_t11_test: Crash
 co19/Language/Expressions/Shift/syntax_t12_test: Crash
 co19/Language/Expressions/Strings/String_Interpolation/syntax_t05_test: Crash
 co19/Language/Expressions/Strings/adjacent_strings_t02_test: RuntimeError
-co19/Language/Expressions/Strings/escape_backspace_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_carriage_return_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_characters_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_form_feed_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_hex_digit_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_newline_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_tab_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_unicode_scalar_value_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_unicode_t01_test: RuntimeError
-co19/Language/Expressions/Strings/escape_vertical_tab_t01_test: RuntimeError
-co19/Language/Expressions/Strings/raw_string_t01_test: RuntimeError
 co19/Language/Expressions/Symbols/syntax_t01_test: RuntimeError
 co19/Language/Expressions/Symbols/syntax_t02_test: RuntimeError
 co19/Language/Expressions/Type_Cast/evaluation_t01_test: RuntimeError
