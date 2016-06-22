@@ -462,6 +462,9 @@ class Listener {
   }
 
   Token synthesizeString(Token token) {
+    if (token is UnterminatedToken) {
+      throw new ParserError(token.assertionMessage);
+    }
     return synthesizeStringToken(token, Precedence.STRING_INFO);
   }
 
