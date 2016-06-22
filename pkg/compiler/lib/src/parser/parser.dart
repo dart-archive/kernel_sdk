@@ -1609,11 +1609,7 @@ class Parser {
     token = parseInitializersOpt(token);
     bool previousAsyncAwaitKeywordsEnabled = asyncAwaitKeywordsEnabled;
     token = parseAsyncModifier(token);
-    if (optional('=', token)) {
-      token = parseRedirectingFactoryBody(token);
-    } else {
-      token = parseFunctionBody(token, false, true);
-    }
+    token = parseFunctionBody(token, false, true);
     asyncAwaitKeywordsEnabled = previousAsyncAwaitKeywordsEnabled;
     listener.endFunction(getOrSet, token);
     return token.next;
@@ -1696,6 +1692,18 @@ class Parser {
       return token;
     } else if (optional('=>', token)) {
       Token begin = token;
+      token = parseExpression(token.next);
+      if (!isExpression) {
+        expectSemicolon(token);
+        listener.endReturnStatement(true, begin, token);
+      } else {
+        listener.endReturnStatement(true, begin, null);
+      }
+      return token;
+    } else if (optional('=', token)) {
+      Token begin = token;
+      // Recover from a bad factory method.
+      listener.reportError(token, MessageKind.BODY_EXPECTED);
       token = parseExpression(token.next);
       if (!isExpression) {
         expectSemicolon(token);

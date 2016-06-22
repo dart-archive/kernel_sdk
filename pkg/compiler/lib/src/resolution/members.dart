@@ -3563,6 +3563,8 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
           node, MessageKind.FACTORY_REDIRECTION_IN_NON_FACTORY);
       reporter.reportHintMessage(
           enclosingElement, MessageKind.MISSING_FACTORY_KEYWORD);
+      resolveRedirectingFactory(node, inConstContext: false);
+      return const NoneResult();
     }
 
     ConstructorElementX constructor = enclosingElement;

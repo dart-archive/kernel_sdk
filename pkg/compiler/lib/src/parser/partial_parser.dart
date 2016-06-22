@@ -146,8 +146,9 @@ class PartialParser extends Parser {
       if (identical(value, '=>')) {
         token = parseExpression(token.next);
         expectSemicolon(token);
-      } else if (value == '=') {
-        token = parseRedirectingFactoryBody(token);
+      } else if (identical(value, '=')) {
+        listener.reportError(token, MessageKind.BODY_EXPECTED);
+        token = parseExpression(token.next);
         expectSemicolon(token);
       } else {
         token = skipBlock(token);
