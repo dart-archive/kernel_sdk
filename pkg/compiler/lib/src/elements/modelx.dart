@@ -1406,6 +1406,8 @@ class VariableList implements DeclarationSite {
   }
 
   DartType computeType(Element element, Resolution resolution) => type;
+
+  bool get isMalformed => false;
 }
 
 abstract class ConstantVariableMixin implements VariableElement {
@@ -1583,6 +1585,8 @@ class FieldElementX extends VariableElementX
   }
 
   MemberElement get memberContext => this;
+
+  bool get isMalformed => variables.isMalformed;
 
   void reuseElement() {
     super.reuseElement();
