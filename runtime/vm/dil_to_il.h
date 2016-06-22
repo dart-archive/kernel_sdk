@@ -269,10 +269,7 @@ class FlowGraphBuilder : public TreeVisitor {
 
   virtual void VisitDefaultTreeNode(TreeNode* node) { UNREACHABLE(); }
 
-  virtual void VisitInvalidExpression(InvalidExpression* node) {
-    FATAL("Invalid expression not implemented");
-  }
-
+  virtual void VisitInvalidExpression(InvalidExpression* node);
   virtual void VisitNullLiteral(NullLiteral* node);
   virtual void VisitBoolLiteral(BoolLiteral* node);
   virtual void VisitIntLiteral(IntLiteral* node);
@@ -307,6 +304,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitThrow(Throw* node);
   virtual void VisitRethrow(Rethrow* node);
 
+  virtual void VisitInvalidStatement(InvalidStatement* node);
   virtual void VisitEmptyStatement(EmptyStatement* node);
   virtual void VisitBlock(Block* node);
   virtual void VisitReturnStatement(ReturnStatement* node);

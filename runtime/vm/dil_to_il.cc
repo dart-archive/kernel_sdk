@@ -2811,6 +2811,11 @@ ArgumentArray FlowGraphBuilder::GetArguments(int count) {
 }
 
 
+void FlowGraphBuilder::VisitInvalidExpression(InvalidExpression* node) {
+  H.ReportError("Invalid expressions not implemented yet!");
+}
+
+
 void FlowGraphBuilder::VisitNullLiteral(NullLiteral* node) {
   fragment_ = Fragment(Constant(Instance::ZoneHandle(Z, Instance::null())));
 }
@@ -3596,6 +3601,11 @@ Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
     argument_names->SetAt(i, H.DartSymbol(named_expression->name()));
   }
   return instructions;
+}
+
+
+void FlowGraphBuilder::VisitInvalidStatement(InvalidStatement* node) {
+  H.ReportError("Invalid statements not implemented yet!");
 }
 
 
