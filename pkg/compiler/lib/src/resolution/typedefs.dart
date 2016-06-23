@@ -105,6 +105,11 @@ class TypedefCyclicVisitor extends BaseDartTypeVisitor {
             new MalformedType(erroneousElement, typedefElement.aliasCache);
         element.hasBeenCheckedForCycles = true;
       }
+    } else if (typedefElement.isMalformed) {
+      ErroneousElementX erroneousElement = new ErroneousElementX(
+          null, null, typedefElement.name, typedefElement);
+      element.aliasCache = new MalformedType(erroneousElement, type);
+      element.hasBeenCheckedForCycles = true;
     } else {
       seenTypedefs = seenTypedefs.prepend(typedefElement);
       seenTypedefsCount++;
