@@ -76,11 +76,9 @@ abstract class SourceFileProvider implements CompilerInput {
         .then((HttpClientRequest request) => request.close())
         .then((HttpClientResponse response) {
       if (response.statusCode != HttpStatus.OK) {
-        return response.listen(null).asFuture().then((_) {
-          String msg = 'Failure getting $resourceUri: '
-              '${response.statusCode} ${response.reasonPhrase}';
-          throw msg;
-        });
+        String msg = 'Failure getting $resourceUri: '
+            '${response.statusCode} ${response.reasonPhrase}';
+        throw msg;
       }
       return response.toList();
     }).then((List<List<int>> splitContent) {
@@ -98,7 +96,7 @@ abstract class SourceFileProvider implements CompilerInput {
           resourceUri, resourceUri.toString(), result);
       return result;
     }).whenComplete(() {
-      client.close();
+      client.close(force: true);
     });
   }
 
