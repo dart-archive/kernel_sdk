@@ -494,10 +494,16 @@ dart::Class& DilReader::LookupClass(Class* klass) {
   if (!classes_.Lookup(klass, &handle)) {
     dart::Library& library = LookupLibrary(klass->parent());
     const dart::String& name = H.DartClassName(klass);
-    if (klass->parent()->IsCorelibrary()) {
-      handle = &dart::Class::Handle(Z, library.LookupClass(name));
-      classes_.Insert(klass, handle);
-      handle->EnsureIsFinalized(thread_);
+    handle = &dart::Class::Handle(Z, library.LookupClass(name));
+    if (!handle->IsNull()) {
+      if (klass->parent()->IsCorelibrary()) {
+        classes_.Insert(klass, handle);
+        handle->EnsureIsFinalized(thread_);
+      } else {
+        // We only generate one mixin application for same base/mixin class
+        // inside one library.
+        ASSERT(klass->IsMixinClass());
+      }
     } else {
       TokenPosition pos(0);
       Script& script = Script::Handle(Z, Script::New(H.DartString(""),

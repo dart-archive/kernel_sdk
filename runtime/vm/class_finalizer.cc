@@ -2231,12 +2231,25 @@ void ClassFinalizer::ApplyMixinMembers(const Class& cls) {
   const GrowableObjectArray& cloned_funcs =
       GrowableObjectArray::Handle(zone, GrowableObjectArray::New());
 
-  CreateForwardingConstructors(cls, mixin_cls, cloned_funcs);
-
   Array& functions = Array::Handle(zone);
   Function& func = Function::Handle(zone);
+
   // The parser creates the mixin application class with no functions.
-  ASSERT((functions = cls.functions(), functions.Length() == 0));
+  // BUT: The DIL frontends will generate mixin classes with only constructors
+  // inside them, which forward to the base class constructors.
+  //
+  // => We generate the constructors if they are not already there.
+  functions = cls.functions();
+  if (functions.Length() == 0) {
+    CreateForwardingConstructors(cls, mixin_cls, cloned_funcs);
+  } else {
+    for (intptr_t i = 0; i < functions.Length(); i++) {
+      func ^= functions.At(i);
+      ASSERT(func.dil_function() != 0);
+      cloned_funcs.Add(func);
+    }
+  }
+
   // Now clone the functions from the mixin class.
   functions = mixin_cls.functions();
   const intptr_t num_functions = functions.Length();

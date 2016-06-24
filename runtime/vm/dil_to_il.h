@@ -106,7 +106,7 @@ class TranslationHelper {
   const dart::String& DartSetterName(String* content);
   const dart::String& DartGetterName(String* content);
   const dart::String& DartInitializerName(String* content);
-  const dart::String& DartFactoryName(String* klass_name, String* method_name);
+  const dart::String& DartFactoryName(Class* klass, String* method_name);
 
   RawLibrary* LookupLibraryByDilLibrary(Library* library);
   RawClass* LookupClassByDilClass(Class* klass);

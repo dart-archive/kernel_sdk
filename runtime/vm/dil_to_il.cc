@@ -919,7 +919,7 @@ const dart::String& TranslationHelper::DartClassName(dil::Class* dil_klass) {
 
 const dart::String& TranslationHelper::DartConstructorName(Constructor* node) {
   Class* klass = Class::Cast(node->parent());
-  return DartFactoryName(klass->name(), node->name()->string());  // NOLINT
+  return DartFactoryName(klass, node->name()->string());  // NOLINT
 }
 
 
@@ -930,7 +930,7 @@ const dart::String& TranslationHelper::DartProcedureName(Procedure* procedure) {
     return DartGetterName(procedure->name()->string());
   } else if (procedure->kind() == Procedure::kFactory) {
     return DartFactoryName(
-        Class::Cast(procedure->parent())->name(),
+        Class::Cast(procedure->parent()),
         procedure->name()->string());
   } else {
     return DartSymbol(procedure->name()->string());
@@ -970,10 +970,10 @@ const dart::String& TranslationHelper::DartInitializerName(String* content) {
 }
 
 
-const dart::String& TranslationHelper::DartFactoryName(String* klass_name,
+const dart::String& TranslationHelper::DartFactoryName(Class* klass,
                                                        String* method_name) {
   // We build a String which looks like <classname>.<constructor-name>.
-  dart::String& temp = DartString(klass_name);
+  dart::String& temp = dart::String::Handle(Z, DartClassName(klass).raw());
   temp = dart::String::Concat(temp, Symbols::Dot());
   temp = dart::String::Concat(temp, DartString(method_name));
   return dart::String::ZoneHandle(Z, dart::Symbols::New(temp));
@@ -993,7 +993,7 @@ dart::RawLibrary* TranslationHelper::LookupLibraryByDilLibrary(
 dart::RawClass* TranslationHelper::LookupClassByDilClass(Class* dil_klass) {
   dart::RawClass* klass = NULL;
 
-  const dart::String& class_name = DartString(dil_klass->name());
+  const dart::String& class_name = DartClassName(dil_klass);
   Library* dil_library = Library::Cast(dil_klass->parent());
   dart::Library& library = dart::Library::Handle(Z,
       LookupLibraryByDilLibrary(dil_library));
