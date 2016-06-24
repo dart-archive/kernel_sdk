@@ -6,28 +6,23 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 
-import '../../third_party/kernel/bin/dartk.dart' as dartk;
-import 'package:path/path.dart' as path;
-
 main(args) async {
-  if (args.length != 1) {
+  if (args.length != 3) {
     print('Usage: ${Platform.executable} ${Platform.script} '
-          '<instructions.txt>');
+          '<instructions.txt> <batch-runner.dart> <batch-runner-package-option>');
     exit(1);
   }
 
   // Partition [lines] into 32 roughly equal sets and run 32 parallel batch
   // runners.
   List<String> lines = new File(args[0]).readAsLinesSync();
+  String runner = args[1];
+  String packageOption = args[2];
 
-  String cwd = path.dirname(Platform.script.toFilePath());
   var partitions = partition(lines, 32);
   var futures = [];
   for (var partition in partitions) {
-    var arguments = [
-      '--package-root=${Platform.packageRoot}',
-      '$cwd/compile_co19_batch.dart'
-    ];
+    var arguments = [packageOption, runner];
 
     var process = await Process.start(Platform.executable, arguments);
     for (var line in partition) process.stdin.writeln(line);

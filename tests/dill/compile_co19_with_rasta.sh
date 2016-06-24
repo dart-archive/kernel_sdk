@@ -3,8 +3,8 @@
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 SDK_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )"
 INSTRUCTIONS=/tmp/batch_compilation_instructions.txt
-KERNEL_DIR=$SDK_ROOT/third_party/kernel
-PKG_OPTION=--package-root=$KERNEL_DIR/packages
+RASTA_DIR=$SDK_ROOT/third_party/rasta
+PKG_OPTION=--packages=$RASTA_DIR/bin/.packages
 
 rm -f $INSTRUCTIONS
 touch $INSTRUCTIONS
@@ -24,4 +24,4 @@ for co19dir in $(echo LibTest Language); do
 done
 
 echo "Generating Kernel IR for tests"
-dart $CURRENT_DIR/compile_co19.dart $INSTRUCTIONS $CURRENT_DIR/compile_co19_batch.dart $PKG_OPTION
+dart $CURRENT_DIR/compile_co19.dart $INSTRUCTIONS $CURRENT_DIR/compile_co19_with_rasta_batch.dart $PKG_OPTION

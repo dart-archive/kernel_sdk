@@ -5,8 +5,7 @@
 import 'dart:io';
 import 'dart:convert';
 
-import '../../third_party/kernel/bin/dartk.dart' as dartk;
-import 'package:path/path.dart' as path;
+import '../../third_party/rasta/bin/rastak.dart' as rastak;
 
 main(args) async {
   var lines = await stdin
@@ -15,7 +14,6 @@ main(args) async {
       .toList();
 
   // We use the SDK from the dart executable we were run on.
-  String dartSdk = path.dirname(path.dirname(Platform.resolvedExecutable));
   for (var line in lines) {
     var tuple = line.trim().split(' ');
     if (tuple.length > 0) {
@@ -24,10 +22,13 @@ main(args) async {
 
       print('Handling $dartFile');
       if (isPositiveTest(dartFile)) {
-        // Suprisingly enough, running dartk is synchronous from start to end!
         try {
-          dartk.main([dartFile,
-              '--format=bin', '--link', '--sdk=$dartSdk', '--out=$dillFile']);
+          // As long as rastak has a memory leak we can't do it in this process.
+          var out = await Process.run(Platform.executable,
+              ['third_party/rasta/bin/rastak.dart', dartFile, dillFile]);
+          print(out.stdout);
+          print(out.stderr);
+          //await rastak.main([dartFile, dillFile], null);
         } catch (e, s) {
           print("Failed to compile $dartFile\nerror:\n$e\nstack:\n$s\n");
         }
