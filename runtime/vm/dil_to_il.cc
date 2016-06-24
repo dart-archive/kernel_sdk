@@ -2544,10 +2544,21 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfNoSuchMethodDispatcher(
   body += IntConstant(descriptor.Count());
   body += CreateArray();
   LocalVariable* array = MakeTemporary();
-  for (int i = 0; i < descriptor.Count(); ++i) {
+  for (int i = 0; i < descriptor.PositionalCount(); ++i) {
     body += LoadLocal(array);
     body += IntConstant(i);
     body += LoadLocal(scope->VariableAt(i));
+    body += StoreIndexed(kArrayCid);
+    body += Drop();
+  }
+  dart::String& name = dart::String::Handle(Z);
+  for (int i = 0; i < descriptor.NamedCount(); ++i) {
+    int parameter_index = descriptor.PositionalCount() + i;
+    name = descriptor.NameAt(i);
+    name = dart::Symbols::New(name);
+    body += LoadLocal(array);
+    body += IntConstant(descriptor.PositionAt(i));
+    body += LoadLocal(scope->VariableAt(parameter_index));
     body += StoreIndexed(kArrayCid);
     body += Drop();
   }
@@ -2655,10 +2666,6 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfInvokeFieldDispatcher(
 
   // Push all arguments onto the stack.
   intptr_t pos = 1;
-  for (; pos < descriptor.PositionalCount(); pos++) {
-    body += LoadLocal(scope->VariableAt(pos));
-    body += PushArgument();
-  }
   for (; pos < descriptor.Count(); pos++) {
     body += LoadLocal(scope->VariableAt(pos));
     body += PushArgument();
@@ -3120,6 +3127,7 @@ void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
     const dart::String& getter_name = H.DartGetterName(
         node->target()->name()->string());
     target = Resolver::ResolveDynamicAnyArgs(klass, getter_name);
+    ASSERT(!target.IsNull());
   } else {
     ASSERT(node->target()->IsField());
     const dart::String& getter_name = H.DartGetterName(
