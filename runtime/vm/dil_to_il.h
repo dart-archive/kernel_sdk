@@ -410,6 +410,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment StoreLocal(LocalVariable* variable);
   Fragment StoreStaticField(const dart::Field& field);
   Fragment StringInterpolate();
+  Fragment ThrowNoSuchMethodError();
 
   dart::RawFunction* LookupMethodByMember(
       Member* target, const dart::String& method_name);

@@ -2039,6 +2039,43 @@ Fragment FlowGraphBuilder::StringInterpolate() {
 }
 
 
+Fragment FlowGraphBuilder::ThrowNoSuchMethodError() {
+  const dart::Class& klass = dart::Class::ZoneHandle(Z,
+      dart::Library::LookupCoreClass(Symbols::NoSuchMethodError()));
+  ASSERT(!klass.IsNull());
+  const dart::Function& throw_function = dart::Function::ZoneHandle(Z,
+      klass.LookupStaticFunctionAllowPrivate(Symbols::ThrowNew()));
+  ASSERT(!throw_function.IsNull());
+
+  Fragment instructions;
+
+  // Call NoSuchMethodError._throwNew static function.
+  instructions += NullConstant();
+  instructions += PushArgument();  // receiver
+
+  instructions += Constant(H.DartString("<unknown>", Heap::kOld));
+  instructions += PushArgument();  // memberName
+
+  instructions += IntConstant(-1);
+  instructions += PushArgument();  // invocation_type
+
+  instructions += NullConstant();
+  instructions += PushArgument();  // arguments
+
+  instructions += NullConstant();
+  instructions += PushArgument();  // argumentNames
+
+  instructions += NullConstant();
+  instructions += PushArgument();  // existingArgumentNames
+
+  instructions += StaticCall(throw_function, 6);
+  // Leave "result" on the stack since callers expect it to be there (even
+  // though the function will result in an exception).
+
+  return instructions;
+}
+
+
 dart::RawFunction* FlowGraphBuilder::LookupMethodByMember(
     Member* target, const dart::String& method_name) {
   Class* dil_klass = Class::Cast(target->parent());
@@ -2851,7 +2888,10 @@ ArgumentArray FlowGraphBuilder::GetArguments(int count) {
 
 
 void FlowGraphBuilder::VisitInvalidExpression(InvalidExpression* node) {
-  H.ReportError("Invalid expressions not implemented yet!");
+  // FIXME(kustermann): Once we have better error information we might need to
+  // make some invalid expressions not NSM errors but type/compile-time/...
+  // errors.
+  fragment_ = ThrowNoSuchMethodError();
 }
 
 
