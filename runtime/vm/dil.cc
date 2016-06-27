@@ -618,6 +618,7 @@ void Catch::AcceptTreeVisitor(TreeVisitor* visitor) {
   visitor->VisitCatch(this);
 }
 void Catch::VisitChildren(Visitor* visitor) {
+  if (guard() != NULL) guard()->AcceptDartTypeVisitor(visitor);
   if (exception() != NULL) visitor->VisitVariableDeclaration(exception());
   if (stack_trace() != NULL) visitor->VisitVariableDeclaration(stack_trace());
   body()->AcceptStatementVisitor(visitor);

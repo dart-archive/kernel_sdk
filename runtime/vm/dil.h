@@ -308,6 +308,10 @@ DIL_VISITORS_DO(DO)
   static klass* Cast(Node* node) {              \
     ASSERT(node == NULL || node->Is##klass());  \
     return static_cast<klass*>(node);           \
+  }                                             \
+                                                \
+  virtual Node::NodeType Type() {               \
+    return Node::kType##klass;                  \
   }
 
 #define DEFINE_IS_OPERATION(klass)            \
@@ -321,6 +325,14 @@ DIL_VISITORS_DO(DO)
 class Node {
  public:
   virtual ~Node();
+
+  enum NodeType {
+#define DO(name) kType##name,
+    DIL_ALL_NODES_DO(DO)
+#undef DO
+
+    kNumTypes
+  };
 
   DEFINE_ALL_IS_OPERATIONS();
   DEFINE_CASTING_OPERATIONS(Node);
