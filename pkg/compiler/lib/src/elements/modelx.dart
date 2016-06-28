@@ -2227,13 +2227,13 @@ abstract class ConstructorElementX extends FunctionElementX
     return this;
   }
 
-  InterfaceType get effectiveTargetType {
+  DartType get effectiveTargetType {
     assert(invariant(this, _effectiveTargetType != null,
         message: 'Effective target type has not yet been computed for $this.'));
     return _effectiveTargetType;
   }
 
-  InterfaceType computeEffectiveTargetType(InterfaceType newType) {
+  DartType computeEffectiveTargetType(InterfaceType newType) {
     if (!isRedirectingFactory) return newType;
     return effectiveTargetType.substByContext(newType);
   }
