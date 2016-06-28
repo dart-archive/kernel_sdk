@@ -14,6 +14,22 @@
 namespace dart {
 namespace dil {
 
+class DilReader;
+
+class BuildingTranslationHelper : public TranslationHelper {
+ public:
+  BuildingTranslationHelper(
+      DilReader* reader, dart::Zone* zone, Isolate* isolate)
+      : TranslationHelper(zone, isolate), reader_(reader) {}
+  virtual ~BuildingTranslationHelper() {}
+
+  virtual RawLibrary* LookupLibraryByDilLibrary(Library* library);
+  virtual RawClass* LookupClassByDilClass(Class* klass);
+
+ private:
+  DilReader* reader_;
+};
+
 template<typename DilType, typename VmType>
 class Mapping {
  public:
@@ -41,7 +57,7 @@ class DilReader {
       : thread_(dart::Thread::Current()),
         zone_(thread_->zone()),
         isolate_(thread_->isolate()),
-        translation_helper_(zone_, isolate_),
+        translation_helper_(this, zone_, isolate_),
         type_translator_(&translation_helper_, &active_class_),
         buffer_(buffer),
         buffer_length_(len) {}
@@ -58,6 +74,8 @@ class DilReader {
                                       bool is_closure);
 
  private:
+  friend class BuildingTranslationHelper;
+
   void ReadLibrary(Library* dil_library);
   void ReadPreliminaryClass(dart::Class* klass, Class* dil_klass);
   void ReadClass(const dart::Library& library, Class* dil_klass);
@@ -85,7 +103,7 @@ class DilReader {
   dart::Zone* zone_;
   dart::Isolate* isolate_;
   ActiveClass active_class_;
-  TranslationHelper translation_helper_;
+  BuildingTranslationHelper translation_helper_;
   DartTypeTranslator type_translator_;
 
   const uint8_t* buffer_;

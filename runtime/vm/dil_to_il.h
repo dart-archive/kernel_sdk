@@ -52,10 +52,16 @@ typedef ZoneGrowableArray<PushArgumentInstr*>* ArgumentArray;
 
 class ActiveClass {
  public:
-  ActiveClass() : dil_class(NULL), klass(NULL) {}
+  ActiveClass() : dil_class(NULL), klass(NULL), dil_function(NULL) {}
 
+  // The current enclosing dil class (if available, otherwise NULL).
   Class* dil_class;
+
+  // The current enclosing class (or the library top-level class).
   const dart::Class* klass;
+
+  // The current function.
+  FunctionNode* dil_function;
 };
 
 
@@ -82,11 +88,29 @@ class ActiveClassScope {
   const dart::Class* saved_class_;
 };
 
+class ActiveFunctionScope {
+ public:
+  ActiveFunctionScope(ActiveClass* active_class,
+                      FunctionNode* dil_function)
+    : active_class_(active_class) {
+    saved_function_ = active_class_->dil_function;
+    active_class_->dil_function = dil_function;
+  }
+  ~ActiveFunctionScope() {
+    active_class_->dil_function = saved_function_;
+  }
+
+ private:
+  ActiveClass* active_class_;
+  FunctionNode* saved_function_;
+};
+
 
 class TranslationHelper {
  public:
   TranslationHelper(dart::Zone* zone, Isolate* isolate)
       : zone_(zone), isolate_(isolate) {}
+  virtual ~TranslationHelper() {}
 
   Zone* zone() { return zone_; }
 
@@ -108,13 +132,19 @@ class TranslationHelper {
   const dart::String& DartInitializerName(String* content);
   const dart::String& DartFactoryName(Class* klass, String* method_name);
 
-  RawLibrary* LookupLibraryByDilLibrary(Library* library);
-  RawClass* LookupClassByDilClass(Class* klass);
+  // A subclass overrides these when reading in the DIL program in order to
+  // support recursive type expressions (e.g. for "implements X" ...
+  // annotations).
+  virtual RawLibrary* LookupLibraryByDilLibrary(Library* library);
+  virtual RawClass* LookupClassByDilClass(Class* klass);
+
   RawField* LookupFieldByDilField(Field* field);
   RawFunction* LookupStaticMethodByDilProcedure(Procedure* procedure);
   RawFunction* LookupConstructorByDilConstructor(Constructor* constructor);
   dart::RawFunction* LookupConstructorByDilConstructor(
       const dart::Class& owner, Constructor* constructor);
+
+  dart::Type& GetCanonicalType(const dart::Class& klass);
 
   void ReportError(const char* format, ...);
   void ReportError(const Error& prev_error, const char* format, ...);
@@ -124,25 +154,41 @@ class TranslationHelper {
   dart::Isolate* isolate_;
 };
 
+// Regarding malformed types:
+// The spec says in section "19.1 Static Types" roughly:
+//
+//   A type T is malformed iff:
+//     * T does not denote a type in scope
+//     * T refers to a type parameter in a static member
+//     * T is a parametrized Type G<T1, ...> and G is malformed
+//     * T denotes declarations from multiple imports
+//
+// Any use of a malformed type gives rise to a static warning.  A malformed
+// type is then interpreted as dynamic by the static type checker and the
+// runtime unless explicitly specified otherwise.
 class DartTypeTranslator : public DartTypeVisitor {
  public:
-  explicit DartTypeTranslator(TranslationHelper* helper,
-                              ActiveClass* active_class,
-                              bool finalize = true)
+  DartTypeTranslator(TranslationHelper* helper,
+                     ActiveClass* active_class,
+                     bool finalize = true)
       : translation_helper_(*helper),
         active_class_(active_class),
         zone_(helper->zone()),
         result_(AbstractType::Handle(helper->zone())),
         finalize_(finalize) {}
 
-  AbstractType& result() { return result_; }
-
+  // Can return a malformed type.
   AbstractType& TranslateType(DartType* node);
 
+  // Can return a malformed type.
   AbstractType& TranslateTypeWithoutFinalization(DartType* node);
 
 
   virtual void VisitDefaultDartType(DartType* node) { UNREACHABLE(); }
+
+  virtual void VisitInvalidType(InvalidType* node);
+
+  virtual void VisitFunctionType(FunctionType* node);
 
   virtual void VisitTypeParameterType(TypeParameterType* node);
 
@@ -152,7 +198,18 @@ class DartTypeTranslator : public DartTypeVisitor {
 
   virtual void VisitVoidType(VoidType* node);
 
-  TypeArguments* TranslateTypeArguments(DartType** dart_types, int length);
+  // Will return `TypeArguments::null()` in case any of the arguments are
+  // malformed.
+  const TypeArguments& TranslateInstantiatedTypeArguments(
+      dart::Class* receiver_class, DartType** receiver_type_arguments,
+      intptr_t length);
+
+  // Will return `TypeArguments::null()` in case any of the arguments are
+  // malformed.
+  const TypeArguments& TranslateTypeArguments(
+      DartType** dart_types, intptr_t length);
+
+  const Type& ReceiverType(const dart::Class& klass);
 
  private:
   TranslationHelper& translation_helper_;
@@ -226,8 +283,6 @@ class ConstantEvaluator : public ExpressionVisitor {
   virtual void VisitLogicalExpression(LogicalExpression* node);
   virtual void VisitNot(Not* node);
 
-  // TODO(kustermann): Figure out what else we need here.
-
  private:
   RawInstance* Canonicalize(const Instance& instance);
 
@@ -262,7 +317,7 @@ class FlowGraphBuilder : public TreeVisitor {
                    ParsedFunction* parsed_function,
                    const ZoneGrowableArray<const ICData*>& ic_data_array,
                    intptr_t osr_id,
-                   int first_block_id = 1);
+                   intptr_t first_block_id = 1);
   virtual ~FlowGraphBuilder();
 
   FlowGraph* BuildGraph();
@@ -351,7 +406,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment TranslateExpression(Expression* expression);
 
   Fragment TranslateFinallyFinalizers(TryFinallyBlock* outer_finally,
-                                      int target_context_depth);
+                                      intptr_t target_context_depth);
 
   Fragment TranslateFunctionNode(FunctionNode* node, TreeNode* parent);
 
@@ -364,8 +419,13 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment PushContext(int size);
   Fragment PopContext();
 
+  Fragment LoadInstantiatorTypeArguments();
+  Fragment InstantiateTypeArguments(const TypeArguments& type_arguments);
+  Fragment TranslateInstantiatedTypeArguments(
+      const TypeArguments& type_arguments);
+
   Fragment AllocateContext(int size);
-  Fragment AllocateObject(const dart::Class& klass, int argument_count);
+  Fragment AllocateObject(const dart::Class& klass, intptr_t argument_count);
   Fragment AllocateObject(const dart::Class& klass,
                           const Function& closure_function);
   Fragment BooleanNegate();
@@ -374,7 +434,7 @@ class FlowGraphBuilder : public TreeVisitor {
                   TargetEntryInstr** otherwise_entry);
   Fragment BranchIfNull(TargetEntryInstr** then_entry,
                         TargetEntryInstr** otherwise_entry);
-  Fragment CatchBlockEntry(const Array& handler_types, int handler_index);
+  Fragment CatchBlockEntry(const Array& handler_types, intptr_t handler_index);
   Fragment TryCatch(int try_handler_index);
   Fragment CheckStackOverflow();
   Fragment CloneContext();
@@ -384,10 +444,10 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment IntConstant(int64_t value);
   Fragment InstanceCall(const dart::String& name,
                         Token::Kind kind,
-                        int argument_count);
+                        intptr_t argument_count);
   Fragment InstanceCall(const dart::String& name,
                         Token::Kind kind,
-                        int argument_count,
+                        intptr_t argument_count,
                         const Array& argument_names);
   Fragment ClosureCall(int argument_count, const Array& argument_names);
   Fragment ThrowException();
@@ -400,9 +460,9 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment NullConstant();
   Fragment PushArgument();
   Fragment Return();
-  Fragment StaticCall(const Function& target, int argument_count);
+  Fragment StaticCall(const Function& target, intptr_t argument_count);
   Fragment StaticCall(const Function& target,
-                      int argument_count,
+                      intptr_t argument_count,
                       const Array& argument_names);
   Fragment StoreIndexed(intptr_t class_id);
   Fragment StoreInstanceField(const dart::Field& field);
@@ -410,6 +470,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment StoreLocal(LocalVariable* variable);
   Fragment StoreStaticField(const dart::Field& field);
   Fragment StringInterpolate();
+  Fragment ThrowTypeError();
   Fragment ThrowNoSuchMethodError();
 
   dart::RawFunction* LookupMethodByMember(
@@ -424,7 +485,7 @@ class FlowGraphBuilder : public TreeVisitor {
   void AddVariable(VariableDeclaration* declaration, LocalVariable* variable);
   void AddParameter(VariableDeclaration* declaration,
                     LocalVariable* variable,
-                    int pos);
+                    intptr_t pos);
   dart::LocalVariable* LookupVariable(VariableDeclaration* var);
 
   void SetTempIndex(Definition* definition);
@@ -444,23 +505,23 @@ class FlowGraphBuilder : public TreeVisitor {
   intptr_t osr_id_;
   const ZoneGrowableArray<const ICData*>& ic_data_array_;
 
-  int next_block_id_;
-  int AllocateBlockId() { return next_block_id_++; }
+  intptr_t next_block_id_;
+  intptr_t AllocateBlockId() { return next_block_id_++; }
 
-  int next_function_id_;
-  int AllocateFunctionId() { return next_function_id_++; }
+  intptr_t next_function_id_;
+  intptr_t AllocateFunctionId() { return next_function_id_++; }
 
   std::map<VariableDeclaration*, LocalVariable*> locals_;
   std::map<TreeNode*, LocalScope*> scopes_;
   std::vector<FunctionScope> function_scopes_;
 
-  int context_depth_;
-  int loop_depth_;
+  intptr_t context_depth_;
+  intptr_t loop_depth_;
   unsigned handler_depth_;
   unsigned for_in_depth_;
   Fragment fragment_;
   Value* stack_;
-  int pending_argument_count_;
+  intptr_t pending_argument_count_;
 
   GraphEntryInstr* graph_entry_;
 
@@ -510,7 +571,7 @@ class FlowGraphBuilder : public TreeVisitor {
   // A chained list of try-catch blocks. Chaining and lookup is done by the
   // [TryCatchBlock] class.
   TryCatchBlock* try_catch_block_;
-  int next_used_try_index_;
+  intptr_t next_used_try_index_;
 
   // A chained list of catch blocks. Chaining and lookup is done by the
   // [CatchBlock] class.

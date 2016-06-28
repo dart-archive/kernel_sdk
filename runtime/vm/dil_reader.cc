@@ -9,6 +9,7 @@
 #include "vm/dart_api_impl.h"
 #include "vm/object_store.h"
 #include "vm/symbols.h"
+#include "vm/parser.h"
 
 namespace dart {
 namespace dil {
@@ -73,6 +74,15 @@ class SimpleExpressionConverter : public ExpressionVisitor {
   const dart::Instance* simple_value_;
 };
 
+RawLibrary* BuildingTranslationHelper::LookupLibraryByDilLibrary(
+    Library* library) {
+  return reader_->LookupLibrary(library).raw();
+}
+
+RawClass* BuildingTranslationHelper::LookupClassByDilClass(Class* klass) {
+  return reader_->LookupClass(klass).raw();
+}
+
 Object& DilReader::ReadProgram() {
   Program* program = ReadPrecompiledDilFromBuffer(buffer_, buffer_length_);
   if (program == NULL) {
@@ -84,7 +94,7 @@ Object& DilReader::ReadProgram() {
   Library* dil_main_library = Library::Cast(main->parent());
 
   intptr_t length = program->libraries().length();
-  for (int i = 0; i < length; i++) {
+  for (intptr_t i = 0; i < length; i++) {
     Library* dil_library = program->libraries()[i];
     ReadLibrary(dil_library);
   }
@@ -92,10 +102,10 @@ Object& DilReader::ReadProgram() {
   // We finalize classes after we've constructed all classes since we currently
   // don't construct them in pre-order of the class hierarchy (and finalization
   // of a class needs all of its superclasses to be finalized).
-  for (int i = 0; i < length; i++) {
+  for (intptr_t i = 0; i < length; i++) {
     Library* dil_library = program->libraries()[i];
     if (!dil_library->IsCorelibrary()) {
-      for (int i = 0; i < dil_library->classes().length(); i++) {
+      for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
         Class* dil_klass = dil_library->classes()[i];
         ClassFinalizer::FinalizeClass(LookupClass(dil_klass));
       }
@@ -130,7 +140,7 @@ void DilReader::ReadLibrary(Library* dil_library) {
     library.set_toplevel_class(toplevel_class);
 
     // Load toplevel fields.
-    for (int i = 0; i < dil_library->fields().length(); i++) {
+    for (intptr_t i = 0; i < dil_library->fields().length(); i++) {
       Field* dil_field = dil_library->fields()[i];
 
       const dart::String& name = H.DartSymbol(dil_field->name()->string());
@@ -147,13 +157,13 @@ void DilReader::ReadLibrary(Library* dil_library) {
     }
 
     // Load toplevel procedures.
-    for (int i = 0; i < dil_library->procedures().length(); i++) {
+    for (intptr_t i = 0; i < dil_library->procedures().length(); i++) {
       Procedure* dil_procedure = dil_library->procedures()[i];
       ReadProcedure(library, toplevel_class, dil_procedure);
     }
 
     // Load all classes.
-    for (int i = 0; i < dil_library->classes().length(); i++) {
+    for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
       Class* dil_klass = dil_library->classes()[i];
       ReadClass(library, dil_klass);
     }
@@ -163,39 +173,89 @@ void DilReader::ReadLibrary(Library* dil_library) {
 void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
   ActiveClassScope active_class_scope(&active_class_, dil_klass, klass);
 
+  // First setup the type parameters, so if any of the following code uses it
+  // (in a recursive way) we're fine.
+  TypeArguments& type_parameters =
+      TypeArguments::Handle(Z, TypeArguments::null());
+  intptr_t num_type_parameters = dil_klass->type_parameters().length();
+  if (num_type_parameters > 0) {
+    dart::TypeParameter& parameter = dart::TypeParameter::Handle(Z);
+    Type& null_bound = Type::Handle(Z, Type::null());
+
+    // Step a) Create array of [TypeParameter] objects (without bound).
+    type_parameters = TypeArguments::New(num_type_parameters);
+    for (intptr_t i = 0; i < num_type_parameters; i++) {
+      parameter = dart::TypeParameter::New(
+          *klass,
+          i,
+          H.DartSymbol(dil_klass->type_parameters()[i]->name()),
+          null_bound,
+          TokenPosition::kNoSource);
+      type_parameters.SetTypeAt(i, parameter);
+    }
+    klass->set_type_parameters(type_parameters);
+
+    // Step b) Fill in the bounds of all [TypeParameter]s.
+    for (intptr_t i = 0; i < num_type_parameters; i++) {
+      TypeParameter* dil_parameter = dil_klass->type_parameters()[i];
+      // There is no dynamic bound, only Object.
+      // TODO(kustermann): Should we fix this in the kernel IR generator?
+      if (dil_parameter->bound()->IsDynamicType()) {
+        parameter ^= type_parameters.TypeAt(i);
+        parameter.set_bound(Type::Handle(Z, I->object_store()->object_type()));
+      } else {
+        AbstractType& bound = T.TranslateTypeWithoutFinalization(
+            dil_parameter->bound());
+        if (bound.IsMalformedOrMalbounded()) {
+          bound = I->object_store()->object_type();
+        }
+
+        parameter ^= type_parameters.TypeAt(i);
+        parameter.set_bound(bound);
+      }
+    }
+  }
+
   if (dil_klass->IsNormalClass()) {
     NormalClass* dil_normal_class = NormalClass::Cast(dil_klass);
-    InterfaceType* super_class_type = dil_normal_class->super_class();
-    Class* dil_super_class = super_class_type->klass();
-    dart::Class& super_class = LookupClass(dil_super_class);
 
-    TypeArguments& type_args = TypeArguments::Handle(Z);
-    Type& super_type = Type::Handle(Z,
-        Type::New(super_class, type_args, TokenPosition::kNoSource));
+    // Set super type.
+    AbstractType& super_type = T.TranslateTypeWithoutFinalization(
+        dil_normal_class->super_class());
+    if (super_type.IsMalformed()) H.ReportError("Malformed super type");
     klass->set_super_type(super_type);
   } else {
     MixinClass* dil_mixin = MixinClass::Cast(dil_klass);
-    dart::Class& base = LookupClass(dil_mixin->first()->klass());
-    dart::Class& mixin = LookupClass(dil_mixin->second()->klass());
 
-    // Make types for [base] and [mixin]
-    TypeArguments& null_type_args = TypeArguments::Handle(Z);
-    Type& base_type = Type::Handle(Z,
-        Type::New(base, null_type_args, TokenPosition::kNoSource));
-    Type& mixin_type = Type::Handle(Z,
-        Type::New(mixin, null_type_args, TokenPosition::kNoSource));
+    // Set super type.
+    AbstractType& super_type = T.TranslateTypeWithoutFinalization(
+        dil_mixin->first());
+    if (super_type.IsMalformed()) H.ReportError("Malformed super type.");
+    klass->set_super_type(super_type);
 
     // Tell the rest of the system there is nothing to resolve.
-    base_type.SetIsResolved();
+    super_type.SetIsResolved();
 
-    // Build implemented interface types
-    const dart::Array& interfaces = dart::Array::Handle(Z, dart::Array::New(1));
-    interfaces.SetAt(0, mixin_type);
-
-    klass->set_super_type(base_type);
-    klass->set_mixin(mixin_type);
-    klass->set_interfaces(interfaces);
+    // Set mixin type.
+    AbstractType& mixin_type = T.TranslateTypeWithoutFinalization(
+        dil_mixin->second());
+    if (mixin_type.IsMalformed()) H.ReportError("Malformed mixin type.");
+    klass->set_mixin(Type::Cast(mixin_type));
   }
+
+  // Build implemented interface types
+  intptr_t interface_count = dil_klass->implemented_classes().length();
+  const dart::Array& interfaces =
+      dart::Array::Handle(Z, dart::Array::New(interface_count));
+  for (intptr_t i = 0; i < interface_count; i++) {
+    InterfaceType* dil_interface_type = dil_klass->implemented_classes()[i];
+    const AbstractType& type = T.TranslateTypeWithoutFinalization(
+        dil_interface_type);
+    if (type.IsMalformed()) H.ReportError("Malformed interface type.");
+    interfaces.SetAt(i, type);
+  }
+  klass->set_interfaces(interfaces);
+
   ClassFinalizer::FinalizeTypesInClass(*klass);
 }
 
@@ -207,9 +267,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
 
   TokenPosition pos(0);
 
-  Type& klass_type = Type::Handle(Type::NewNonParameterizedType(klass));
-
-  for (int i = 0; i < dil_klass->fields().length(); i++) {
+  for (intptr_t i = 0; i < dil_klass->fields().length(); i++) {
     Field* dil_field = dil_klass->fields()[i];
 
     const dart::String& name = H.DartSymbol(dil_field->name()->string());
@@ -232,8 +290,10 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     klass.AddField(field);
   }
 
-  for (int i = 0; i < dil_klass->constructors().length(); i++) {
+  for (intptr_t i = 0; i < dil_klass->constructors().length(); i++) {
     Constructor* dil_constructor = dil_klass->constructors()[i];
+    ActiveFunctionScope active_function_scope(
+        &active_class_, dil_constructor->function());
 
     const dart::String& name = H.DartConstructorName(dil_constructor);
     Function& function = dart::Function::ZoneHandle(Z, dart::Function::New(
@@ -248,13 +308,13 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
           pos));
     klass.AddFunction(function);
     function.set_dil_function(reinterpret_cast<intptr_t>(dil_constructor));
-    function.set_result_type(klass_type);
+    function.set_result_type(T.ReceiverType(klass));
     SetupFunctionParameters(H, T, klass, function, dil_constructor->function(),
                             true,    // is_method
                             false);  // is_closure
   }
 
-  for (int i = 0; i < dil_klass->procedures().length(); i++) {
+  for (intptr_t i = 0; i < dil_klass->procedures().length(); i++) {
     Procedure* dil_procedure = dil_klass->procedures()[i];
     ReadProcedure(library, klass, dil_procedure, dil_klass);
   }
@@ -265,6 +325,8 @@ void DilReader::ReadProcedure(const dart::Library& library,
                               Procedure* dil_procedure,
                               Class* dil_klass) {
   ActiveClassScope active_class_scope(&active_class_, dil_klass, &owner);
+  ActiveFunctionScope active_function_scope(
+      &active_class_, dil_procedure->function());
 
   const dart::String& name = H.DartProcedureName(dil_procedure);
   TokenPosition pos(0);
@@ -281,7 +343,6 @@ void DilReader::ReadProcedure(const dart::Library& library,
         pos));
   owner.AddFunction(function);
   function.set_dil_function(reinterpret_cast<intptr_t>(dil_procedure));
-  function.set_result_type(AbstractType::dynamic_type());
   function.set_is_debuggable(false);
 
   SetupFunctionParameters(H, T, owner, function, dil_procedure->function(),
@@ -355,7 +416,7 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
                                         bool is_closure) {
   ASSERT(!(is_method && is_closure));
   bool is_factory = function.IsFactory();
-  int extra_parameters = (is_method || is_closure || is_factory) ? 1 : 0;
+  intptr_t extra_parameters = (is_method || is_closure || is_factory) ? 1 : 0;
 
   function.set_num_fixed_parameters(
       extra_parameters + node->required_parameter_count());
@@ -368,7 +429,7 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
         node->required_parameter_count(),
         true);
   }
-  int num_parameters =
+  intptr_t num_parameters =
       extra_parameters +
       node->positional_parameters().length() +
       node->named_parameters().length();
@@ -378,15 +439,15 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
       Array::Handle(Array::New(num_parameters, Heap::kOld)));
   Type& klass_type = Type::Handle(H.zone());
   if (!klass.IsNull()) {
-    klass_type ^= Type::NewNonParameterizedType(klass);
+    klass_type = T.ReceiverType(klass).raw();
   }
-  int pos = 0;
+  intptr_t pos = 0;
   if (is_method) {
     function.SetParameterTypeAt(pos, klass_type);
     function.SetParameterNameAt(pos, Symbols::This());
     pos++;
   } else if (is_closure) {
-    function.SetParameterTypeAt(pos, Object::dynamic_type());
+    function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
     function.SetParameterNameAt(pos, Symbols::ClosureParameter());
     pos++;
   } else if (is_factory) {
@@ -394,23 +455,31 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
     function.SetParameterNameAt(pos, Symbols::TypeArgumentsParameter());
     pos++;
   }
-  for (int i = 0; i < node->positional_parameters().length(); i++, pos++) {
+  for (intptr_t i = 0; i < node->positional_parameters().length(); i++, pos++) {
     VariableDeclaration* dil_variable = node->positional_parameters()[i];
-    function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
+    const AbstractType& type = T.TranslateType(dil_variable->type());
+    function.SetParameterTypeAt(pos,
+        type.IsMalformed() ? Type::dynamic_type() : type);
     function.SetParameterNameAt(pos, H.DartSymbol(dil_variable->name()));
   }
-  for (int i = 0; i < node->named_parameters().length(); i++, pos++) {
+  for (intptr_t i = 0; i < node->named_parameters().length(); i++, pos++) {
     VariableDeclaration* named_expression = node->named_parameters()[i];
-    function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
+    const AbstractType& type = T.TranslateType(named_expression->type());
+    function.SetParameterTypeAt(pos,
+        type.IsMalformed() ? Type::dynamic_type() : type);
     function.SetParameterNameAt(pos, H.DartSymbol(named_expression->name()));
   }
+
+  const AbstractType& return_type = T.TranslateType(node->return_type());
+  function.set_result_type(
+      return_type.IsMalformed() ? Type::dynamic_type() : return_type);
 }
 
 void DilReader::SetupFieldAccessorFunction(const dart::Class& klass,
                                            const dart::Function& function) {
   bool is_setter = function.IsImplicitSetterFunction();
   bool is_method = !function.IsStaticFunction();
-  int num_parameters = (is_method ? 1 : 0) + (is_setter ? 1 : 0);
+  intptr_t num_parameters = (is_method ? 1 : 0) + (is_setter ? 1 : 0);
 
   function.SetNumOptionalParameters(0, false);
   function.set_num_fixed_parameters(num_parameters);
@@ -419,11 +488,9 @@ void DilReader::SetupFieldAccessorFunction(const dart::Class& klass,
   function.set_parameter_names(
       Array::Handle(Array::New(num_parameters, Heap::kOld)));
 
-  Type& klass_type = Type::Handle(Type::NewNonParameterizedType(klass));
-
-  int pos = 0;
+  intptr_t pos = 0;
   if (is_method) {
-    function.SetParameterTypeAt(pos, klass_type);
+    function.SetParameterTypeAt(pos, T.ReceiverType(klass));
     function.SetParameterNameAt(pos, Symbols::This());
     pos++;
   }
@@ -522,16 +589,14 @@ dart::Class& DilReader::LookupClass(Class* klass) {
 
 RawFunction::Kind DilReader::GetFunctionType(Procedure* dil_procedure) {
   // TODO(kustermann): Are these correct?
-  int lookuptable[] = {
+  intptr_t lookuptable[] = {
     RawFunction::kRegularFunction,  // Procedure::kMethod
     RawFunction::kGetterFunction,   // Procedure::kGetter
     RawFunction::kSetterFunction,   // Procedure::kSetter
-    RawFunction::kRegularFunction,  // Procedure::kIndexGetter
-    RawFunction::kRegularFunction,  // Procedure::kIndexSetter
     RawFunction::kRegularFunction,  // Procedure::kOperator
     RawFunction::kConstructor,      // Procedure::kFactory
   };
-  int kind = static_cast<int>(dil_procedure->kind());
+  intptr_t kind = static_cast<int>(dil_procedure->kind());
   if (kind == Procedure::kIncompleteProcedure) {
     // TODO(kustermann): Is this correct?
     return RawFunction::kSignatureFunction;
