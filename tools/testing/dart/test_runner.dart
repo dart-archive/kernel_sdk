@@ -217,6 +217,20 @@ class CompilationCommand extends ProcessCommand {
       deepJsonCompare(_bootstrapDependencies, other._bootstrapDependencies);
 }
 
+class RastaCompilationCommand extends CompilationCommand {
+  RastaCompilationCommand._(
+      String displayName,
+      String outputFile,
+      bool neverSkipCompilation,
+      List<Uri> bootstrapDependencies,
+      String executable,
+      List<String> arguments,
+      Map<String, String> environmentOverrides)
+      : super._(displayName, outputFile, neverSkipCompilation,
+                bootstrapDependencies, executable, arguments,
+                environmentOverrides);
+}
+
 /// This is just a Pair(String, Map) class with hashCode and operator ==
 class AddFlagsKey {
   final String flags;
@@ -595,6 +609,26 @@ class CommandBuilder {
         environment);
     return _getUniqueCommand(command);
   }
+
+  CompilationCommand getRastaCompilationCommand(
+      String displayName,
+      outputFile,
+      neverSkipCompilation,
+      List<Uri> bootstrapDependencies,
+      String executable,
+      List<String> arguments,
+      Map<String, String> environment) {
+    var command = new RastaCompilationCommand._(
+        displayName,
+        outputFile,
+        neverSkipCompilation,
+        bootstrapDependencies,
+        executable,
+        arguments,
+        environment);
+    return _getUniqueCommand(command);
+  }
+
 
   AnalysisCommand getAnalysisCommand(
       String displayName, executable, arguments, environmentOverrides,
@@ -1551,6 +1585,30 @@ class CompilationCommandOutputImpl extends CommandOutputImpl {
   }
 }
 
+class RastaCompilationCommandOutputImpl extends CompilationCommandOutputImpl {
+  RastaCompilationCommandOutputImpl(
+      Command command, int exitCode, bool timedOut,
+      List<int> stdout, List<int> stderr,
+      Duration time, bool compilationSkipped)
+      : super(command, exitCode, timedOut, stdout, stderr, time,
+              compilationSkipped);
+
+  bool get canRunDependendCommands {
+    // See [BatchRunnerProcess]: 0 means success, 1 means compile-time error.
+    // Since the rastak compiler is always supposed to write the KernelIR file -
+    // even if there were compile-time errors, only crashes or timeouts are
+    // fatal.
+    return !hasCrashed && !timedOut && (exitCode == 0 || exitCode == 1);
+  }
+
+  // If the compiler was able to produce a Kernel IR file we want to run the
+  // result on the Dart VM.  We therefore mark the [RastaCompilationCommand] as
+  // successfull.
+  // => This ensures we test that the DartVM produces correct CompileTime errors
+  //    as it is supposed to for our test suites.
+  bool get successful => canRunDependendCommands;
+}
+
 class JsCommandlineOutputImpl extends CommandOutputImpl
     with UnittestSuiteMessagesMixin {
   JsCommandlineOutputImpl(Command command, int exitCode, bool timedOut,
@@ -1625,6 +1683,9 @@ CommandOutput createCommandOutput(Command command, int exitCode, bool timedOut,
   } else if (command is VmCommand) {
     return new VmCommandOutputImpl(
         command, exitCode, timedOut, stdout, stderr, time, pid);
+  } else if (command is RastaCompilationCommand) {
+    return new RastaCompilationCommandOutputImpl(
+        command, exitCode, timedOut, stdout, stderr, time, compilationSkipped);
   } else if (command is CompilationCommand) {
     if (command.displayName == 'precompiler' ||
         command.displayName == 'dart2snapshot') {

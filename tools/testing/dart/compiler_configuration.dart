@@ -203,7 +203,7 @@ class RastaCompilerConfiguration extends CompilerConfiguration {
     // TODO(kasperl): We may need to forward more arguments to the compiler.
     // For now, we ignore everything but the input and output.
     arguments = [arguments[2], outputFileName];
-    return commandBuilder.getCompilationCommand(
+    return commandBuilder.getRastaCompilationCommand(
         'rasta',
         outputFileName,
         true,
