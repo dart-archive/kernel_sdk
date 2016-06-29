@@ -39,3 +39,13 @@ patch class CodeUnits {
 final bool is64Bit = _inquireIs64Bit();
 
 bool _inquireIs64Bit() native "Internal_inquireIs64Bit";
+
+_dynamicError(int errorKind) {
+  switch (errorKind) {
+    case 0:
+      return (String message) => new TypeError();
+
+    default:
+      throw "Unknown error";
+  }
+}
