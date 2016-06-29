@@ -31,7 +31,6 @@ co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t16_test: RuntimeE
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t17_test: RuntimeError
 co19/Language/Mixins/Mixin_Application/implicit_constructor_t02_test: RuntimeError
 co19/Language/Mixins/Mixin_Application/initializers_t01_test: RuntimeError
-co19/Language/Mixins/Mixin_Composition/order_t01_test: Crash
 co19/LibTest/core/Invocation/isAccessor_A01_t01_test: RuntimeError
 co19/LibTest/core/Invocation/isAccessor_A01_t02_test: RuntimeError
 co19/LibTest/core/Invocation/isGetter_A01_t01_test: RuntimeError
@@ -42,6 +41,15 @@ co19/LibTest/core/Invocation/isSetter_A01_t01_test: RuntimeError
 co19/LibTest/core/Invocation/isSetter_A01_t02_test: RuntimeError
 co19/LibTest/core/Invocation/memberName_A01_t01_test: RuntimeError
 co19/LibTest/core/Invocation/positionalArguments_A01_t01_test: RuntimeError
+
+# TODO(kustermann):
+# These tests are failing due to a CompileTimeErrors during
+# DilReader::ReadProgram().  Some of them might be correctly reported (where the
+# DartVM does not correctly report a compile-time error).
+co19/Language/Classes/Superclasses/Inheritance_and_Overriding/overriding_t04_test: CompileTimeError
+co19/Language/Mixins/Mixin_Application/error_t01_test: CompileTimeError
+co19/Language/Mixins/Mixin_Application/error_t02_test: CompileTimeError
+co19/Language/Mixins/Mixin_Composition/order_t01_test: CompileTimeError
 
 # This list can be generated with the following command
 # (and some search&replace)
@@ -57,7 +65,6 @@ co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superi
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/initializing_formals_execution_t02_test: RuntimeError
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/inheritance_t06_test: RuntimeError
-co19/Language/Classes/Superclasses/Inheritance_and_Overriding/overriding_t04_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t04_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t05_test: Crash
@@ -105,11 +112,8 @@ co19/Language/Functions/External_Functions/not_connected_to_a_body_t01_test: Run
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t02_test: CompileTimeError
 co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t02_test: CompileTimeError
 co19/Language/Libraries_and_Scripts/private_access_t01_test: RuntimeError
-co19/Language/Mixins/Mixin_Application/error_t01_test: Crash
-co19/Language/Mixins/Mixin_Application/error_t02_test: Crash
 co19/Language/Mixins/Mixin_Application/implicit_constructor_t02_test: RuntimeError
 co19/Language/Mixins/Mixin_Application/initializers_t01_test: RuntimeError
-co19/Language/Mixins/Mixin_Composition/order_t01_test: Crash
 co19/Language/Overview/Privacy/private_and_public_t08_test: RuntimeError
 co19/Language/Overview/Privacy/private_and_public_t21_test: RuntimeError
 co19/Language/Types/Interface_Types/subtype_t44_test: RuntimeError

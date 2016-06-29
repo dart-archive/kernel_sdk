@@ -7,9 +7,10 @@
 #include <string.h>
 
 #include "vm/dart_api_impl.h"
+#include "vm/longjump.h"
 #include "vm/object_store.h"
-#include "vm/symbols.h"
 #include "vm/parser.h"
+#include "vm/symbols.h"
 
 namespace dart {
 namespace dil {
@@ -90,38 +91,53 @@ Object& DilReader::ReadProgram() {
     return Object::Handle(Z, ApiError::New(error));
   }
 
-  Procedure* main = program->main_method();
-  Library* dil_main_library = Library::Cast(main->parent());
+  LongJumpScope jump;
+  if (setjmp(*jump.Set()) == 0) {
+    Procedure* main = program->main_method();
+    Library* dil_main_library = Library::Cast(main->parent());
 
-  intptr_t length = program->libraries().length();
-  for (intptr_t i = 0; i < length; i++) {
-    Library* dil_library = program->libraries()[i];
-    ReadLibrary(dil_library);
-  }
-
-  // We finalize classes after we've constructed all classes since we currently
-  // don't construct them in pre-order of the class hierarchy (and finalization
-  // of a class needs all of its superclasses to be finalized).
-  for (intptr_t i = 0; i < length; i++) {
-    Library* dil_library = program->libraries()[i];
-    if (!dil_library->IsCorelibrary()) {
-      for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
-        Class* dil_klass = dil_library->classes()[i];
-        ClassFinalizer::FinalizeClass(LookupClass(dil_klass));
-      }
-      dart::Library& library = LookupLibrary(dil_library);
-      library.SetLoaded();
+    intptr_t length = program->libraries().length();
+    for (intptr_t i = 0; i < length; i++) {
+      Library* dil_library = program->libraries()[i];
+      ReadLibrary(dil_library);
     }
+
+    // We finalize classes after we've constructed all classes since we
+    // currently don't construct them in pre-order of the class hierarchy (and
+    // finalization of a class needs all of its superclasses to be finalized).
+    for (intptr_t i = 0; i < length; i++) {
+      Library* dil_library = program->libraries()[i];
+      if (!dil_library->IsCorelibrary()) {
+        for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
+          Class* dil_klass = dil_library->classes()[i];
+          ClassFinalizer::FinalizeClass(LookupClass(dil_klass));
+        }
+        dart::Library& library = LookupLibrary(dil_library);
+        library.SetLoaded();
+      }
+    }
+
+    dart::Library& library = LookupLibrary(dil_main_library);
+
+    // Sanity check that we can find the main entrypoint.
+    Object& main_obj = Object::Handle(Z,
+        library.LookupObjectAllowPrivate(H.DartSymbol("main")));
+    ASSERT(!main_obj.IsNull());
+    return library;
+  } else {
+    // Everything else is a compile-time error. We don't use the [error] since
+    // it sometimes causes the higher-level error handling to try to read the
+    // script and token position (which we don't have) to produce a nice error
+    // message.
+    Error& error = Error::Handle(Z);
+    error = thread_->sticky_error();
+    thread_->clear_sticky_error();
+
+    // Instead we simply make a non-informative error message.
+    const dart::String& error_message =
+        H.DartString("Failed to read .dill file => CompileTimeError.");
+    return Object::Handle(Z, LanguageError::New(error_message));
   }
-
-  dart::Library& library = LookupLibrary(dil_main_library);
-
-  // Sanity check that we can find the main entrypoint.
-  Object& main_obj = Object::Handle(Z,
-      library.LookupObjectAllowPrivate(H.DartSymbol("main")));
-  ASSERT(!main_obj.IsNull());
-
-  return library;
 }
 
 void DilReader::ReadLibrary(Library* dil_library) {
