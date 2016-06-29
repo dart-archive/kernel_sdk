@@ -296,20 +296,66 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
       supertype = applyMixin(supertype, checkMixinType(link.head), link.head);
       link = link.tail;
     }
-    doApplyMixinTo(element, supertype, checkMixinType(link.head));
+    element.supertype = applyMixin(supertype, checkMixinType(link.head), node);
+    element.interfaces =
+        resolveInterfaces(element, node.interfaces, node.interfaces);
+    calculateAllSupertypes(element);
+
+    element.superclass.forEachLocalMember((Element member) {
+      if (!member.isGenerativeConstructor) return;
+      FunctionElement forwarder = createForwardingConstructor(member, element);
+      if (Name.isPrivateName(member.name) &&
+          element.library != superclass.library) {
+        // Do not create a forwarder to the super constructor, because the mixin
+        // application is in a different library than the constructor in the
+        // super class and it is not possible to call that constructor from the
+        // library using the mixin application.
+        return;
+      }
+      element.addConstructor(forwarder);
+    });
+
     return element.computeType(resolution);
   }
 
+  /// Returns the this-type of the new class (mixin application) that is the
+  /// result of applying [mixinType] to [supertype]. The mixin application is
+  /// also created.
+  ///
+  /// The returned type has new synthetic type variables corresponding to the
+  /// type variables of [mixinType] *and* the type variables of [element]. For
+  /// example, given:
+  ///
+  ///     class Mixin<M> {}
+  ///     class C<T> extends Object with M<int> {}
+  ///
+  /// The returned type will have the following type variables:
+  ///
+  ///     <M, T>
+  ///
+  /// Notice that the first type variables correspond to the type variables of
+  /// `Mixin`, which allows us to create a scope where we can look them up
+  /// later.
   DartType applyMixin(DartType supertype, DartType mixinType, Node node) {
+    if (!supertype.isInterfaceType || !mixinType.isInterfaceType) {
+      element.hasIncompleteHierarchy = true;
+      return objectType;
+    }
     String superName = supertype.name;
     String mixinName = mixinType.name;
+    List<DartType> originalTypeParameters = new List<DartType>()
+        ..addAll(mixinType.element.typeVariables)
+        ..addAll(element.typeVariables);
+    List<DartType> typeArguments = new List<DartType>()
+        ..addAll(mixinType.typeArguments)
+        ..addAll(element.typeVariables);
     MixinApplicationElementX mixinApplication =
         new UnnamedMixinApplicationElementX("${superName}+${mixinName}",
             element.compilationUnit, compiler.getNextFreeId(), node);
     // Create synthetic type variables for the mixin application.
     List<DartType> typeVariables = <DartType>[];
     int index = 0;
-    for (TypeVariableType type in element.typeVariables) {
+    for (TypeVariableType type in originalTypeParameters) {
       TypeVariableElementX typeVariableElement = new TypeVariableElementX(
           type.name, mixinApplication, index, type.element.node);
       TypeVariableType typeVariable = new TypeVariableType(typeVariableElement);
@@ -317,18 +363,20 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
       index++;
     }
     // Setup bounds on the synthetic type variables.
-    for (TypeVariableType type in element.typeVariables) {
-      TypeVariableType typeVariable = typeVariables[type.element.index];
+    index = 0;
+    for (TypeVariableType type in originalTypeParameters) {
+      TypeVariableType typeVariable = typeVariables[index];
       TypeVariableElementX typeVariableElement = typeVariable.element;
       typeVariableElement.typeCache = typeVariable;
       typeVariableElement.boundCache =
-          type.element.bound.subst(typeVariables, element.typeVariables);
+          type.element.bound.subst(typeVariables, originalTypeParameters);
+      index++;
     }
     // Setup this and raw type for the mixin application.
     mixinApplication.computeThisAndRawType(resolution, typeVariables);
     // Substitute in synthetic type variables in super and mixin types.
-    supertype = supertype.subst(typeVariables, element.typeVariables);
-    mixinType = mixinType.subst(typeVariables, element.typeVariables);
+    supertype = supertype.subst(typeVariables, originalTypeParameters);
+    mixinType = mixinType.subst(typeVariables, originalTypeParameters);
 
     doApplyMixinTo(mixinApplication, supertype, mixinType);
     mixinApplication.resolutionState = STATE_DONE;
@@ -336,8 +384,7 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
     // Replace the synthetic type variables by the original type variables in
     // the returned type (which should be the type actually extended).
     InterfaceType mixinThisType = mixinApplication.thisType;
-    return mixinThisType.subst(
-        element.typeVariables, mixinThisType.typeArguments);
+    return mixinThisType.subst(typeArguments, mixinThisType.typeArguments);
   }
 
   bool isDefaultConstructor(FunctionElement constructor) {
@@ -416,6 +463,16 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
       }
       mixinApplication.addConstructor(forwarder);
     });
+
+    ClassElement mixin = mixinType.element;
+    mixin.forEachLocalMember((Element member) {
+      if (member.isGenerativeConstructor) return;
+      if (member.library.isPlatformLibrary) return;
+      if (!member.isInstanceMember) return;
+      mixinApplication.addMember(
+          member.copyWithEnclosing(mixinApplication), null);
+    });
+
     calculateAllSupertypes(mixinApplication);
   }
 

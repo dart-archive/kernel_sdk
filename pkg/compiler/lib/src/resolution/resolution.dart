@@ -58,6 +58,9 @@ import 'signatures.dart';
 import 'tree_elements.dart';
 import 'typedefs.dart';
 
+// TODO(ahe): This should be a compiler option or something like that.
+const bool allowSuperInMixin = true;
+
 class ResolverTask extends CompilerTask {
   final ConstantCompiler constantCompiler;
 
@@ -263,7 +266,7 @@ class ResolverTask extends CompilerTask {
       // application has been performed.
       TreeElements resolutionTree = registry.mapping;
       ClassElement enclosingClass = element.enclosingClass;
-      if (enclosingClass != null) {
+      if (!allowSuperInMixin && enclosingClass != null) {
         // TODO(johnniwinther): Find another way to obtain mixin uses.
         Iterable<MixinApplicationElement> mixinUses =
             compiler.world.allMixinUsesOf(enclosingClass);
@@ -726,7 +729,7 @@ class ResolverTask extends CompilerTask {
       if (member.isGenerativeConstructor && !member.isSynthesized) {
         reporter.reportErrorMessage(
             member, MessageKind.ILLEGAL_MIXIN_CONSTRUCTOR);
-      } else {
+      } else if (!allowSuperInMixin) {
         // Get the resolution tree and check that the resolved member
         // doesn't use 'super'. This is the part of the 'super' mixin
         // check that happens when a function is resolved before the

@@ -272,6 +272,10 @@ class PartialFieldList extends VariableList with PartialElement {
     assert(type != null);
     return type;
   }
+
+  PartialFieldList copy() {
+    return new PartialFieldList(beginToken, endToken, modifiers, hasParseError);
+  }
 }
 
 class PartialTypedefElement extends TypedefElementX with PartialElement {

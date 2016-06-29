@@ -173,3 +173,41 @@ class LibraryScope implements Scope {
 
   String toString() => 'LibraryScope($library)';
 }
+
+/// A mixin application scope.
+///
+/// This scope is slightly different from a regular [ClassScope] as we copy
+/// methods from the mixin into the mixin application. Firstly, the parent
+/// scope is the mixin (and its library scope). Secondly, since a mixin
+/// application can have more type variables than the mixin, we need to ensure
+/// we only return the ones defined in the mixin (by overriding
+/// [lookupTypeVariable]). See [ClassResolverVisitor.applyMixin] for details.
+class MixinApplicationScope extends ClassScope {
+  MixinApplicationElement get element => super.element;
+
+  MixinApplicationScope(Scope parentScope, MixinApplicationElement element)
+      : super(parentScope, element);
+
+  @override
+  Element lookupTypeVariable(String name) {
+    List<DartType> typeVariables = element.mixin?.typeVariables;
+    if (typeVariables == null) return null;
+    int index = 0;
+    for (TypeVariableType type in typeVariables) {
+      if (type.name == name) return element.typeVariables[index].element;
+      index++;
+    }
+    return null;
+  }
+}
+
+/// An empty scope, used for error recovery.
+class NoScope extends Scope {
+  @override
+  Element add(Element element) {
+    throw "Cannot add an element to a no-scope";
+  }
+
+  @override
+  Element lookup(String name) => null;
+}

@@ -15,7 +15,8 @@ import '../diagnostics/messages.dart' show MessageTemplate;
 import '../ordered_typeset.dart' show OrderedTypeSet;
 import '../resolution/class_members.dart' show ClassMemberMixin;
 import '../resolution/scope.dart'
-    show ClassScope, LibraryScope, Scope, TypeDeclarationScope;
+    show ClassScope, LibraryScope, MixinApplicationScope, NoScope, Scope,
+        TypeDeclarationScope;
 import '../resolution/resolution.dart' show AnalyzableElementX;
 import '../resolution/tree_elements.dart' show TreeElements;
 import '../resolution/typedefs.dart' show TypedefCyclicVisitor;
@@ -1381,6 +1382,8 @@ class VariableList implements DeclarationSite {
     assert(modifiers != null);
   }
 
+  VariableList.internal(this.modifiers);
+
   Iterable<MetadataAnnotation> get metadata {
     return metadataInternal != null
         ? metadataInternal
@@ -1408,6 +1411,13 @@ class VariableList implements DeclarationSite {
   DartType computeType(Element element, Resolution resolution) => type;
 
   bool get isMalformed => false;
+
+  VariableList copy() {
+    return new VariableList.internal(modifiers)
+        ..definitions = definitions
+        ..type = type
+        ..metadataInternal = metadataInternal;
+  }
 }
 
 abstract class ConstantVariableMixin implements VariableElement {
@@ -1595,7 +1605,7 @@ class FieldElementX extends VariableElementX
 
   FieldElementX copyWithEnclosing(Element enclosingElement) {
     return new FieldElementX(
-        new Identifier(token), enclosingElement, variables);
+        new Identifier(token), enclosingElement, variables.copy());
   }
 }
 
@@ -2831,7 +2841,8 @@ class EnumConstantElementX extends EnumFieldElementX
 abstract class MixinApplicationElementX extends BaseClassElementX
     with MixinApplicationElementCommon
     implements MixinApplicationElement {
-  Link<ConstructorElement> constructors = new Link<ConstructorElement>();
+  Link<ConstructorElement> constructors = const Link<ConstructorElement>();
+  Link<Element> members = const Link<Element>();
 
   InterfaceType mixinType;
 
@@ -2841,7 +2852,6 @@ abstract class MixinApplicationElementX extends BaseClassElementX
   ClassElement get mixin => mixinType != null ? mixinType.element : null;
 
   bool get isMixinApplication => true;
-  bool get isUnnamedMixinApplication => node is! NamedMixinApplication;
   bool get hasConstructor => !constructors.isEmpty;
   bool get hasLocalScopeMembers => !constructors.isEmpty;
 
@@ -2855,7 +2865,7 @@ abstract class MixinApplicationElementX extends BaseClassElementX
   Node parseNode(Parsing parsing) => node;
 
   void addMember(Element element, DiagnosticReporter reporter) {
-    throw new UnsupportedError("Cannot add member to $this.");
+    members = members.prepend(element);
   }
 
   void addToScope(Element element, DiagnosticReporter reporter) {
@@ -2886,6 +2896,20 @@ abstract class MixinApplicationElementX extends BaseClassElementX
   accept(ElementVisitor visitor, arg) {
     return visitor.visitMixinApplicationElement(this, arg);
   }
+
+  @override
+  void forEachLocalMember(void f(Element member)) {
+    constructors.forEach(f);
+    members.forEach(f);
+  }
+
+  buildScope() {
+    Scope parentScope = mixin?.buildScope();
+    if (parentScope == null) {
+      parentScope = new NoScope();
+    }
+    return new MixinApplicationScope(parentScope, this);
+  }
 }
 
 class NamedMixinApplicationElementX extends MixinApplicationElementX
@@ -2899,6 +2923,8 @@ class NamedMixinApplicationElementX extends MixinApplicationElementX
   Modifiers get modifiers => node.modifiers;
 
   DeclarationSite get declarationSite => this;
+
+  bool get isUnnamedMixinApplication => false;
 }
 
 class UnnamedMixinApplicationElementX extends MixinApplicationElementX {
@@ -2909,6 +2935,8 @@ class UnnamedMixinApplicationElementX extends MixinApplicationElementX {
       : super(name, enclosing, id);
 
   bool get isAbstract => true;
+
+  bool get isUnnamedMixinApplication => true;
 }
 
 class LabelDefinitionX implements LabelDefinition {
