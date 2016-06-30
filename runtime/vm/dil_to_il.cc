@@ -445,12 +445,13 @@ void ScopeBuilder::HandleSpecialLoad(LocalVariable** variable,
     if (*variable == NULL) {
       *variable = function_scope_->parent()->LookupVariable(symbol, true);
       ASSERT(*variable != NULL);
-      scope_->CaptureVariable(*variable);
     }
-  } else if (scope_->function_level() > 0) {
-    // We are building the scope tree of the outermost function/method (which
-    // includes traversing all the nested closures as well) and [node]
-    // appears inside a closure, so we capture it.
+  }
+
+  if (function_scope_->parent() != NULL || scope_->function_level() > 0) {
+    // Every scope we use the [variable] from needs to be notified of the usage
+    // in order to ensure that preserving the context scope on that particular
+    // use-site also includes the [variable].
     scope_->CaptureVariable(*variable);
   }
 }
