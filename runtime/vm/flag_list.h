@@ -159,7 +159,7 @@ P(truncating_left_shift, bool, true,                                           \
   "Optimize left shift to truncate if possible")                               \
 P(use_cha_deopt, bool, true,                                                   \
   "Use class hierarchy analysis even if it can cause deoptimization.")         \
-P(use_field_guards, bool, true,                                                \
+P(use_field_guards, bool, false,                                               \
   "Use field guards and track field types")                                    \
 C(use_osr, false, false, bool, false,                                          \
   "Use OSR")                                                                   \
