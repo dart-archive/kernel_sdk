@@ -233,6 +233,10 @@ class TypeVariableType extends DartType {
   }
 
   String toString() => name;
+
+  // TODO(ahe): Remove this method. It's a hack to work around problems when
+  // copying down methods in mixin applications.
+  bool get treatAsDynamic => element.enclosingElement.isMixinApplication;
 }
 
 /// Internal type representing the result of analyzing a statement.
@@ -511,6 +515,10 @@ class InterfaceType extends GenericType {
     FunctionType type = element.callType;
     return type != null && isGeneric ? type.substByContext(this) : type;
   }
+
+  // TODO(ahe): Remove this method. It's a hack to work around problems when
+  // copying down methods in mixin applications.
+  bool get treatAsDynamic => element.isMixinApplication;
 }
 
 /**

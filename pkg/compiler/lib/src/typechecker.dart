@@ -51,15 +51,13 @@ class TypeCheckerTask extends CompilerTask {
   TypeCheckerTask(Compiler compiler) : super(compiler);
   String get name => "Type checker";
 
+  bool enabled = false;
+
   void check(AstElement element) {
-    return;
+    if (!enabled) return;
     if (element.isClass) return;
     if (element.isTypedef) return;
     ResolvedAst resolvedAst = element.resolvedAst;
-    if (resolvedAst.node == null) {
-      return;
-      new FiskFisk();
-    }
     reporter.withCurrentElement(element.implementation, () {
       measure(() {
         TypeCheckerVisitor visitor = new TypeCheckerVisitor(
