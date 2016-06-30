@@ -1164,8 +1164,12 @@ void FlowGraph::RenameRecursive(BlockEntryInstr* block_entry,
           }
           ASSERT((drop->value() != NULL) || !drop->HasTemp());
         } else {
-          ASSERT(definition->HasTemp());
-          result = GetConstant(constant->value());
+          // TODO(kustermann): We might want to enable this assert again once we
+          // have support for proper "void context" evaluation (i.e. translate
+          // an `ExpressionStatement` with the knowledge that we don't need the
+          // result).
+          result = definition->HasTemp() ? GetConstant(constant->value())
+                                         : NULL;
         }
         // Update expression stack or remove from graph.
         if (definition->HasTemp()) {
