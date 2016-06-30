@@ -970,7 +970,6 @@ void NormalClass::WriteTo(Writer* writer) {
 
 MixinClass* MixinClass::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-
   TypeParameterScope<ReaderHelper> scope(reader->helper());
 
   is_abstract_ = reader->ReadBool();
@@ -2552,6 +2551,8 @@ void Program::WriteTo(Writer* writer) {
 
 FunctionNode* FunctionNode::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
+  TypeParameterScope<ReaderHelper> scope(reader->helper());
+
   FunctionNode* function = new FunctionNode();
   function->async_marker_ = static_cast<FunctionNode::AsyncMarker>(reader->ReadByte());
   function->type_parameters().ReadFrom(reader);
@@ -2567,6 +2568,8 @@ FunctionNode* FunctionNode::ReadFrom(Reader* reader) {
 
 void FunctionNode::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
+  TypeParameterScope<WriterHelper> scope(writer->helper());
+
   writer->WriteByte(static_cast<uint8_t>(async_marker_));
   type_parameters().WriteTo(writer);
   writer->WriteUInt(required_parameter_count());
