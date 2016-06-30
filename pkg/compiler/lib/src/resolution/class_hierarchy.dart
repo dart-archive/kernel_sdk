@@ -467,7 +467,6 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
     ClassElement mixin = mixinType.element;
     mixin.forEachLocalMember((Element member) {
       if (member.isGenerativeConstructor) return;
-      if (member.library.isPlatformLibrary) return;
       if (!member.isInstanceMember) return;
       mixinApplication.addMember(
           member.copyWithEnclosing(mixinApplication), null);
