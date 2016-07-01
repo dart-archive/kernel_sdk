@@ -2846,6 +2846,8 @@ abstract class MixinApplicationElementX extends BaseClassElementX
 
   InterfaceType mixinType;
 
+  final ScopeX localScope = new ScopeX();
+
   MixinApplicationElementX(String name, Element enclosing, int id)
       : super(name, enclosing, id, STATE_NOT_STARTED);
 
@@ -2853,7 +2855,9 @@ abstract class MixinApplicationElementX extends BaseClassElementX
 
   bool get isMixinApplication => true;
   bool get hasConstructor => !constructors.isEmpty;
-  bool get hasLocalScopeMembers => !constructors.isEmpty;
+  bool get hasLocalScopeMembers {
+    return constructors.isNotEmpty || members.isNotEmpty;
+  }
 
   get patch => null;
   get origin => null;
@@ -2866,10 +2870,11 @@ abstract class MixinApplicationElementX extends BaseClassElementX
 
   void addMember(Element element, DiagnosticReporter reporter) {
     members = members.prepend(element);
+    addToScope(element, reporter);
   }
 
   void addToScope(Element element, DiagnosticReporter reporter) {
-    reporter.internalError(this, 'Cannot add to scope of $this.');
+    localScope.add(element, reporter);
   }
 
   void addConstructor(FunctionElement constructor) {
@@ -2909,6 +2914,13 @@ abstract class MixinApplicationElementX extends BaseClassElementX
       parentScope = new NoScope();
     }
     return new MixinApplicationScope(parentScope, this);
+  }
+
+  Element localLookup(String name) {
+    for (Link<Element> link = constructors; !link.isEmpty; link = link.tail) {
+      if (link.head.name == name) return link.head;
+    }
+    return localScope.lookup(name);
   }
 }
 
