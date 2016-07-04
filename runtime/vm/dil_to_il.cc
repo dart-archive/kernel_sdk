@@ -1365,7 +1365,15 @@ void ConstantEvaluator::VisitVariableGet(VariableGet* node) {
 void ConstantEvaluator::VisitStaticInvocation(StaticInvocation* node) {
   const Function& function = Function::ZoneHandle(Z,
       H.LookupStaticMethodByDilProcedure(node->procedure()));
-  const Object& result = RunFunction(function, node->arguments());
+
+  // TODO(kustermann): Set correct type/type-arguments
+  const TypeArguments* type_arguments = NULL;
+  if (function.IsFactory()) {
+    type_arguments = &TypeArguments::ZoneHandle(Z, TypeArguments::null());
+  }
+
+  const Object& result =
+      RunFunction(function, node->arguments(), NULL, type_arguments);
   result_ ^= result.raw();
   result_ = Canonicalize(result_);
 }
