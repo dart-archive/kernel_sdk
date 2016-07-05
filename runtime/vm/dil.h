@@ -34,6 +34,7 @@
   M(FieldInitializer) \
   M(SuperInitializer) \
   M(RedirectingInitializer) \
+  M(LocalInitializer) \
   M(FunctionNode) \
   M(Expression) \
   M(InvalidExpression) \
@@ -662,7 +663,7 @@ class Initializer : public TreeNode {
 
 class InvalidInitializer : public Initializer {
  public:
-  static InvalidInitializer* ReadFrom(Reader* reader);
+  static InvalidInitializer* ReadFromImpl(Reader* reader);
   virtual void WriteTo(Writer* writer);
 
   virtual ~InvalidInitializer();
@@ -697,7 +698,7 @@ class FieldInitializer : public Initializer {
 
 class SuperInitializer : public Initializer {
  public:
-  static SuperInitializer* ReadFrom(Reader* reader);
+  static SuperInitializer* ReadFromImpl(Reader* reader);
   virtual void WriteTo(Writer* writer);
 
   virtual ~SuperInitializer();
@@ -720,7 +721,7 @@ class SuperInitializer : public Initializer {
 
 class RedirectingInitializer : public Initializer {
  public:
-  static RedirectingInitializer* ReadFrom(Reader* reader);
+  static RedirectingInitializer* ReadFromImpl(Reader* reader);
   virtual void WriteTo(Writer* writer);
 
   virtual ~RedirectingInitializer();
@@ -739,6 +740,27 @@ class RedirectingInitializer : public Initializer {
 
   Ref<Constructor> target_;
   Child<Arguments> arguments_;
+};
+
+class LocalInitializer : public Initializer {
+ public:
+  static LocalInitializer* ReadFromImpl(Reader* reader);
+  virtual void WriteTo(Writer* writer);
+
+  virtual ~LocalInitializer();
+
+  DEFINE_CASTING_OPERATIONS(LocalInitializer);
+
+  virtual void AcceptInitializerVisitor(InitializerVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
+
+  VariableDeclaration* variable() { return variable_; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LocalInitializer);
+  LocalInitializer() {}
+
+  Child<VariableDeclaration> variable_;
 };
 
 class FunctionNode : public TreeNode {
@@ -2478,6 +2500,7 @@ class InitializerVisitor {
   virtual void VisitFieldInitializer(FieldInitializer* node) { VisitDefaultInitializer(node); }
   virtual void VisitSuperInitializer(SuperInitializer* node) { VisitDefaultInitializer(node); }
   virtual void VisitRedirectingInitializer(RedirectingInitializer* node) { VisitDefaultInitializer(node); }
+  virtual void VisitLocalInitializer(LocalInitializer* node) { VisitDefaultInitializer(node); }
 };
 
 class DartTypeVisitor {

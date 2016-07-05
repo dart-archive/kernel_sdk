@@ -151,6 +151,7 @@ enum Tag {
   kFieldInitializer = 8,
   kSuperInitializer = 9,
   kRedirectingInitializer = 10,
+  kLocalInitializer = 11,
 
   kConstStaticInvocation = 18,
   kInvalidExpression = 19,
@@ -1197,20 +1198,22 @@ Initializer* Initializer::ReadFrom(Reader* reader) {
   Tag tag = reader->ReadTag();
   switch (tag) {
     case kInvalidInitializer:
-      return InvalidInitializer::ReadFrom(reader);
+      return InvalidInitializer::ReadFromImpl(reader);
     case kFieldInitializer:
       return FieldInitializer::ReadFromImpl(reader);
     case kSuperInitializer:
-      return SuperInitializer::ReadFrom(reader);
+      return SuperInitializer::ReadFromImpl(reader);
     case kRedirectingInitializer:
-      return RedirectingInitializer::ReadFrom(reader);
+      return RedirectingInitializer::ReadFromImpl(reader);
+    case kLocalInitializer:
+      return LocalInitializer::ReadFromImpl(reader);
     default:
       UNREACHABLE();
   }
   return NULL;
 }
 
-InvalidInitializer* InvalidInitializer::ReadFrom(Reader* reader) {
+InvalidInitializer* InvalidInitializer::ReadFromImpl(Reader* reader) {
   TRACE_READ_OFFSET();
   return new InvalidInitializer();
 }
@@ -1235,7 +1238,7 @@ void FieldInitializer::WriteTo(Writer* writer) {
   value_->WriteTo(writer);
 }
 
-SuperInitializer* SuperInitializer::ReadFrom(Reader* reader) {
+SuperInitializer* SuperInitializer::ReadFromImpl(Reader* reader) {
   TRACE_READ_OFFSET();
   SuperInitializer* init = new SuperInitializer();
   init->target_ = Constructor::Cast(Reference::ReadMemberFrom(reader));
@@ -1250,7 +1253,7 @@ void SuperInitializer::WriteTo(Writer* writer) {
   arguments_->WriteTo(writer);
 }
 
-RedirectingInitializer* RedirectingInitializer::ReadFrom(Reader* reader) {
+RedirectingInitializer* RedirectingInitializer::ReadFromImpl(Reader* reader) {
   TRACE_READ_OFFSET();
   RedirectingInitializer* init = new RedirectingInitializer();
   init->target_ = Constructor::Cast(Reference::ReadMemberFrom(reader));
@@ -1263,6 +1266,19 @@ void RedirectingInitializer::WriteTo(Writer* writer) {
   writer->WriteTag(kRedirectingInitializer);
   Reference::WriteMemberTo(writer, target_);
   arguments_->WriteTo(writer);
+}
+
+LocalInitializer* LocalInitializer::ReadFromImpl(Reader* reader) {
+  TRACE_READ_OFFSET();
+  LocalInitializer* init = new LocalInitializer();
+  init->variable_ = VariableDeclaration::ReadFromImpl(reader);
+  return init;
+}
+
+void LocalInitializer::WriteTo(Writer* writer) {
+  TRACE_WRITE_OFFSET();
+  writer->WriteTag(kLocalInitializer);
+  variable_->WriteToImpl(writer);
 }
 
 Expression* Expression::ReadFrom(Reader* reader) {

@@ -149,6 +149,14 @@ void RedirectingInitializer::VisitChildren(Visitor* visitor) {
   visitor->VisitArguments(arguments());
 }
 
+LocalInitializer::~LocalInitializer() {}
+void LocalInitializer::AcceptInitializerVisitor(InitializerVisitor* visitor) {
+  visitor->VisitLocalInitializer(this);
+}
+void LocalInitializer::VisitChildren(Visitor* visitor) {
+  visitor->VisitVariableDeclaration(variable());
+}
+
 FunctionNode::~FunctionNode() {}
 void FunctionNode::AcceptTreeVisitor(TreeVisitor* visitor) {
   visitor->VisitFunctionNode(this);

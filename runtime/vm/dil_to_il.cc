@@ -2462,6 +2462,9 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     body += Drop();  // The context.
   }
   if (constructor != NULL) {
+    // TODO(kustermann): Currently the [VariableDeclaration]s from the
+    // initializers will be visible inside the entire body of the constructor.
+    // We should make a separate scope for them.
     Class* dil_klass = Class::Cast(constructor->parent());
     body += TranslateInitializers(dil_klass, &constructor->initializers());
   }
@@ -2999,6 +3002,40 @@ Fragment FlowGraphBuilder::TranslateInitializers(
       intptr_t argument_count = init->arguments()->count() + 1;
       instructions += StaticCall(target, argument_count, argument_names);
       instructions += Drop();
+    } else if (initializer->IsLocalInitializer()) {
+      // The other initializers following this one might read the variable. This
+      // is used e.g. for evaluating the arguments to a super call first, run
+      // normal field initializers next and then make the actual super call:
+      //
+      //   The frontend converts
+      //
+      //      class A {
+      //        var x;
+      //        A(a, b) : super(a + b), x = 2*b {}
+      //      }
+      //
+      //   to
+      //
+      //      class A {
+      //        var x;
+      //        A(a, b) : tmp = a + b, x = 2*b, super(tmp) {}
+      //      }
+      //
+      // (This is strictly speaking not what one should do in terms of the
+      //  specification but that is how it is currently implemented.)
+      LocalInitializer* init = LocalInitializer::Cast(initializer);
+
+      VariableDeclaration* declaration = init->variable();
+      LocalVariable* variable = LookupVariable(declaration);
+      Expression* initializer = init->variable()->initializer();
+      ASSERT(initializer != NULL);
+      ASSERT(!declaration->IsConst());
+
+      instructions += TranslateExpression(initializer);
+      instructions += StoreLocal(variable);
+      instructions += Drop();
+
+      fragment_ = instructions;
     } else {
       UNIMPLEMENTED();
     }
