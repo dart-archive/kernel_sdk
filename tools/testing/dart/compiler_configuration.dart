@@ -84,6 +84,10 @@ abstract class CompilerConfiguration {
       case 'rasta':
         return new RastaCompilerConfiguration(
             isHostChecked: isHostChecked);
+      case 'rastap':
+        return ComposedCompilerConfiguration.createRastaPConfiguration(
+            isHostChecked: isHostChecked,
+            arch: configuration['arch']);
       case 'none':
         return new NoneCompilerConfiguration(
             isDebug: isDebug,
@@ -97,9 +101,9 @@ abstract class CompilerConfiguration {
 
   CompilerConfiguration._subclass(
       {this.isDebug: false,
-      this.isChecked: false,
-      this.isHostChecked: false,
-      this.useSdk: false});
+       this.isChecked: false,
+       this.isHostChecked: false,
+       this.useSdk: false});
 
   /// Return a multiplier used to give tests longer time to run.
   // TODO(ahe): Convert to getter!
@@ -223,6 +227,89 @@ class RastaCompilerConfiguration extends CompilerConfiguration {
       this.computeCompilationCommand('$tempDir/out.dill', buildDir,
           CommandBuilder.instance, arguments, environmentOverrides)
     ], '$tempDir/out.dill', 'application/dart');
+  }
+}
+
+typedef List<String> CompilerArgumentsFunction(
+    List<String> globalArguments,
+    String previousCompilerOutput);
+
+class ComposedCompilerConfiguration extends CompilerConfiguration {
+  final List<CompilerConfiguration> nestedConfigurations;
+  final List<CompilerArgumentsFunction> compilerArgumentFunctions;
+
+  ComposedCompilerConfiguration(this.nestedConfigurations,
+                                this.compilerArgumentFunctions,
+                                {bool isHostChecked})
+      : super._subclass(isHostChecked: isHostChecked);
+
+  CommandArtifact computeCompilationArtifact(
+      String buildDir,
+      String tempDir,
+      CommandBuilder commandBuilder,
+      List globalArguments,
+      Map<String, String> environmentOverrides) {
+
+    List<Command> allCommands = [];
+
+    // The first compilation command is as usual.
+    var arguments = compilerArgumentFunctions[0](globalArguments, null);
+    CommandArtifact artifact =
+        nestedConfigurations[0].computeCompilationArtifact(
+          buildDir, tempDir, commandBuilder, arguments, environmentOverrides);
+    allCommands.addAll(artifact.commands);
+
+    // The following compilation commands are based on the output of the
+    // previous one.
+    for (int i = 1; i < nestedConfigurations.length; i++) {
+      arguments = compilerArgumentFunctions[i](
+          globalArguments, artifact.filename);
+      artifact = nestedConfigurations[i].computeCompilationArtifact(
+          buildDir, tempDir, commandBuilder, arguments, environmentOverrides);
+      allCommands.addAll(artifact.commands);
+    }
+
+    return new CommandArtifact(
+        allCommands, artifact.filename, artifact.mimeType);
+  }
+
+  List<String> computeCompilerArguments(vmOptions, sharedOptions, args) {
+    // The result will be passed as an input to [computeCompilationArtifact]
+    // (i.e. the arguments to the first command).
+    return new List<String>.from(sharedOptions)..addAll(args);
+  }
+
+  List<String> computeRuntimeArguments(
+      RuntimeConfiguration runtimeConfiguration,
+      String buildDir,
+      TestInformation info,
+      List<String> vmOptions,
+      List<String> sharedOptions,
+      List<String> originalArguments,
+      CommandArtifact artifact) {
+    return <String>[artifact.filename];
+  }
+
+  static ComposedCompilerConfiguration createRastaPConfiguration(
+      {bool isHostChecked, String arch}) {
+    var nested = [
+        new RastaCompilerConfiguration(isHostChecked: isHostChecked),
+        new PrecompilerCompilerConfiguration(arch: arch),
+    ];
+    var argFuns = [
+        (List<String> globalArguments, String previousOutput) {
+          assert(previousOutput == null);
+          return globalArguments;
+        },
+        (List<String> globalArguments, String previousOutput) {
+          // TODO(kustermann): Maybe we should add more of the
+          // [globalArguments] here?
+          assert(previousOutput.endsWith('.dill'));
+          return [previousOutput];
+        },
+    ];
+    return new ComposedCompilerConfiguration(
+        nested, argFuns, isHostChecked: isHostChecked);
   }
 }
 

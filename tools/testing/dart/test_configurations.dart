@@ -226,7 +226,8 @@ void testConfigurations(List<Map> configurations) {
         }
       }
 
-      bool isRasta = conf['compiler'] == 'rasta';
+      bool isRasta =
+          conf['compiler'] == 'rasta' || conf['compiler'] == 'rastap';
       for (final testSuiteDir in DILL_TEST_SUITE_DIRECTORIES) {
         final name = testSuiteDir.filename;
         if (selectors.containsKey(name)) {
