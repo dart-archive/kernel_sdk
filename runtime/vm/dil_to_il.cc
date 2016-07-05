@@ -1902,15 +1902,18 @@ Fragment FlowGraphBuilder::IntConstant(int64_t value) {
 
 Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
                                         Token::Kind kind,
-                                        intptr_t argument_count) {
-  return InstanceCall(name, kind, argument_count, Array::null_array());
+                                        intptr_t argument_count,
+                                        intptr_t num_args_checked) {
+  return InstanceCall(
+      name, kind, argument_count, Array::null_array(), num_args_checked);
 }
 
 
 Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
                                         Token::Kind kind,
                                         intptr_t argument_count,
-                                        const Array& argument_names) {
+                                        const Array& argument_names,
+                                        intptr_t num_args_checked) {
   ArgumentArray arguments = GetArguments(argument_count);
   InstanceCallInstr* call =
       new(Z) InstanceCallInstr(TokenPosition::kNoSource,
@@ -1918,7 +1921,7 @@ Fragment FlowGraphBuilder::InstanceCall(const dart::String& name,
           kind,
           arguments,
           argument_names,
-          1,
+          num_args_checked,
           ic_data_array_);
   Push(call);
   return Fragment(call);
@@ -2317,6 +2320,41 @@ Fragment FlowGraphBuilder::Drop() {
 
   Pop();
   return instructions;
+}
+
+
+// TODO(kustermann): This method should be shared with
+// runtime/vm/object.cc:RecognizeArithmeticOp.
+Token::Kind FlowGraphBuilder::MethodKind(const dart::String& name) {
+  ASSERT(name.IsSymbol());
+  if (name.raw() == Symbols::Plus().raw()) {
+    return Token::kADD;
+  } else if (name.raw() == Symbols::Minus().raw()) {
+    return Token::kSUB;
+  } else if (name.raw() == Symbols::Star().raw()) {
+    return Token::kMUL;
+  } else if (name.raw() == Symbols::Slash().raw()) {
+    return Token::kDIV;
+  } else if (name.raw() == Symbols::TruncDivOperator().raw()) {
+    return Token::kTRUNCDIV;
+  } else if (name.raw() == Symbols::Percent().raw()) {
+    return Token::kMOD;
+  } else if (name.raw() == Symbols::BitOr().raw()) {
+    return Token::kBIT_OR;
+  } else if (name.raw() == Symbols::Ampersand().raw()) {
+    return Token::kBIT_AND;
+  } else if (name.raw() == Symbols::Caret().raw()) {
+    return Token::kBIT_XOR;
+  } else if (name.raw() == Symbols::LeftShiftOperator().raw()) {
+    return Token::kSHL;
+  } else if (name.raw() == Symbols::RightShiftOperator().raw()) {
+    return Token::kSHR;
+  } else if (name.raw() == Symbols::Tilde().raw()) {
+    return Token::kBIT_NOT;
+  } else if (name.raw() == Symbols::UnaryMinus().raw()) {
+    return Token::kNEGATE;
+  }
+  return Token::kILLEGAL;
 }
 
 
@@ -3620,8 +3658,19 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
 
   const dart::String& name = H.DartSymbol(node->name()->string());  // NOLINT
   intptr_t argument_count = node->arguments()->count() + 1;
+
+  intptr_t num_args_checked = 1;
+  Token::Kind token_kind = MethodKind(name);
+  // If we have a special operation (e.g. +/-/==) we mark both arguments as
+  // to be checked.
+  if (token_kind != Token::kILLEGAL) {
+    ASSERT(argument_count <= 2);
+    num_args_checked = argument_count;
+  }
+
   fragment_ = instructions +
-      InstanceCall(name, Token::kILLEGAL, argument_count, argument_names);
+      InstanceCall(name, token_kind, argument_count, argument_names,
+                   num_args_checked);
 }
 
 

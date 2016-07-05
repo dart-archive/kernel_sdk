@@ -444,11 +444,13 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment IntConstant(int64_t value);
   Fragment InstanceCall(const dart::String& name,
                         Token::Kind kind,
-                        intptr_t argument_count);
+                        intptr_t argument_count,
+                        intptr_t num_args_checked = 1);
   Fragment InstanceCall(const dart::String& name,
                         Token::Kind kind,
                         intptr_t argument_count,
-                        const Array& argument_names);
+                        const Array& argument_names,
+                        intptr_t num_args_checked = 1);
   Fragment ClosureCall(int argument_count, const Array& argument_names);
   Fragment ThrowException();
   Fragment RethrowException(int catch_try_index);
@@ -493,6 +495,8 @@ class FlowGraphBuilder : public TreeVisitor {
   void Push(Definition* definition);
   Value* Pop();
   Fragment Drop();
+
+  Token::Kind MethodKind(const dart::String& name);
 
   Zone* zone_;
   TranslationHelper translation_helper_;
