@@ -5,8 +5,8 @@
 #ifndef VM_DIL_TO_IL_H_
 #define VM_DIL_TO_IL_H_
 
-#include <map>
-#include <vector>
+#include "vm/growable_array.h"
+#include "vm/hash_map.h"
 
 #include "vm/dil.h"
 #include "vm/flow_graph.h"
@@ -14,6 +14,19 @@
 
 namespace dart {
 namespace dil {
+
+template<typename K, typename V>
+class Map : public DirectChainedHashMap<ProperPointerKeyValueTrait<K, V> > {
+ public:
+  typedef typename ProperPointerKeyValueTrait<K, V>::Key Key;
+  typedef typename ProperPointerKeyValueTrait<K, V>::Value Value;
+  typedef typename ProperPointerKeyValueTrait<K, V>::Pair Pair;
+
+  inline void Insert(const Key& key, const Value& value) {
+    Pair pair(key, value);
+    DirectChainedHashMap<ProperPointerKeyValueTrait<K, V> >::Insert(pair);
+  }
+};
 
 class BreakableBlock;
 class CatchBlock;
@@ -311,6 +324,129 @@ struct FunctionScope {
 };
 
 
+class ScopeBuildingResult : public ZoneAllocated {
+ public:
+  Map<VariableDeclaration, LocalVariable*> locals;
+  Map<TreeNode, LocalScope*> scopes;
+  GrowableArray<FunctionScope> function_scopes;
+
+  // Only non-NULL for instance functions.
+  LocalVariable* this_variable = NULL;
+
+  // Only non-NULL for factory constructor functions.
+  LocalVariable* type_arguments_variable = NULL;
+
+  // Non-NULL when the function contains a switch statement.
+  LocalVariable* switch_variable = NULL;
+
+  // Non-NULL when the function contains a return inside a finally block.
+  LocalVariable* finally_return_variable = NULL;
+
+  // Non-NULL when the function is a setter.
+  LocalVariable* setter_value = NULL;
+
+  // Variables used in exception handlers, one per exception handler nesting
+  // level.
+  GrowableArray<LocalVariable*> exception_variables;
+  GrowableArray<LocalVariable*> stack_trace_variables;
+  GrowableArray<LocalVariable*> catch_context_variables;
+
+  // For-in iterators, one per for-in nesting level.
+  GrowableArray<LocalVariable*> iterator_variables;
+};
+
+
+class ScopeBuilder : public RecursiveVisitor {
+ public:
+  ScopeBuilder(ParsedFunction* parsed_function, TreeNode* node)
+      : result_(NULL),
+        parsed_function_(parsed_function),
+        node_(node),
+        zone_(Thread::Current()->zone()),
+        translation_helper_(zone_, Isolate::Current()),
+        function_scope_(NULL),
+        scope_(NULL),
+        loop_depth_(0),
+        function_depth_(0),
+        handler_depth_(0),
+        finally_depth_(0),
+        for_in_depth_(0),
+        name_index_(0) {
+  }
+
+  virtual ~ScopeBuilder() {}
+
+  ScopeBuildingResult* BuildScopes();
+
+  virtual void VisitName(Name* node) { /* NOP */ }
+
+  virtual void VisitThisExpression(ThisExpression* node);
+  virtual void VisitTypeParameterType(TypeParameterType* node);
+  virtual void VisitVariableGet(VariableGet* node);
+  virtual void VisitVariableSet(VariableSet* node);
+  virtual void VisitSuperPropertyGet(SuperPropertyGet* node);
+  virtual void VisitSuperPropertySet(SuperPropertySet* node);
+  virtual void VisitSuperMethodInvocation(SuperMethodInvocation* node);
+  virtual void VisitFunctionExpression(FunctionExpression* node);
+  virtual void VisitLet(Let* node);
+  virtual void VisitBlock(Block* node);
+  virtual void VisitVariableDeclaration(VariableDeclaration* node);
+  virtual void VisitFunctionDeclaration(FunctionDeclaration* node);
+  virtual void VisitWhileStatement(WhileStatement* node);
+  virtual void VisitDoStatement(DoStatement* node);
+  virtual void VisitForStatement(ForStatement* node);
+  virtual void VisitForInStatement(ForInStatement* node);
+  virtual void VisitSwitchStatement(SwitchStatement* node);
+  virtual void VisitReturnStatement(ReturnStatement* node);
+  virtual void VisitTryCatch(TryCatch* node);
+  virtual void VisitTryFinally(TryFinally* node);
+
+  virtual void VisitFunctionNode(FunctionNode* node);
+
+ private:
+  void EnterScope(TreeNode* node);
+  void ExitScope();
+
+  LocalVariable* MakeVariable(const dart::String& name);
+  LocalVariable* MakeVariable(const dart::String& name, const Type& type);
+
+  void AddParameters(FunctionNode* function, intptr_t pos = 0);
+  void AddParameter(VariableDeclaration* declaration, intptr_t pos);
+  void AddVariable(VariableDeclaration* declaration);
+  void AddExceptionVariables();
+  void AddIteratorVariable();
+
+  // Record an assignment or reference to a variable.  If the occurrence is
+  // in a nested function, ensure that the variable is handled properly as a
+  // captured variable.
+  void LookupVariable(VariableDeclaration* declaration);
+
+  const dart::String& GenerateName();
+  const dart::String& GenerateHandlerName(const char* base);
+  const dart::String& GenerateIteratorName();
+
+  void HandleLocalFunction(TreeNode* parent, FunctionNode* function);
+  void HandleSpecialLoad(LocalVariable** variable, const dart::String& symbol);
+
+  ScopeBuildingResult* result_;
+  ParsedFunction* parsed_function_;
+  TreeNode* node_;
+
+  Zone* zone_;
+  TranslationHelper translation_helper_;
+
+  LocalScope* function_scope_;
+  LocalScope* scope_;
+  intptr_t loop_depth_;
+  intptr_t function_depth_;
+  unsigned handler_depth_;
+  intptr_t finally_depth_;
+  unsigned for_in_depth_;
+
+  intptr_t name_index_;
+};
+
+
 class FlowGraphBuilder : public TreeVisitor {
  public:
   FlowGraphBuilder(TreeNode* node,
@@ -515,10 +651,6 @@ class FlowGraphBuilder : public TreeVisitor {
   intptr_t next_function_id_;
   intptr_t AllocateFunctionId() { return next_function_id_++; }
 
-  std::map<VariableDeclaration*, LocalVariable*> locals_;
-  std::map<TreeNode*, LocalScope*> scopes_;
-  std::vector<FunctionScope> function_scopes_;
-
   intptr_t context_depth_;
   intptr_t loop_depth_;
   unsigned handler_depth_;
@@ -529,35 +661,16 @@ class FlowGraphBuilder : public TreeVisitor {
 
   GraphEntryInstr* graph_entry_;
 
-  // Only non-NULL for instance functions.
-  LocalVariable* this_variable_;
-
-  // Only non-NULL for factory constructor functions.
-  LocalVariable* type_arguments_variable_;
-
-  // Non-NULL when the function contains a switch statement.
-  LocalVariable* switch_variable_;
-
-  // Non-NULL when the function contains a return inside a finally block.
-  LocalVariable* finally_return_variable_;
-
-  // Variables used in exception handlers, one per exception handler nesting
-  // level.
-  std::vector<LocalVariable*> exception_variables_;
-  std::vector<LocalVariable*> stack_trace_variables_;
-  std::vector<LocalVariable*> catch_context_variables_;
-
-  // For-in iterators, one per for-in nesting level.
-  std::vector<LocalVariable*> iterator_variables_;
+  ScopeBuildingResult* scopes_;
 
   LocalVariable* CurrentException() {
-    return exception_variables_[handler_depth_ - 1];
+    return scopes_->exception_variables[handler_depth_ - 1];
   }
   LocalVariable* CurrentStackTrace() {
-    return stack_trace_variables_[handler_depth_ - 1];
+    return scopes_->stack_trace_variables[handler_depth_ - 1];
   }
   LocalVariable* CurrentCatchContext() {
-    return catch_context_variables_[handler_depth_ - 1];
+    return scopes_->catch_context_variables[handler_depth_ - 1];
   }
 
   // A chained list of breakable blocks. Chaining and lookup is done by the

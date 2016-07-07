@@ -22,6 +22,13 @@
 namespace dart {
 
 // Forward declarations.
+
+namespace dil {
+
+class ScopeBuildingResult;
+
+}  // dil
+
 class ArgumentsDescriptor;
 class Isolate;
 class LocalScope;
@@ -59,7 +66,8 @@ class ParsedFunction : public ZoneAllocated {
         first_stack_local_index_(0),
         num_copied_params_(0),
         num_stack_locals_(0),
-        have_seen_await_expr_(false) {
+        have_seen_await_expr_(false),
+        dil_scopes_(NULL) {
     ASSERT(function.IsZoneHandle());
     // Every function has a local variable for the current context.
     LocalVariable* temp = new(zone()) LocalVariable(
@@ -171,6 +179,8 @@ class ParsedFunction : public ZoneAllocated {
   // relevant.
   void AddToGuardedFields(const Field* field) const;
 
+  dil::ScopeBuildingResult* EnsureDilScopes();
+
  private:
   Thread* thread_;
   const Function& function_;
@@ -190,6 +200,8 @@ class ParsedFunction : public ZoneAllocated {
   int num_copied_params_;
   int num_stack_locals_;
   bool have_seen_await_expr_;
+
+  dil::ScopeBuildingResult* dil_scopes_;
 
   friend class Parser;
   DISALLOW_COPY_AND_ASSIGN(ParsedFunction);

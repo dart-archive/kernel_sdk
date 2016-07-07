@@ -24,100 +24,9 @@ namespace dil {
 #define I Isolate::Current()
 
 
-class ScopeBuilder : public RecursiveVisitor {
- public:
-  explicit ScopeBuilder(FlowGraphBuilder* builder)
-      : builder_(builder),
-        zone_(builder->zone_),
-        translation_helper_(builder->translation_helper_),
-        function_scope_(NULL),
-        scope_(NULL),
-        loop_depth_(0),
-        function_depth_(0),
-        handler_depth_(0),
-        finally_depth_(0),
-        for_in_depth_(0),
-        name_index_(0),
-        setter_value_(NULL) {
-  }
-
-  virtual ~ScopeBuilder() {}
-
-  LocalVariable* setter_value() { return setter_value_; }
-
-  void BuildScopes();
-
-  virtual void VisitName(Name* node) { /* NOP */ }
-
-  virtual void VisitThisExpression(ThisExpression* node);
-  virtual void VisitTypeParameterType(TypeParameterType* node);
-  virtual void VisitVariableGet(VariableGet* node);
-  virtual void VisitVariableSet(VariableSet* node);
-  virtual void VisitSuperPropertyGet(SuperPropertyGet* node);
-  virtual void VisitSuperPropertySet(SuperPropertySet* node);
-  virtual void VisitSuperMethodInvocation(SuperMethodInvocation* node);
-  virtual void VisitFunctionExpression(FunctionExpression* node);
-  virtual void VisitLet(Let* node);
-  virtual void VisitBlock(Block* node);
-  virtual void VisitVariableDeclaration(VariableDeclaration* node);
-  virtual void VisitFunctionDeclaration(FunctionDeclaration* node);
-  virtual void VisitWhileStatement(WhileStatement* node);
-  virtual void VisitDoStatement(DoStatement* node);
-  virtual void VisitForStatement(ForStatement* node);
-  virtual void VisitForInStatement(ForInStatement* node);
-  virtual void VisitSwitchStatement(SwitchStatement* node);
-  virtual void VisitReturnStatement(ReturnStatement* node);
-  virtual void VisitTryCatch(TryCatch* node);
-  virtual void VisitTryFinally(TryFinally* node);
-
-  virtual void VisitFunctionNode(FunctionNode* node);
-
- private:
-  void EnterScope(TreeNode* node);
-  void ExitScope();
-
-  LocalVariable* MakeVariable(const dart::String& name);
-  LocalVariable* MakeVariable(const dart::String& name, const Type& type);
-
-  void AddParameters(FunctionNode* function, intptr_t pos = 0);
-  void AddParameter(VariableDeclaration* declaration, intptr_t pos);
-  void AddVariable(VariableDeclaration* declaration);
-  void AddExceptionVariables();
-  void AddIteratorVariable();
-
-  // Record an assignment or reference to a variable.  If the occurrence is
-  // in a nested function, ensure that the variable is handled properly as a
-  // captured variable.
-  void LookupVariable(VariableDeclaration* declaration);
-
-  const dart::String& GenerateName();
-  const dart::String& GenerateHandlerName(const char* base);
-  const dart::String& GenerateIteratorName();
-
-  void HandleLocalFunction(TreeNode* parent, FunctionNode* function);
-  void HandleSpecialLoad(LocalVariable** variable, const dart::String& symbol);
-
-  FlowGraphBuilder* builder_;
-  Zone* zone_;
-  TranslationHelper& translation_helper_;
-
-  LocalScope* function_scope_;
-  LocalScope* scope_;
-  intptr_t loop_depth_;
-  intptr_t function_depth_;
-  unsigned handler_depth_;
-  intptr_t finally_depth_;
-  unsigned for_in_depth_;
-
-  intptr_t name_index_;
-
-  LocalVariable* setter_value_;
-};
-
-
 void ScopeBuilder::EnterScope(TreeNode* node) {
   scope_ = new(Z) LocalScope(scope_, function_depth_, loop_depth_);
-  builder_->scopes_[node] = scope_;
+  result_->scopes.Insert(node, scope_);
 }
 
 
@@ -156,18 +65,18 @@ void ScopeBuilder::AddParameter(VariableDeclaration* declaration,
   // TODO(kmillikin): Handle final.
   LocalVariable* variable = MakeVariable(H.DartSymbol(declaration->name()));
   scope_->InsertParameterAt(pos, variable);
-  builder_->locals_[declaration] = variable;
+  result_->locals.Insert(declaration, variable);
 }
 
 
 void ScopeBuilder::AddExceptionVariables() {
-  if (builder_->exception_variables_.size() >= handler_depth_) return;
+  if (result_->exception_variables.length() >= handler_depth_) return;
 
-  ASSERT(builder_->exception_variables_.size() == handler_depth_ - 1);
-  ASSERT(builder_->exception_variables_.size() ==
-         builder_->stack_trace_variables_.size());
-  ASSERT(builder_->exception_variables_.size() ==
-         builder_->catch_context_variables_.size());
+  ASSERT(result_->exception_variables.length() == handler_depth_ - 1);
+  ASSERT(result_->exception_variables.length() ==
+         result_->stack_trace_variables.length());
+  ASSERT(result_->exception_variables.length() ==
+         result_->catch_context_variables.length());
   LocalVariable* exception = MakeVariable(GenerateHandlerName(":exception"));
   LocalVariable* stack_trace =
       MakeVariable(GenerateHandlerName(":stack_trace"));
@@ -176,24 +85,24 @@ void ScopeBuilder::AddExceptionVariables() {
   function_scope_->AddVariable(exception);
   function_scope_->AddVariable(stack_trace);
   function_scope_->AddVariable(catch_context);
-  builder_->exception_variables_.push_back(exception);
-  builder_->stack_trace_variables_.push_back(stack_trace);
-  builder_->catch_context_variables_.push_back(catch_context);
+  result_->exception_variables.Add(exception);
+  result_->stack_trace_variables.Add(stack_trace);
+  result_->catch_context_variables.Add(catch_context);
 }
 
 
 void ScopeBuilder::AddIteratorVariable() {
-  if (builder_->iterator_variables_.size() >= for_in_depth_) return;
+  if (result_->iterator_variables.length() >= for_in_depth_) return;
 
-  ASSERT(builder_->iterator_variables_.size() == for_in_depth_ - 1);
+  ASSERT(result_->iterator_variables.length() == for_in_depth_ - 1);
   LocalVariable* iterator = MakeVariable(GenerateIteratorName());
   function_scope_->AddVariable(iterator);
-  builder_->iterator_variables_.push_back(iterator);
+  result_->iterator_variables.Add(iterator);
 }
 
 
 void ScopeBuilder::LookupVariable(VariableDeclaration* declaration) {
-  LocalVariable* variable = builder_->locals_[declaration];
+  LocalVariable* variable = result_->locals.Lookup(declaration);
   if (variable == NULL) {
     // We have not seen a declaration of the variable, so it must be the
     // case that we are compiling a nested function and the variable is
@@ -203,7 +112,7 @@ void ScopeBuilder::LookupVariable(VariableDeclaration* declaration) {
     const dart::String& name = H.DartSymbol(declaration->name());
     variable = function_scope_->parent()->LookupVariable(name, true);
     ASSERT(variable != NULL);
-    builder_->locals_[declaration] = variable;
+    result_->locals.Insert(declaration, variable);
   }
   if (variable->owner()->function_level() < scope_->function_level()) {
     // We call `LocalScope->CaptureVariable(variable)` in two scenarios for two
@@ -253,14 +162,17 @@ void ScopeBuilder::AddVariable(VariableDeclaration* declaration) {
       : H.DartSymbol(declaration->name());
   LocalVariable* variable = MakeVariable(name);
   scope_->AddVariable(variable);
-  builder_->locals_[declaration] = variable;
+  result_->locals.Insert(declaration, variable);
 }
 
 
-void ScopeBuilder::BuildScopes() {
-  ASSERT(scope_ == NULL && loop_depth_ == 0 && function_depth_ == 0);
+ScopeBuildingResult* ScopeBuilder::BuildScopes() {
+  if (result_ != NULL) return result_;
 
-  ParsedFunction* parsed_function = builder_->parsed_function_;
+  ASSERT(scope_ == NULL && loop_depth_ == 0 && function_depth_ == 0);
+  result_ = new(Z) ScopeBuildingResult();
+
+  ParsedFunction* parsed_function = parsed_function_;
   const dart::Function& function = parsed_function->function();
 
   LocalScope* enclosing_scope = NULL;
@@ -281,12 +193,12 @@ void ScopeBuilder::BuildScopes() {
     case RawFunction::kSetterFunction:
     case RawFunction::kConstructor: {
       FunctionNode* node;
-      if (builder_->node_->IsProcedure()) {
-        node = Procedure::Cast(builder_->node_)->function();
-      } else if (builder_->node_->IsConstructor()) {
-        node = Constructor::Cast(builder_->node_)->function();
+      if (node_->IsProcedure()) {
+        node = Procedure::Cast(node_)->function();
+      } else if (node_->IsConstructor()) {
+        node = Constructor::Cast(node_)->function();
       } else {
-        node = FunctionNode::Cast(builder_->node_);
+        node = FunctionNode::Cast(node_);
       }
       intptr_t pos = 0;
       if (function.IsClosureFunction()) {
@@ -299,12 +211,12 @@ void ScopeBuilder::BuildScopes() {
         Type& klass_type = H.GetCanonicalType(klass);
         LocalVariable* variable = MakeVariable(Symbols::This(), klass_type);
         scope_->InsertParameterAt(pos++, variable);
-        builder_->this_variable_ = variable;
+        result_->this_variable = variable;
       } else if (function.IsFactory()) {
         LocalVariable* variable = MakeVariable(
             Symbols::TypeArgumentsParameter(), AbstractType::dynamic_type());
         scope_->InsertParameterAt(pos++, variable);
-        builder_->type_arguments_variable_ = variable;
+        result_->type_arguments_variable = variable;
       }
       AddParameters(node, pos);
 
@@ -312,13 +224,13 @@ void ScopeBuilder::BuildScopes() {
       // will forward the call to the real function.
       //     -> see BuildGraphOfImplicitClosureFunction
       if (!function.IsImplicitClosureFunction()) {
-        builder_->node_->AcceptVisitor(this);
+        node_->AcceptVisitor(this);
       }
       break;
     }
     case RawFunction::kImplicitGetter:
     case RawFunction::kImplicitSetter: {
-      ASSERT(builder_->node_->IsField());
+      ASSERT(node_->IsField());
       bool is_setter = function.IsImplicitSetterFunction();
       bool is_method = !function.IsStaticFunction();
       intptr_t pos = 0;
@@ -327,16 +239,16 @@ void ScopeBuilder::BuildScopes() {
         Type& klass_type = H.GetCanonicalType(klass);
         LocalVariable* variable = MakeVariable(Symbols::This(), klass_type);
         scope_->InsertParameterAt(pos++, variable);
-        builder_->this_variable_ = variable;
+        result_->this_variable = variable;
       }
       if (is_setter) {
-        setter_value_ = MakeVariable(Symbols::Value());
-        scope_->InsertParameterAt(pos++, setter_value_);
+        result_->setter_value = MakeVariable(Symbols::Value());
+        scope_->InsertParameterAt(pos++, result_->setter_value);
       }
       break;
     }
     case RawFunction::kImplicitStaticFinalGetter:
-      builder_->node_->AcceptVisitor(this);
+      node_->AcceptVisitor(this);
       break;
     case RawFunction::kMethodExtractor: {
       // Add a receiver parameter.  Though it is captured, we emit code to
@@ -347,7 +259,7 @@ void ScopeBuilder::BuildScopes() {
       Type& klass_type = H.GetCanonicalType(klass);
       LocalVariable* variable = MakeVariable(Symbols::This(), klass_type);
       scope_->InsertParameterAt(0, variable);
-      builder_->this_variable_ = variable;
+      result_->this_variable = variable;
       break;
     }
     case RawFunction::kNoSuchMethodDispatcher:
@@ -364,24 +276,26 @@ void ScopeBuilder::BuildScopes() {
   }
 
   parsed_function->AllocateVariables();
+
+  return result_;
 }
 
 
 void ScopeBuilder::VisitThisExpression(ThisExpression* node) {
-  HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
+  HandleSpecialLoad(&result_->this_variable, Symbols::This());
 }
 
 
 void ScopeBuilder::VisitTypeParameterType(TypeParameterType* node) {
-  if (builder_->parsed_function_->function().IsFactory()) {
+  if (parsed_function_->function().IsFactory()) {
     // The type argument vector is passed as the very first argument to the
     // factory constructor function.
-    HandleSpecialLoad(&builder_->type_arguments_variable_,
+    HandleSpecialLoad(&result_->type_arguments_variable,
                       Symbols::TypeArgumentsParameter());
   } else {
     // The type argument vector is stored on the instance object. We therefore
     // need to capture `this`.
-    HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
+    HandleSpecialLoad(&result_->this_variable, Symbols::This());
   }
 }
 
@@ -398,19 +312,19 @@ void ScopeBuilder::VisitVariableSet(VariableSet* node) {
 
 
 void ScopeBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
-  HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
+  HandleSpecialLoad(&result_->this_variable, Symbols::This());
   node->VisitChildren(this);
 }
 
 
 void ScopeBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
-  HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
+  HandleSpecialLoad(&result_->this_variable, Symbols::This());
   node->VisitChildren(this);
 }
 
 
 void ScopeBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
-  HandleSpecialLoad(&builder_->this_variable_, Symbols::This());
+  HandleSpecialLoad(&result_->this_variable, Symbols::This());
   node->VisitChildren(this);
 }
 
@@ -425,7 +339,7 @@ void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
   EnterScope(parent);
   if (function_depth_ == 1) {
     FunctionScope function_scope = { function, scope_ };
-    builder_->function_scopes_.push_back(function_scope);
+    result_->function_scopes.Add(function_scope);
   }
   AddParameters(function);
   VisitFunctionNode(function);
@@ -537,21 +451,21 @@ void ScopeBuilder::VisitForInStatement(ForInStatement* node) {
 
 
 void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
-  if (builder_->switch_variable_ == NULL) {
+  if (result_->switch_variable == NULL) {
     LocalVariable* variable = MakeVariable(Symbols::SwitchExpr());
     function_scope_->AddVariable(variable);
-    builder_->switch_variable_ = variable;
+    result_->switch_variable = variable;
   }
   node->VisitChildren(this);
 }
 
 
 void ScopeBuilder::VisitReturnStatement(ReturnStatement* node) {
-  if (finally_depth_ > 0 && builder_->finally_return_variable_ == NULL) {
+  if (finally_depth_ > 0 && result_->finally_return_variable == NULL) {
     const dart::String& name = H.DartSymbol(":try_finally_return_value");
     LocalVariable* variable = MakeVariable(name);
     function_scope_->AddVariable(variable);
-    builder_->finally_return_variable_ = variable;
+    result_->finally_return_variable = variable;
   }
   node->VisitChildren(this);
 }
@@ -669,7 +583,7 @@ class SwitchBlock {
   }
 
   bool HadJumper(SwitchCase* switch_case) {
-    return destinations_.find(switch_case) != destinations_.end();
+    return destinations_.Lookup(switch_case) != NULL;
   }
 
   JoinEntryInstr* Destination(SwitchCase* label,
@@ -693,17 +607,16 @@ class SwitchBlock {
   }
 
  private:
-  typedef std::map<SwitchCase*, JoinEntryInstr*> DestinationMap;
   typedef std::set<SwitchCase*> DestinationSwitches;
 
   JoinEntryInstr* EnsureDestination(SwitchCase* switch_case) {
-    DestinationMap::iterator entry = destinations_.find(switch_case);
-    if (entry == destinations_.end()) {
+    JoinEntryInstr* cached_inst = destinations_.Lookup(switch_case);
+    if (cached_inst == NULL) {
       JoinEntryInstr* inst = builder_->BuildJoinEntry();
-      destinations_[switch_case] = inst;
+      destinations_.Insert(switch_case, inst);
       return inst;
     }
-    return entry->second;
+    return cached_inst;
   }
 
   void EnsureSwitchCaseMapping() {
@@ -722,7 +635,7 @@ class SwitchBlock {
   FlowGraphBuilder* builder_;
   SwitchBlock* outer_;
 
-  DestinationMap destinations_;
+  Map<SwitchCase, JoinEntryInstr*> destinations_;
   DestinationSwitches destination_switches_;
 
   TryFinallyBlock* outer_finally_;
@@ -1537,10 +1450,7 @@ FlowGraphBuilder::FlowGraphBuilder(
     stack_(NULL),
     pending_argument_count_(0),
     graph_entry_(NULL),
-    this_variable_(NULL),
-    type_arguments_variable_(NULL),
-    switch_variable_(NULL),
-    finally_return_variable_(NULL),
+    scopes_(NULL),
     breakable_block_(NULL),
     switch_block_(NULL),
     try_finally_block_(NULL),
@@ -1597,7 +1507,8 @@ Fragment FlowGraphBuilder::TranslateFinallyFinalizers(
 
 Fragment FlowGraphBuilder::EnterScope(TreeNode* node, bool* new_context) {
   Fragment instructions;
-  const intptr_t context_size = scopes_[node]->num_context_variables();
+  const intptr_t context_size =
+      scopes_->scopes.Lookup(node)->num_context_variables();
   if (context_size > 0) {
     instructions += PushContext(context_size);
     instructions += Drop();
@@ -1611,7 +1522,8 @@ Fragment FlowGraphBuilder::EnterScope(TreeNode* node, bool* new_context) {
 
 Fragment FlowGraphBuilder::ExitScope(TreeNode* node) {
   Fragment instructions;
-  const intptr_t context_size = scopes_[node]->num_context_variables();
+  const intptr_t context_size =
+      scopes_->scopes.Lookup(node)->num_context_variables();
   if (context_size > 0) {
     instructions += PopContext();
   }
@@ -1664,9 +1576,9 @@ Fragment FlowGraphBuilder::PopContext() {
 Fragment FlowGraphBuilder::LoadInstantiatorTypeArguments() {
   // TODO(kustermann): We could use `active_class_->IsGeneric()`.
   Fragment instructions;
-  if (type_arguments_variable_ != NULL) {
+  if (scopes_->type_arguments_variable != NULL) {
     ASSERT(parsed_function_->function().IsFactory());
-    instructions += LoadLocal(type_arguments_variable_);
+    instructions += LoadLocal(scopes_->type_arguments_variable);
   } else if (active_class_.dil_class != NULL &&
              active_class_.dil_class->type_parameters().length() > 0) {
     ASSERT(!parsed_function_->function().IsFactory());
@@ -1674,7 +1586,7 @@ Fragment FlowGraphBuilder::LoadInstantiatorTypeArguments() {
         active_class_.klass->type_arguments_field_offset();
     ASSERT(type_arguments_field_offset != dart::Class::kNoTypeArguments);
 
-    instructions += LoadLocal(this_variable_);
+    instructions += LoadLocal(scopes_->this_variable);
     instructions += LoadField(type_arguments_field_offset);
   } else {
     instructions += NullConstant();
@@ -1841,7 +1753,7 @@ Fragment FlowGraphBuilder::TryCatch(int try_handler_index) {
   JoinEntryInstr* entry =
       new(Z) JoinEntryInstr(AllocateBlockId(), try_handler_index);
   body += LoadLocal(parsed_function_->current_context_var());
-  body += StoreLocal(catch_context_variables_[handler_depth_]);
+  body += StoreLocal(scopes_->catch_context_variables[handler_depth_]);
   body += Drop();
   body += Goto(entry);
   return Fragment(body.entry, entry);
@@ -2275,7 +2187,7 @@ intptr_t FlowGraphBuilder::CurrentTryIndex() {
 
 dart::LocalVariable* FlowGraphBuilder::LookupVariable(
     VariableDeclaration* var) {
-  LocalVariable* local = locals_[var];
+  LocalVariable* local = scopes_->locals.Lookup(var);
   ASSERT(local != NULL);
   return local;
 }
@@ -2397,8 +2309,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
   // local variable stack slot allocated for the current context and (I
   // think) that the runtime will expect it to be at a fixed offset which
   // requires allocating an unused expression temporary variable.
-  ScopeBuilder scope_builder(this);
-  scope_builder.BuildScopes();
+  scopes_ = parsed_function_->EnsureDilScopes();
 
   switch (function.kind()) {
     case RawFunction::kClosureFunction:
@@ -2431,7 +2342,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
     case RawFunction::kImplicitSetter: {
       ASSERT(node_->IsField());
       return BuildGraphOfFieldAccessor(Field::Cast(node_),
-                                       scope_builder.setter_value());
+                                       scopes_->setter_value);
     }
     case RawFunction::kImplicitStaticFinalGetter: {
       ASSERT(node_->IsField());
@@ -2572,7 +2483,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(
   Fragment body(normal_entry);
   if (is_setter) {
     if (is_method) {
-      body += LoadLocal(this_variable_);
+      body += LoadLocal(scopes_->this_variable);
       body += LoadLocal(setter_value);
       body += StoreInstanceField(field);
     } else {
@@ -2583,7 +2494,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(
     body += Return();
   } else {
     if (is_method) {
-      body += LoadLocal(this_variable_);
+      body += LoadLocal(scopes_->this_variable);
       body += LoadField(field);
     } else {
       if (field.has_initializer()) {
@@ -2665,7 +2576,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfMethodExtractor(
   // The context is on top of the operand stack.  Store `this`.  The context
   // doesn't need a parent pointer because it doesn't close over anything
   // else.
-  body += LoadLocal(this_variable_);
+  body += LoadLocal(scopes_->this_variable);
   body += StoreInstanceField(Context::variable_offset(0));
 
   // The closure is on top of the operand stack.
@@ -2987,7 +2898,7 @@ Fragment FlowGraphBuilder::TranslateInitializers(
           dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
 
       // TODO(kustermann): Support FLAG_use_field_guards.
-      instructions += LoadLocal(this_variable_);
+      instructions += LoadLocal(scopes_->this_variable);
       instructions += TranslateExpression(init);
       instructions += StoreInstanceField(field);
     }
@@ -3007,13 +2918,13 @@ Fragment FlowGraphBuilder::TranslateInitializers(
           dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(init->field()));
 
       // TODO(kustermann): Support FLAG_use_field_guards.
-      instructions += LoadLocal(this_variable_);
+      instructions += LoadLocal(scopes_->this_variable);
       instructions += TranslateExpression(init->value());
       instructions += StoreInstanceField(field);
     } else if (initializer->IsSuperInitializer()) {
       SuperInitializer* init = SuperInitializer::Cast(initializer);
 
-      instructions += LoadLocal(this_variable_);
+      instructions += LoadLocal(scopes_->this_variable);
       instructions += PushArgument();
 
       ASSERT(init->arguments()->types().length() == 0);
@@ -3028,7 +2939,7 @@ Fragment FlowGraphBuilder::TranslateInitializers(
     } else if (initializer->IsRedirectingInitializer()) {
       RedirectingInitializer* init = RedirectingInitializer::Cast(initializer);
 
-      instructions += LoadLocal(this_variable_);
+      instructions += LoadLocal(scopes_->this_variable);
       instructions += PushArgument();
 
       ASSERT(init->arguments()->types().length() == 0);
@@ -3543,7 +3454,7 @@ void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
     ASSERT(target.IsGetterFunction() || target.IsImplicitGetterFunction());
   }
 
-  Fragment instructions = LoadLocal(this_variable_);
+  Fragment instructions = LoadLocal(scopes_->this_variable);
   instructions += PushArgument();
   fragment_ = instructions + StaticCall(target, 1);
 }
@@ -3558,7 +3469,7 @@ void FlowGraphBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
 
   Fragment instructions = TranslateExpression(node->expression());
   LocalVariable* expression = MakeTemporary();
-  instructions += LoadLocal(this_variable_);
+  instructions += LoadLocal(scopes_->this_variable);
   instructions += PushArgument();
   instructions += LoadLocal(expression);
   instructions += PushArgument();
@@ -3684,7 +3595,7 @@ void FlowGraphBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
   Array& argument_names = Array::ZoneHandle(Z);
 
   ASSERT(node->arguments()->types().length() == 0);
-  Fragment instructions = LoadLocal(this_variable_);
+  Fragment instructions = LoadLocal(scopes_->this_variable);
   instructions += PushArgument();
   instructions += TranslateArguments(node->arguments(), &argument_names);
   fragment_ = instructions + StaticCall(target, argument_count, argument_names);
@@ -3929,7 +3840,7 @@ void FlowGraphBuilder::VisitNot(Not* node) {
 
 
 void FlowGraphBuilder::VisitThisExpression(ThisExpression* node) {
-  fragment_ = LoadLocal(this_variable_);
+  fragment_ = LoadLocal(scopes_->this_variable);
 }
 
 
@@ -4139,12 +4050,12 @@ void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
       ? NullConstant()
       : TranslateExpression(node->expression());
   if (inside_try_finally) {
-    ASSERT(finally_return_variable_ != NULL);
-    instructions += StoreLocal(finally_return_variable_);
+    ASSERT(scopes_->finally_return_variable != NULL);
+    instructions += StoreLocal(scopes_->finally_return_variable);
     instructions += Drop();
     instructions += TranslateFinallyFinalizers(NULL, -1);
     if (instructions.is_open()) {
-      instructions += LoadLocal(finally_return_variable_);
+      instructions += LoadLocal(scopes_->finally_return_variable);
       instructions += Return();
     }
   } else {
@@ -4339,7 +4250,7 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   const dart::String& iterator_getter = dart::String::ZoneHandle(Z,
       dart::Field::GetterSymbol(Symbols::Iterator()));
   instructions += InstanceCall(iterator_getter, Token::kGET, 1);
-  LocalVariable* iterator = iterator_variables_[for_in_depth_];
+  LocalVariable* iterator = scopes_->iterator_variables[for_in_depth_];
   instructions += StoreLocal(iterator);
   instructions += Drop();
 
@@ -4431,7 +4342,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
   // Instead of using a variable we should reuse the expression on the stack,
   // since it won't be assigned again, we don't need phi nodes.
   Fragment head_instructions = TranslateExpression(node->condition());
-  head_instructions += StoreLocal(switch_variable_);
+  head_instructions += StoreLocal(scopes_->switch_variable);
   head_instructions += Drop();
 
   // Phase 1: Generate bodies and try to find out whether a body will be target
@@ -4536,7 +4447,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         current_instructions += Constant(constant_evaluator_.EvaluateExpression(
             switch_case->expressions()[j]));
         current_instructions += PushArgument();
-        current_instructions += LoadLocal(switch_variable_);
+        current_instructions += LoadLocal(scopes_->switch_variable);
         current_instructions += PushArgument();
         current_instructions +=
             InstanceCall(Symbols::EqualOperator(), Token::kILLEGAL, 2);
@@ -4825,8 +4736,8 @@ Fragment FlowGraphBuilder::TranslateFunctionNode(FunctionNode* node,
   // simply numbered the immediately-nested functions with respect to the
   // parent.
   Function& function = Function::ZoneHandle(Z);
-  for (unsigned i = 0; i < function_scopes_.size(); ++i) {
-    if (function_scopes_[i].function != node) continue;
+  for (unsigned i = 0; i < scopes_->function_scopes.length(); ++i) {
+    if (scopes_->function_scopes[i].function != node) continue;
 
     function = I->LookupClosureFunction(parsed_function_->function(),
                                         TokenPosition(i));
@@ -4843,8 +4754,9 @@ Fragment FlowGraphBuilder::TranslateFunctionNode(FunctionNode* node,
                                               parsed_function_->function(),
                                               TokenPosition(i));
       function.set_is_debuggable(false);
+      LocalScope* scope = scopes_->function_scopes[i].scope;
       const ContextScope& context_scope = ContextScope::Handle(Z,
-          function_scopes_[i].scope->PreserveOuterScope(context_depth_));
+          scope->PreserveOuterScope(context_depth_));
       function.set_context_scope(context_scope);
       function.set_dil_function(reinterpret_cast<intptr_t>(node));
       DilReader::SetupFunctionParameters(H,

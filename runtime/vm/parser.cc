@@ -16,6 +16,7 @@
 #include "vm/compiler_stats.h"
 #include "vm/dart_api_impl.h"
 #include "vm/dart_entry.h"
+#include "vm/dil_to_il.h"
 #include "vm/growable_array.h"
 #include "vm/handles.h"
 #include "vm/hash_table.h"
@@ -165,6 +166,19 @@ void ParsedFunction::AddToGuardedFields(const Field* field) const {
     }
   }
   guarded_fields_->Add(&Field::ZoneHandle(Z, field->Original()));
+}
+
+
+dil::ScopeBuildingResult* ParsedFunction::EnsureDilScopes() {
+  if (dil_scopes_ == NULL) {
+    dil::TreeNode* node = NULL;
+    if (function().dil_function() != 0) {
+      node = reinterpret_cast<dil::TreeNode*>(function().dil_function());
+    }
+    dil::ScopeBuilder builder(this, node);
+    dil_scopes_ = builder.BuildScopes();
+  }
+  return dil_scopes_;
 }
 
 
@@ -14406,6 +14420,12 @@ namespace dart {
 
 void ParsedFunction::AddToGuardedFields(const Field* field) const {
   UNREACHABLE();
+}
+
+
+dil::ScopeBuildingResult* ParsedFunction::EnsureDilScopes() {
+  UNREACHABLE();
+  return NULL;
 }
 
 
