@@ -189,6 +189,7 @@ enum Tag {
   kAwaitExpression = 51,
   kFunctionExpression = 52,
   kLet = 53,
+  kBlockExpression = 54,
 
   kPositiveIntLiteral = 55,
   kNegativeIntLiteral = 56,
@@ -1356,6 +1357,8 @@ Expression* Expression::ReadFrom(Reader* reader) {
       return FunctionExpression::ReadFrom(reader);
     case kLet:
       return Let::ReadFrom(reader);
+    case kBlockExpression:
+      return BlockExpression::ReadFrom(reader);
     case kBigIntLiteral:
       return BigintLiteral::ReadFrom(reader);
     case kStringLiteral:
@@ -1947,6 +1950,21 @@ void Let::WriteTo(Writer* writer) {
   body_->WriteTo(writer);
 }
 
+BlockExpression* BlockExpression::ReadFrom(Reader* reader) {
+  TRACE_READ_OFFSET();
+  BlockExpression* be = new BlockExpression();
+  be->body_ = Block::ReadFromImpl(reader);
+  be->value_ = Expression::ReadFrom(reader);
+  return be;
+}
+
+void BlockExpression::WriteTo(Writer* writer) {
+  TRACE_WRITE_OFFSET();
+  writer->WriteTag(kBlockExpression);
+  body_->WriteToImpl(writer);
+  value_->WriteTo(writer);
+}
+
 Statement* Statement::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   Tag tag = reader->ReadTag();
@@ -1956,7 +1974,7 @@ Statement* Statement::ReadFrom(Reader* reader) {
     case kExpressionStatement:
       return ExpressionStatement::ReadFrom(reader);
     case kBlock:
-      return Block::ReadFrom(reader);
+      return Block::ReadFromImpl(reader);
     case kEmptyStatement:
       return EmptyStatement::ReadFrom(reader);
     case kAssertStatement:
@@ -2020,7 +2038,7 @@ void ExpressionStatement::WriteTo(Writer* writer) {
   expression_->WriteTo(writer);
 }
 
-Block* Block::ReadFrom(Reader* reader) {
+Block* Block::ReadFromImpl(Reader* reader) {
   TRACE_READ_OFFSET();
   VariableScope<ReaderHelper> vars(reader->helper());
   Block* block = new Block();
@@ -2029,9 +2047,13 @@ Block* Block::ReadFrom(Reader* reader) {
 }
 
 void Block::WriteTo(Writer* writer) {
+  writer->WriteTag(kBlock);
+  WriteToImpl(writer);
+}
+
+void Block::WriteToImpl(Writer* writer) {
   TRACE_WRITE_OFFSET();
   VariableScope<WriterHelper> vars(writer->helper());
-  writer->WriteTag(kBlock);
   statements_.WriteTo(writer);
 }
 
@@ -2303,7 +2325,7 @@ void TryFinally::WriteTo(Writer* writer) {
 YieldStatement* YieldStatement::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   YieldStatement* stmt = new YieldStatement();
-  stmt->is_yield_star_ = reader->ReadBool();
+  stmt->flags_ = reader->ReadByte();
   stmt->expression_ = Expression::ReadFrom(reader);
   return stmt;
 }
@@ -2311,7 +2333,7 @@ YieldStatement* YieldStatement::ReadFrom(Reader* reader) {
 void YieldStatement::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kYieldStatement);
-  writer->WriteBool(is_yield_star_);
+  writer->WriteByte(flags_);
   expression_->WriteTo(writer);
 }
 

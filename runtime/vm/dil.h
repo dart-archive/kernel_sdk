@@ -76,6 +76,7 @@
   M(AwaitExpression) \
   M(FunctionExpression) \
   M(Let) \
+  M(BlockExpression) \
   M(Statement) \
   M(InvalidStatement) \
   M(ExpressionStatement) \
@@ -770,6 +771,7 @@ class FunctionNode : public TreeNode {
     kSyncStar = 1,
     kAsync = 2,
     kAsyncStar = 3,
+    kSyncYielding = 4,
   };
 
   static FunctionNode* ReadFrom(Reader* reader);
@@ -1660,6 +1662,29 @@ class Let : public Expression {
   Child<Expression> body_;
 };
 
+class BlockExpression : public Expression {
+ public:
+  static BlockExpression* ReadFrom(Reader* reader);
+  virtual void WriteTo(Writer* writer);
+
+  virtual ~BlockExpression();
+
+  DEFINE_CASTING_OPERATIONS(BlockExpression);
+
+  virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
+
+  Block* body() { return body_; }
+  Expression* value() { return value_; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BlockExpression);
+  BlockExpression() {}
+
+  Child<Block> body_;
+  Child<Expression> value_;
+};
+
 class Statement : public TreeNode {
  public:
   static Statement* ReadFrom(Reader* reader);
@@ -1710,8 +1735,9 @@ class ExpressionStatement : public Statement {
 
 class Block : public Statement {
  public:
-  static Block* ReadFrom(Reader* reader);
+  static Block* ReadFromImpl(Reader* reader);
   virtual void WriteTo(Writer* writer);
+  void WriteToImpl(Writer* writer);
 
   virtual ~Block();
 
@@ -2103,6 +2129,10 @@ class TryFinally : public Statement {
 
 class YieldStatement : public Statement {
  public:
+  enum {
+    kFlagYieldStar = 1 << 0,
+    kFlagNative = 1 << 1,
+  };
   static YieldStatement* ReadFrom(Reader* reader);
   virtual void WriteTo(Writer* writer);
 
@@ -2113,14 +2143,15 @@ class YieldStatement : public Statement {
   virtual void AcceptStatementVisitor(StatementVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
 
-  bool is_yield_start() { return is_yield_star_; }
+  bool is_yield_start() { return (flags_ & kFlagYieldStar) == kFlagYieldStar; }
+  bool is_native() { return (flags_ & kFlagNative) == kFlagNative; }
   Expression* expression() { return expression_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(YieldStatement);
   YieldStatement() {}
 
-  bool is_yield_star_;
+  word flags_;
   Child<Expression> expression_;
 };
 
@@ -2443,6 +2474,7 @@ class ExpressionVisitor {
   virtual void VisitBoolLiteral(BoolLiteral* node) { VisitDefaultBasicLiteral(node); }
   virtual void VisitNullLiteral(NullLiteral* node) { VisitDefaultBasicLiteral(node); }
   virtual void VisitLet(Let* node) { VisitDefaultExpression(node); }
+  virtual void VisitBlockExpression(BlockExpression* node) { VisitDefaultExpression(node); }
 };
 
 class StatementVisitor {

@@ -475,6 +475,15 @@ void Let::VisitChildren(Visitor* visitor) {
   body()->AcceptExpressionVisitor(visitor);
 }
 
+BlockExpression::~BlockExpression() {}
+void BlockExpression::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
+  visitor->VisitBlockExpression(this);
+}
+void BlockExpression::VisitChildren(Visitor* visitor) {
+  visitor->VisitBlock(body());
+  value()->AcceptExpressionVisitor(visitor);
+}
+
 Statement::~Statement() {}
 void Statement::AcceptTreeVisitor(TreeVisitor* visitor) {
   AcceptStatementVisitor(visitor);
