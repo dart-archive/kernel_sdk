@@ -618,7 +618,12 @@ void LocalScope::CaptureLocalVariables(LocalScope* top_scope) {
       LocalVariable* variable = scope->VariableAt(i);
       if ((variable->name().raw() == Symbols::StackTraceVar().raw()) ||
           (variable->name().raw() == Symbols::ExceptionVar().raw()) ||
-          (variable->name().raw() == Symbols::SavedTryContextVar().raw())) {
+          (variable->name().raw() == Symbols::SavedTryContextVar().raw()) ||
+          (variable->name().raw() == Symbols::CurrentContextVar().raw()) ||
+          (variable->name().raw() == Symbols::ClosureParameter().raw()) ||
+          (variable->name().raw() == Symbols::result().raw()) ||
+          (variable->name().raw() == Symbols::ExceptionParameter().raw()) ||
+          (variable->name().raw() == Symbols::StackTraceParameter().raw())) {
         // Don't capture those variables because the VM expects them to be on
         // the stack.
         continue;

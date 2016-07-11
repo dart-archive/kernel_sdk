@@ -377,6 +377,16 @@ class ScopeBuildingResult : public ZoneAllocated {
   // Non-NULL when the function is a setter.
   LocalVariable* setter_value = NULL;
 
+  // Non-NULL if the function contains yield statement.
+  // TODO(vegorov) actual variable is called :await_jump_var, we should rename
+  // it to reflect the fact that it is used for both await and yield.
+  LocalVariable* yield_jump_variable = NULL;
+
+  // Non-NULL if the function contains yield statement.
+  // TODO(vegorov) actual variable is called :await_ctx_var, we should rename
+  // it to reflect the fact that it is used for both await and yield.
+  LocalVariable* yield_context_variable = NULL;
+
   // Variables used in exception handlers, one per exception handler nesting
   // level.
   GrowableArray<LocalVariable*> exception_variables;
@@ -428,6 +438,7 @@ class ScopeBuilder : public RecursiveVisitor {
   virtual void VisitReturnStatement(ReturnStatement* node);
   virtual void VisitTryCatch(TryCatch* node);
   virtual void VisitTryFinally(TryFinally* node);
+  virtual void VisitYieldStatement(YieldStatement* node);
 
   virtual void VisitFunctionNode(FunctionNode* node);
 
@@ -457,6 +468,9 @@ class ScopeBuilder : public RecursiveVisitor {
 
   void HandleLocalFunction(TreeNode* parent, FunctionNode* function);
   void HandleSpecialLoad(LocalVariable** variable, const dart::String& symbol);
+  void LookupCapturedVariableByName(LocalVariable** variable,
+                                    const dart::String& name);
+
 
   struct DepthState {
     explicit DepthState(intptr_t function)
@@ -539,6 +553,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitLet(Let* node);
   virtual void VisitThrow(Throw* node);
   virtual void VisitRethrow(Rethrow* node);
+  virtual void VisitBlockExpression(BlockExpression* node);
 
   virtual void VisitInvalidStatement(InvalidStatement* node);
   virtual void VisitEmptyStatement(EmptyStatement* node);
@@ -559,6 +574,7 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitAssertStatement(AssertStatement* node);
   virtual void VisitTryFinally(TryFinally* node);
   virtual void VisitTryCatch(TryCatch* node);
+  virtual void VisitYieldStatement(YieldStatement* node);
 
  private:
   FlowGraph* BuildGraphOfFunction(FunctionNode* node,
@@ -621,6 +637,8 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment BranchIfEqual(TargetEntryInstr** then_entry,
                          TargetEntryInstr** otherwise_entry,
                          bool negate = false);
+  Fragment BranchIfStrictEqual(TargetEntryInstr** then_entry,
+                               TargetEntryInstr** otherwise_entry);
   Fragment CatchBlockEntry(const Array& handler_types, intptr_t handler_index);
   Fragment TryCatch(int try_handler_index);
   Fragment CheckStackOverflowInPrologue();
@@ -721,6 +739,8 @@ class FlowGraphBuilder : public TreeVisitor {
   GraphEntryInstr* graph_entry_;
 
   ScopeBuildingResult* scopes_;
+
+  GrowableArray<Instruction*> yield_continuations_;
 
   LocalVariable* CurrentException() {
     return scopes_->exception_variables[catch_depth_ - 1];

@@ -143,6 +143,16 @@ void ScopeBuilder::LookupVariable(VariableDeclaration* declaration) {
 }
 
 
+void ScopeBuilder::LookupCapturedVariableByName(LocalVariable** variable,
+                                                const dart::String& name) {
+  if (*variable == NULL) {
+    *variable = scope_->LookupVariable(name, true);
+    ASSERT(*variable != NULL);
+    scope_->CaptureVariable(*variable);
+  }
+}
+
+
 const dart::String& ScopeBuilder::GenerateName(const char* prefix,
                                                intptr_t suffix) {
   char name[64];
@@ -515,6 +525,33 @@ void ScopeBuilder::VisitFunctionNode(FunctionNode* node) {
   // already been added to the scope.
   if (node->body() != NULL) {
     node->body()->AcceptStatementVisitor(this);
+  }
+
+  // Ensure that :await_jump_var and :await_ctx_var are captured.
+  if (node->async_marker() == FunctionNode::kSyncYielding) {
+    {
+      LocalVariable* temp = NULL;
+      LookupCapturedVariableByName(
+          (function_depth_ == 0) ? &result_->yield_jump_variable : &temp,
+          Symbols::AwaitJumpVar());
+    }
+    {
+      LocalVariable* temp = NULL;
+      LookupCapturedVariableByName(
+          (function_depth_ == 0) ? &result_->yield_context_variable : &temp,
+          Symbols::AwaitContextVar());
+    }
+  }
+}
+
+
+void ScopeBuilder::VisitYieldStatement(YieldStatement* node) {
+  ASSERT(node->is_native());
+  if (function_depth_ == 0) {
+    // Promote all currently visible local variables into the context.
+    // TODO(vegorov) we don't need to promote those variables that are
+    // not used across yields.
+    scope_->CaptureLocalVariables(function_scope_);
   }
 }
 
@@ -1819,6 +1856,24 @@ Fragment FlowGraphBuilder::BranchIfEqual(TargetEntryInstr** then_entry,
 }
 
 
+Fragment FlowGraphBuilder::BranchIfStrictEqual(
+    TargetEntryInstr** then_entry,
+    TargetEntryInstr** otherwise_entry) {
+  Value* rhs = Pop();
+  Value* lhs = Pop();
+  StrictCompareInstr* compare =
+      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
+                                Token::kEQ_STRICT,
+                                lhs,
+                                rhs,
+                                false);
+  BranchInstr* branch = new(Z) BranchInstr(compare);
+  *then_entry = *branch->true_successor_address() = BuildTargetEntry();
+  *otherwise_entry = *branch->false_successor_address() = BuildTargetEntry();
+  return Fragment(branch).closed();
+}
+
+
 Fragment FlowGraphBuilder::CatchBlockEntry(const Array& handler_types,
                                            intptr_t handler_index) {
   CatchBlockEntryInstr* entry =
@@ -2490,7 +2545,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
 
   SetupDefaultParameterValues(function);
 
-  Fragment body(normal_entry);
+  Fragment body;
   body += CheckStackOverflowInPrologue();
   intptr_t context_size =
       parsed_function_->node_sequence()->scope()->num_context_variables();
@@ -2568,16 +2623,77 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     null_fragment += Constant(Bool::False());
     null_fragment += Return();
 
-    body = Fragment(non_null_entry);
+    body = Fragment(body.entry, non_null_entry);
   }
+
   if (function->body() != NULL) {
     body += TranslateStatement(function->body());
   }
-
   if (body.is_open()) {
     body += NullConstant();
     body += Return();
   }
+
+  // If functions body contains any yield points build switch statement that
+  // selects a continuation point based on the value of :await_jump_var.
+  if (!yield_continuations_.is_empty()) {
+    // The code we are building will be executed right after we enter
+    // the function and before any nested contexts are allocated.
+    // Reset current context_depth_ to match this.
+    intptr_t current_context_depth = context_depth_;
+    context_depth_ = scopes_->yield_jump_variable->owner()->context_level();
+
+    // Prepend an entry corresponding to normal entry to the function.
+    yield_continuations_.InsertAt(0, new(Z) DropTempsInstr(1, NULL));
+    yield_continuations_[0]->LinkTo(body.entry);
+
+    // Build a switch statement.
+    Fragment dispatch;
+
+    // Load :await_jump_var into a temporary.
+    dispatch += LoadLocal(scopes_->yield_jump_variable);
+    LocalVariable* jump_target = MakeTemporary();
+
+    for (intptr_t i = 0; i < yield_continuations_.length(); i++) {
+      if (i == 1) {
+        // This is not a normal entry but a resumption.  Restore
+        // :current_context_var from :await_ctx_var.
+        // Note: after this point context_depth_ does not match current context
+        // depth so we should not access any local variables anymore.
+        dispatch += LoadLocal(scopes_->yield_context_variable);
+        dispatch += StoreLocal(parsed_function_->current_context_var());
+        dispatch += Drop();
+      }
+      if (i == (yield_continuations_.length() - 1)) {
+        // We reached the last possility, no need to build more ifs.
+        // Coninue to the last continuation.
+        dispatch <<= yield_continuations_[i];
+        break;
+      }
+
+      // Build comparison:
+      //
+      //   if (:await_ctx_var == i) {
+      //     -> yield_continuations_[i]
+      //   } else ...
+      //
+      TargetEntryInstr* then;
+      TargetEntryInstr* otherwise;
+      dispatch += LoadLocal(jump_target);
+      dispatch += IntConstant(i);
+      dispatch += BranchIfStrictEqual(&then, &otherwise);
+
+      // True branch is linked to appropriate continuation point.
+      then->LinkTo(yield_continuations_[i]);
+
+      // False branch will contain the next comparison.
+      dispatch = Fragment(dispatch.entry, otherwise);
+    }
+    body = dispatch;
+
+    context_depth_ = current_context_depth;
+  }
+  normal_entry->LinkTo(body.entry);
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
 }
@@ -4162,6 +4278,14 @@ void FlowGraphBuilder::VisitRethrow(Rethrow* node) {
 }
 
 
+void FlowGraphBuilder::VisitBlockExpression(BlockExpression* node) {
+  Fragment instructions = TranslateStatement(node->body());
+  ASSERT(instructions.is_open());
+  instructions += TranslateExpression(node->value());
+  fragment_ = instructions;
+}
+
+
 Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
                                               Array* argument_names) {
   Fragment instructions;
@@ -4944,6 +5068,42 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
   --catch_depth_;
 
   fragment_ = Fragment(try_body.entry, after_try);
+}
+
+
+void FlowGraphBuilder::VisitYieldStatement(YieldStatement* node) {
+  ASSERT(node->is_native());  // Must have been desugared.
+  // Setup yield/continue point:
+  //
+  //   ...
+  //   :await_jump_var = index;
+  //   :await_ctx_var = :current_context_var
+  //   return <expr>
+  //
+  // Continuation<index>:
+  //   Drop(1)
+  //   ...
+  //
+  // BuildGraphOfFunction will create a dispatch that jumps to
+  // Continuation<:await_jump_var> upon entry to the function.
+  //
+  Fragment instructions = IntConstant(yield_continuations_.length() + 1);
+  instructions += StoreLocal(scopes_->yield_jump_variable);
+  instructions += Drop();
+  instructions += LoadLocal(parsed_function_->current_context_var());
+  instructions += StoreLocal(scopes_->yield_context_variable);
+  instructions += Drop();
+  instructions += TranslateExpression(node->expression());
+  instructions += Return();
+  instructions = instructions.closed();
+
+  // This drops temporary variable from the stack that prologue creates.
+  // See BuildGraphOfFunction.
+  DropTempsInstr* drop = new(Z) DropTempsInstr(1, NULL);
+  yield_continuations_.Add(drop);
+
+  Fragment continuation(instructions.entry, drop);
+  fragment_ = continuation;
 }
 
 
