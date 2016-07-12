@@ -933,9 +933,10 @@ class AstCloner implements AstVisitor<AstNode> {
     if (token == null) {
       return;
     }
-    if (token is CommentToken) {
-      token = (token as CommentToken).parent;
+    Token nonComment(Token token) {
+      return token is CommentToken ? token.parent : token;
     }
+    token = nonComment(token);
     if (_lastCloned == null) {
       _lastCloned = new Token(TokenType.EOF, -1);
       _lastCloned.setNext(_lastCloned);
@@ -993,6 +994,37 @@ class AstComparator implements AstVisitor<bool> {
   AstNode _other;
 
   /**
+   * Notify that [first] and second have different length.
+   * This implementation returns `false`. Subclasses can override and throw.
+   */
+  bool failDifferentLength(List first, List second) {
+    return false;
+  }
+
+  /**
+   * Check whether [second] is null. Subclasses can override to throw.
+   */
+  bool failIfNotNull(Object first, Object second) {
+    return second == null;
+  }
+
+  /**
+   * Notify that [first] is not `null` while [second] one is `null`.
+   * This implementation returns `false`. Subclasses can override and throw.
+   */
+  bool failIsNull(Object first, Object second) {
+    return false;
+  }
+
+  /**
+   * Notify that [first] and [second] have different types.
+   * This implementation returns `false`. Subclasses can override and throw.
+   */
+  bool failRuntimeType(Object first, Object second) {
+    return false;
+  }
+
+  /**
    * Return `true` if the [first] node and the [second] node have the same
    * structure.
    *
@@ -1001,11 +1033,11 @@ class AstComparator implements AstVisitor<bool> {
    */
   bool isEqualNodes(AstNode first, AstNode second) {
     if (first == null) {
-      return second == null;
+      return failIfNotNull(first, second);
     } else if (second == null) {
-      return false;
+      return failIsNull(first, second);
     } else if (first.runtimeType != second.runtimeType) {
-      return false;
+      return failRuntimeType(first, second);
     }
     _other = second;
     return first.accept(this);
@@ -1020,16 +1052,23 @@ class AstComparator implements AstVisitor<bool> {
    */
   bool isEqualTokens(Token first, Token second) {
     if (first == null) {
-      return second == null;
+      return failIfNotNull(first, second);
     } else if (second == null) {
-      return false;
+      return failIsNull(first, second);
     } else if (identical(first, second)) {
       return true;
     }
-    return first.offset == second.offset &&
-        first.length == second.length &&
-        first.lexeme == second.lexeme;
+    return isEqualTokensNotNull(first, second);
   }
+
+  /**
+   * Return `true` if the [first] token and the [second] token have the same
+   * structure.  Both [first] and [second] are not `null`.
+   */
+  bool isEqualTokensNotNull(Token first, Token second) =>
+      first.offset == second.offset &&
+      first.length == second.length &&
+      first.lexeme == second.lexeme;
 
   @override
   bool visitAdjacentStrings(AdjacentStrings node) {
@@ -2015,13 +2054,13 @@ class AstComparator implements AstVisitor<bool> {
    */
   bool _isEqualNodeLists(NodeList first, NodeList second) {
     if (first == null) {
-      return second == null;
+      return failIfNotNull(first, second);
     } else if (second == null) {
-      return false;
+      return failIsNull(first, second);
     }
     int size = first.length;
     if (second.length != size) {
-      return false;
+      return failDifferentLength(first, second);
     }
     for (int i = 0; i < size; i++) {
       if (!isEqualNodes(first[i], second[i])) {
@@ -2038,7 +2077,7 @@ class AstComparator implements AstVisitor<bool> {
   bool _isEqualTokenLists(List<Token> first, List<Token> second) {
     int length = first.length;
     if (second.length != length) {
-      return false;
+      return failDifferentLength(first, second);
     }
     for (int i = 0; i < length; i++) {
       if (!isEqualTokens(first[i], second[i])) {
@@ -2268,7 +2307,7 @@ class ConstantEvaluator extends GeneralizingAstVisitor<Object> {
         if (leftOperand is num && rightOperand is num) {
           return leftOperand ~/ rightOperand;
         }
-      } else {}
+      }
       break;
     }
     // TODO(brianwilkerson) This doesn't handle numeric conversions.
@@ -2315,10 +2354,11 @@ class ConstantEvaluator extends GeneralizingAstVisitor<Object> {
     for (MapLiteralEntry entry in node.entries) {
       Object key = entry.key.accept(this);
       Object value = entry.value.accept(this);
-      if (key is! String || identical(value, NOT_A_CONSTANT)) {
+      if (key is String && !identical(value, NOT_A_CONSTANT)) {
+        map[key] = value;
+      } else {
         return NOT_A_CONSTANT;
       }
-      map[(key as String)] = value;
     }
     return map;
   }
@@ -2411,17 +2451,17 @@ class ConstantEvaluator extends GeneralizingAstVisitor<Object> {
    */
   Object _getConstantValue(Element element) {
     // TODO(brianwilkerson) Implement this
-    if (element is FieldElement) {
-      FieldElement field = element;
-      if (field.isStatic && field.isConst) {
-        //field.getConstantValue();
-      }
-      //    } else if (element instanceof VariableElement) {
-      //      VariableElement variable = (VariableElement) element;
-      //      if (variable.isStatic() && variable.isConst()) {
-      //        //variable.getConstantValue();
-      //      }
-    }
+//    if (element is FieldElement) {
+//      FieldElement field = element;
+//      if (field.isStatic && field.isConst) {
+//        //field.getConstantValue();
+//      }
+//      //    } else if (element instanceof VariableElement) {
+//      //      VariableElement variable = (VariableElement) element;
+//      //      if (variable.isStatic() && variable.isConst()) {
+//      //        //variable.getConstantValue();
+//      //      }
+//    }
     return NOT_A_CONSTANT;
   }
 }
@@ -2499,22 +2539,22 @@ class ElementLocator_ElementMapper extends GeneralizingAstVisitor<Element> {
       node.element;
 
   @override
+  Element visitExportDirective(ExportDirective node) => node.element;
+
+  @override
   Element visitFunctionDeclaration(FunctionDeclaration node) => node.element;
 
   @override
   Element visitIdentifier(Identifier node) {
     AstNode parent = node.parent;
-    // Type name in Annotation
     if (parent is Annotation) {
-      Annotation annotation = parent;
-      if (identical(annotation.name, node) &&
-          annotation.constructorName == null) {
-        return annotation.element;
+      // Type name in Annotation
+      if (identical(parent.name, node) && parent.constructorName == null) {
+        return parent.element;
       }
-    }
-    // Extra work to map Constructor Declarations to their associated
-    // Constructor Elements
-    if (parent is ConstructorDeclaration) {
+    } else if (parent is ConstructorDeclaration) {
+      // Extra work to map Constructor Declarations to their associated
+      // Constructor Elements
       Identifier returnType = parent.returnType;
       if (identical(returnType, node)) {
         SimpleIdentifier name = parent.name;
@@ -2526,14 +2566,15 @@ class ElementLocator_ElementMapper extends GeneralizingAstVisitor<Element> {
           return element.unnamedConstructor;
         }
       }
-    }
-    if (parent is LibraryIdentifier) {
+    } else if (parent is LibraryIdentifier) {
       AstNode grandParent = parent.parent;
       if (grandParent is PartOfDirective) {
         Element element = grandParent.element;
         if (element is LibraryElement) {
           return element.definingCompilationUnit;
         }
+      } else if (grandParent is LibraryDirective) {
+        return grandParent.element;
       }
     }
     return node.bestElement;
@@ -3681,7 +3722,7 @@ class NodeLocator extends UnifyingAstVisitor<Object> {
    */
   NodeLocator(int startOffset, [int endOffset])
       : this._startOffset = startOffset,
-        this._endOffset = endOffset == null ? startOffset : endOffset;
+        this._endOffset = endOffset ?? startOffset;
 
   /**
    * Return the node that was found that corresponds to the given source range
@@ -3785,7 +3826,7 @@ class NodeLocator2 extends UnifyingAstVisitor<Object> {
    */
   NodeLocator2(int startOffset, [int endOffset])
       : this._startOffset = startOffset,
-        this._endOffset = endOffset == null ? startOffset : endOffset;
+        this._endOffset = endOffset ?? startOffset;
 
   /**
    * Search within the given AST [node] and return the node that was found,
@@ -5613,7 +5654,9 @@ class ResolutionCopier implements AstVisitor<bool> {
   bool visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
     FunctionExpressionInvocation toNode =
         this._toNode as FunctionExpressionInvocation;
-    if (_and(_isEqualNodes(node.function, toNode.function),
+    if (_and(
+        _isEqualNodes(node.function, toNode.function),
+        _isEqualNodes(node.typeArguments, toNode.typeArguments),
         _isEqualNodes(node.argumentList, toNode.argumentList))) {
       toNode.propagatedElement = node.propagatedElement;
       toNode.propagatedInvokeType = node.propagatedInvokeType;
@@ -5878,6 +5921,7 @@ class ResolutionCopier implements AstVisitor<bool> {
     if (_and(
         _isEqualNodes(node.target, toNode.target),
         _isEqualTokens(node.operator, toNode.operator),
+        _isEqualNodes(node.typeArguments, toNode.typeArguments),
         _isEqualNodes(node.methodName, toNode.methodName),
         _isEqualNodes(node.argumentList, toNode.argumentList))) {
       toNode.propagatedInvokeType = node.propagatedInvokeType;

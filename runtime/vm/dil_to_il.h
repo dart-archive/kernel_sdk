@@ -26,6 +26,16 @@ class Map : public DirectChainedHashMap<ProperPointerKeyValueTrait<K, V> > {
     Pair pair(key, value);
     DirectChainedHashMap<ProperPointerKeyValueTrait<K, V> >::Insert(pair);
   }
+
+  inline V Lookup(const Key& key) {
+    Pair* pair =
+        DirectChainedHashMap<ProperPointerKeyValueTrait<K, V> >::Lookup(key);
+    if (pair == NULL) {
+      return V();
+    } else {
+      return pair->value;
+    }
+  }
 };
 
 class BreakableBlock;
@@ -121,9 +131,11 @@ class ActiveFunctionScope {
 
 class TranslationHelper {
  public:
-  TranslationHelper(dart::Zone* zone, Isolate* isolate)
-      : zone_(zone), isolate_(isolate) {}
+  TranslationHelper(dart::Thread* thread, dart::Zone* zone, Isolate* isolate)
+      : thread_(thread), zone_(zone), isolate_(isolate) {}
   virtual ~TranslationHelper() {}
+
+  Thread* thread() { return thread_; }
 
   Zone* zone() { return zone_; }
 
@@ -163,6 +175,7 @@ class TranslationHelper {
   void ReportError(const Error& prev_error, const char* format, ...);
 
  private:
+  dart::Thread* thread_;
   dart::Zone* zone_;
   dart::Isolate* isolate_;
 };
@@ -363,7 +376,7 @@ class ScopeBuilder : public RecursiveVisitor {
         parsed_function_(parsed_function),
         node_(node),
         zone_(Thread::Current()->zone()),
-        translation_helper_(zone_, Isolate::Current()),
+        translation_helper_(Thread::Current(), zone_, Isolate::Current()),
         function_scope_(NULL),
         scope_(NULL),
         loop_depth_(0),

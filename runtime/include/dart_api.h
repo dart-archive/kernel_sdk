@@ -2656,9 +2656,10 @@ DART_EXPORT Dart_Handle Dart_SetNativeResolver(
 /* TODO(turnidge): Finish documenting this section. */
 
 typedef enum {
-  Dart_kImportTag = 0,
+  Dart_kCanonicalizeUrl = 0,
+  Dart_kScriptTag,
   Dart_kSourceTag,
-  Dart_kCanonicalizeUrl
+  Dart_kImportTag,
 } Dart_LibraryTag;
 
 /* TODO(turnidge): Document. */
@@ -2683,15 +2684,35 @@ DART_EXPORT Dart_Handle Dart_SetLibraryTagHandler(
     Dart_LibraryTagHandler handler);
 
 /**
+ * Canonicalizes a url with respect to some library.
+ *
+ * The url is resolved with respect to the library's url and some url
+ * normalizations are performed.
+ *
+ * This canonicalization function should be sufficient for most
+ * embedders to implement the Dart_kCanonicalizeUrl tag.
+ *
+ * \param base_url The base url relative to which the url is
+ *                being resolved.
+ * \param url The url being resolved and canonicalized.  This
+ *            parameter is a string handle.
+ *
+ * \return If no error occurs, a String object is returned.  Otherwise
+ *   an error handle is returned.
+ */
+DART_EXPORT Dart_Handle Dart_DefaultCanonicalizeUrl(Dart_Handle base_url,
+                                                    Dart_Handle url);
+
+/**
  * Loads the root script for the current isolate. The script can be
  * embedded in another file, for example in an html file.
  *
  * TODO(turnidge): Document.
  *
- * \line_offset is the number of text lines before the
+ * \param line_offset is the number of text lines before the
  *   first line of the Dart script in the containing file.
  *
- * \col_offset is the number of characters before the first character
+ * \param col_offset is the number of characters before the first character
  *   in the first line of the Dart script.
  */
 DART_EXPORT Dart_Handle Dart_LoadScript(Dart_Handle url,
@@ -2963,15 +2984,103 @@ DART_EXPORT Dart_Handle Dart_Precompile(
     bool reset_fields);
 
 
-DART_EXPORT Dart_Handle Dart_CreatePrecompiledSnapshot(
+/**
+ *  Creates a precompiled snapshot.
+ *   - A root library must have been loaded.
+ *   - Dart_Precompile must have been called.
+ *
+ *  Outputs a vm isolate snapshot, an isolate snapshot, and an assembly file
+ *  defining the symbols kInstructionsSnapshot and kDataSnapshot. The assembly
+ *  should be compiled as a static or shared library and linked or loaded by the
+ *  embedder.
+ *  Running this snapshot requires a VM compiled with DART_PRECOMPILED_SNAPSHOT.
+ *  The vm isolate snapshot, kInstructionsSnapshot and kDataSnapshot should be
+ *  passed as arguments to Dart_Initialize. The isolate snapshot should be
+ *  passed to Dart_CreateIsolate.
+ *
+ *  The buffers are scope allocated and are only valid until the next call to
+ *  Dart_ExitScope.
+ *
+ * \return A valid handle if no error occurs during the operation.
+ */
+DART_EXPORT Dart_Handle Dart_CreatePrecompiledSnapshotAssembly(
     uint8_t** vm_isolate_snapshot_buffer,
     intptr_t* vm_isolate_snapshot_size,
     uint8_t** isolate_snapshot_buffer,
     intptr_t* isolate_snapshot_size,
-    uint8_t** instructions_snapshot_buffer,
-    intptr_t* instructions_snapshot_size);
+    uint8_t** assembly_buffer,
+    intptr_t* assembly_size);
 
 
+/**
+ *  Same as Dart_CreatePrecompiledSnapshotAssembly, except the instruction and
+ *  data snapshot pieces are provided directly as bytes that the embedder can
+ *  load with mmap. The instructions piece must be loaded with read and
+ *  execute permissions; the rodata piece may be loaded as read-only.
+ */
+DART_EXPORT Dart_Handle Dart_CreatePrecompiledSnapshotBlob(
+    uint8_t** vm_isolate_snapshot_buffer,
+    intptr_t* vm_isolate_snapshot_size,
+    uint8_t** isolate_snapshot_buffer,
+    intptr_t* isolate_snapshot_size,
+    uint8_t** instructions_blob_buffer,
+    intptr_t* instructions_blob_size,
+    uint8_t** rodata_blob_buffer,
+    intptr_t* rodata_blob_size);
+
+
+DART_EXPORT Dart_Handle Dart_PrecompileJIT();
+
+
+/**
+ *  Creates a snapshot that caches unoptimized code and type feedback for faster
+ *  startup and quicker warmup in a subsequent process.
+ *
+ *  Outputs a snapshot in four pieces. The vm isolate snapshot,
+ *  instructions_blob and rodata_blob should be passed as arguments to
+ *  Dart_Initialize. The isolate snapshot should be passed to
+ *  Dart_CreateIsolate. The instructions piece must be loaded with execute
+ *  permissions; the other pieces may loaded as read-only.
+ *
+ *   - Requires the VM to have been started with --load-deferred-eagerly.
+ *   - Requires the VM to have not been started with --precompilation.
+ *   - Not supported when targeting IA32.
+ *   - The VM writing the snapshot and the VM reading the snapshot must be the
+ *     same version, must be built in the same DEBUG/RELEASE/PRODUCT mode, must
+ *     be targeting the same architecture, and must both be in checked mode or
+ *     both in unchecked mode.
+ *
+ *  The buffers are scope allocated and are only valid until the next call to
+ *  Dart_ExitScope.
+ *
+ * \return A valid handle if no error occurs during the operation.
+ */
+DART_EXPORT Dart_Handle Dart_CreateAppJITSnapshot(
+    uint8_t** vm_isolate_snapshot_buffer,
+    intptr_t* vm_isolate_snapshot_size,
+    uint8_t** isolate_snapshot_buffer,
+    intptr_t* isolate_snapshot_size,
+    uint8_t** instructions_blob_buffer,
+    intptr_t* instructions_blob_size,
+    uint8_t** rodata_blob_buffer,
+    intptr_t* rodata_blob_size);
+
+
+/**
+ *  Returns whether the VM only supports running from precompiled snapshots and
+ *  not from any other kind of snapshot or no snapshot (that is, the VM was
+ *  compiled with DART_PRECOMPILED_RUNTIME).
+ */
+DART_EXPORT bool Dart_IsPrecompiledRuntime();
+
+
+/**
+ *  Returns whether the VM was initialized with a precompiled snapshot. Only
+ *  valid after Dart_Initialize.
+ *  DEPRECATED. This is currently used to disable Platform.executable and
+ *  Platform.resolvedExecutable under precompilation to prevent process
+ *  spawning tests from becoming fork-bombs.
+ */
 DART_EXPORT bool Dart_IsRunningPrecompiledCode();
 
 #endif  /* INCLUDE_DART_API_H_ */  /* NOLINT */

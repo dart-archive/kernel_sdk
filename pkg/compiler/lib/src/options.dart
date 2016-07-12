@@ -14,8 +14,9 @@ import '../compiler.dart' show PackagesDiscoveryProvider;
 abstract class ParserOptions {
   const ParserOptions();
 
-  /// Support conditional directives, e.g., configurable imports.
-  bool get enableConditionalDirectives;
+  /// Support parsing of generic method declarations, and invocations of
+  /// methods where type arguments are passed.
+  bool get enableGenericMethodSyntax;
 }
 
 /// Options used for controlling diagnostic messages.
@@ -144,8 +145,13 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
   /// reason for why an assertion fails. (experimental)
   final bool enableAssertMessage;
 
-  /// Whether to enable the experimental conditional directives feature.
-  final bool enableConditionalDirectives;
+  /// Support parsing of generic method declarations, and invocations of
+  /// methods where type arguments are passed.
+  final bool enableGenericMethodSyntax;
+
+  /// Support access to initializing formal constructor arguments, e.g., the
+  /// use of `x` to initialize `y` in `C(this.x) : y = x`.
+  final bool enableInitializingFormalAccess;
 
   /// Whether the user specified a flag to allow the use of dart:mirrors. This
   /// silences a warning produced by the compiler.
@@ -184,6 +190,15 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
 
   /// Whether to emit URIs in the reflection metadata.
   final bool preserveUris;
+
+  /// The locations of serialized data used for resolution.
+  final List<Uri> resolutionInputs;
+
+  /// The location of the serialized data from resolution.
+  final Uri resolutionOutput;
+
+  // If `true`, sources are resolved and serialized.
+  final bool resolveOnly;
 
   /// URI where the compiler should generate the output source map file.
   final Uri sourceMapUri;
@@ -245,6 +260,8 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
       Uri libraryRoot,
       Uri packageRoot,
       Uri packageConfig,
+      List<Uri> resolutionInputs,
+      Uri resolutionOutput,
       PackagesDiscoveryProvider packagesDiscoveryProvider,
       Map<String, dynamic> environment: const <String, dynamic>{},
       List<String> options}) {
@@ -277,8 +294,10 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
         emitJavaScript: !(_hasOption(options, '--output-type=dart') ||
             _hasOption(options, '--output-type=dart-multi')),
         enableAssertMessage: _hasOption(options, Flags.enableAssertMessage),
-        enableConditionalDirectives:
-            _hasOption(options, Flags.conditionalDirectives),
+        enableGenericMethodSyntax:
+            _hasOption(options, Flags.genericMethodSyntax),
+        enableInitializingFormalAccess:
+            _hasOption(options, Flags.initializingFormalAccess),
         enableExperimentalMirrors:
             _hasOption(options, Flags.enableExperimentalMirrors),
         enableMinification: _hasOption(options, Flags.minify),
@@ -296,6 +315,9 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
             _resolvePlatformConfigFromOptions(libraryRoot, options),
         preserveComments: _hasOption(options, Flags.preserveComments),
         preserveUris: _hasOption(options, Flags.preserveUris),
+        resolutionInputs: resolutionInputs,
+        resolutionOutput: resolutionOutput,
+        resolveOnly: _hasOption(options, Flags.resolveOnly),
         sourceMapUri: _extractUriOption(options, '--source-map='),
         strips: _extractCsvOption(options, '--force-strip='),
         testMode: _hasOption(options, Flags.testMode),
@@ -344,7 +366,8 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
       bool dumpInfo: false,
       bool emitJavaScript: true,
       bool enableAssertMessage: false,
-      bool enableConditionalDirectives: false,
+      bool enableGenericMethodSyntax: false,
+      bool enableInitializingFormalAccess: false,
       bool enableExperimentalMirrors: false,
       bool enableMinification: false,
       bool enableNativeLiveTypeAnalysis: true,
@@ -357,6 +380,9 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
       Uri platformConfigUri: null,
       bool preserveComments: false,
       bool preserveUris: false,
+      List<Uri> resolutionInputs: null,
+      Uri resolutionOutput: null,
+      bool resolveOnly: false,
       Uri sourceMapUri: null,
       List<String> strips: const [],
       bool testMode: false,
@@ -396,9 +422,10 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
         packageConfig, packagesDiscoveryProvider, environment,
         allowMockCompilation: allowMockCompilation,
         allowNativeExtensions: allowNativeExtensions,
-        analyzeAll: analyzeAll,
+        analyzeAll: analyzeAll || resolveOnly,
         analyzeMain: analyzeMain,
-        analyzeOnly: analyzeOnly || analyzeSignaturesOnly || analyzeAll,
+        analyzeOnly:
+            analyzeOnly || analyzeSignaturesOnly || analyzeAll || resolveOnly,
         analyzeSignaturesOnly: analyzeSignaturesOnly,
         buildId: buildId,
         dart2dartMultiFile: dart2dartMultiFile,
@@ -413,7 +440,8 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
         dumpInfo: dumpInfo,
         emitJavaScript: emitJavaScript,
         enableAssertMessage: enableAssertMessage,
-        enableConditionalDirectives: enableConditionalDirectives,
+        enableGenericMethodSyntax: enableGenericMethodSyntax,
+        enableInitializingFormalAccess: enableInitializingFormalAccess,
         enableExperimentalMirrors: enableExperimentalMirrors,
         enableMinification: enableMinification,
         enableNativeLiveTypeAnalysis: enableNativeLiveTypeAnalysis,
@@ -428,6 +456,9 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
                 libraryRoot, null, !emitJavaScript, const []),
         preserveComments: preserveComments,
         preserveUris: preserveUris,
+        resolutionInputs: resolutionInputs,
+        resolutionOutput: resolutionOutput,
+        resolveOnly: resolveOnly,
         sourceMapUri: sourceMapUri,
         strips: strips,
         testMode: testMode,
@@ -463,7 +494,8 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
       this.dumpInfo: false,
       this.emitJavaScript: true,
       this.enableAssertMessage: false,
-      this.enableConditionalDirectives: false,
+      this.enableGenericMethodSyntax: false,
+      this.enableInitializingFormalAccess: false,
       this.enableExperimentalMirrors: false,
       this.enableMinification: false,
       this.enableNativeLiveTypeAnalysis: false,
@@ -476,6 +508,9 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
       this.platformConfigUri: null,
       this.preserveComments: false,
       this.preserveUris: false,
+      this.resolutionInputs: null,
+      this.resolutionOutput: null,
+      this.resolveOnly: false,
       this.sourceMapUri: null,
       this.strips: const [],
       this.testMode: false,
@@ -489,6 +524,131 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
       this.useStartupEmitter: false,
       this.verbose: false})
       : _shownPackageWarnings = shownPackageWarnings;
+
+  /// Creates a copy of the [CompilerOptions] where the provided non-null
+  /// option values replace existing.
+  CompilerOptions copy(
+      {entryPoint,
+      libraryRoot,
+      packageRoot,
+      packageConfig,
+      packagesDiscoveryProvider,
+      environment,
+      allowMockCompilation,
+      allowNativeExtensions,
+      analyzeAll,
+      analyzeMain,
+      analyzeOnly,
+      analyzeSignaturesOnly,
+      buildId,
+      dart2dartMultiFile,
+      deferredMapUri,
+      fatalWarnings,
+      terseDiagnostics,
+      suppressWarnings,
+      suppressHints,
+      List<String> shownPackageWarnings,
+      disableInlining,
+      disableTypeInference,
+      dumpInfo,
+      emitJavaScript,
+      enableAssertMessage,
+      enableGenericMethodSyntax,
+      enableInitializingFormalAccess,
+      enableExperimentalMirrors,
+      enableMinification,
+      enableNativeLiveTypeAnalysis,
+      enableTypeAssertions,
+      enableUserAssertions,
+      generateCodeWithCompileTimeErrors,
+      generateSourceMap,
+      hasIncrementalSupport,
+      outputUri,
+      platformConfigUri,
+      preserveComments,
+      preserveUris,
+      resolutionInputs,
+      resolutionOutput,
+      resolveOnly,
+      sourceMapUri,
+      strips,
+      testMode,
+      trustJSInteropTypeAnnotations,
+      trustPrimitives,
+      trustTypeAnnotations,
+      useContentSecurityPolicy,
+      useCpsIr,
+      useFrequencyNamer,
+      useNewSourceInfo,
+      useStartupEmitter,
+      verbose}) {
+    return new CompilerOptions._(
+        entryPoint ?? this.entryPoint,
+        libraryRoot ?? this.libraryRoot,
+        packageRoot ?? this.packageRoot,
+        packageConfig ?? this.packageConfig,
+        packagesDiscoveryProvider ?? this.packagesDiscoveryProvider,
+        environment ?? this.environment,
+        allowMockCompilation: allowMockCompilation ?? this.allowMockCompilation,
+        allowNativeExtensions:
+            allowNativeExtensions ?? this.allowNativeExtensions,
+        analyzeAll: analyzeAll ?? this.analyzeAll,
+        analyzeMain: analyzeMain ?? this.analyzeMain,
+        analyzeOnly: analyzeOnly ?? this.analyzeOnly,
+        analyzeSignaturesOnly:
+            analyzeSignaturesOnly ?? this.analyzeSignaturesOnly,
+        buildId: buildId ?? this.buildId,
+        dart2dartMultiFile: dart2dartMultiFile ?? this.dart2dartMultiFile,
+        deferredMapUri: deferredMapUri ?? this.deferredMapUri,
+        fatalWarnings: fatalWarnings ?? this.fatalWarnings,
+        terseDiagnostics: terseDiagnostics ?? this.terseDiagnostics,
+        suppressWarnings: suppressWarnings ?? this.suppressWarnings,
+        suppressHints: suppressHints ?? this.suppressHints,
+        shownPackageWarnings:
+            shownPackageWarnings ?? this._shownPackageWarnings,
+        disableInlining: disableInlining ?? this.disableInlining,
+        disableTypeInference: disableTypeInference ?? this.disableTypeInference,
+        dumpInfo: dumpInfo ?? this.dumpInfo,
+        emitJavaScript: emitJavaScript ?? this.emitJavaScript,
+        enableAssertMessage: enableAssertMessage ?? this.enableAssertMessage,
+        enableGenericMethodSyntax:
+            enableGenericMethodSyntax ?? this.enableGenericMethodSyntax,
+        enableInitializingFormalAccess: enableInitializingFormalAccess ??
+            this.enableInitializingFormalAccess,
+        enableExperimentalMirrors:
+            enableExperimentalMirrors ?? this.enableExperimentalMirrors,
+        enableMinification: enableMinification ?? this.enableMinification,
+        enableNativeLiveTypeAnalysis:
+            enableNativeLiveTypeAnalysis ?? this.enableNativeLiveTypeAnalysis,
+        enableTypeAssertions: enableTypeAssertions ?? this.enableTypeAssertions,
+        enableUserAssertions: enableUserAssertions ?? this.enableUserAssertions,
+        generateCodeWithCompileTimeErrors: generateCodeWithCompileTimeErrors ??
+            this.generateCodeWithCompileTimeErrors,
+        generateSourceMap: generateSourceMap ?? this.generateSourceMap,
+        hasIncrementalSupport:
+            hasIncrementalSupport ?? this.hasIncrementalSupport,
+        outputUri: outputUri ?? this.outputUri,
+        platformConfigUri: platformConfigUri ?? this.platformConfigUri,
+        preserveComments: preserveComments ?? this.preserveComments,
+        preserveUris: preserveUris ?? this.preserveUris,
+        resolutionInputs: resolutionInputs ?? this.resolutionInputs,
+        resolutionOutput: resolutionOutput ?? this.resolutionOutput,
+        resolveOnly: resolveOnly ?? this.resolveOnly,
+        sourceMapUri: sourceMapUri ?? this.sourceMapUri,
+        strips: strips ?? this.strips,
+        testMode: testMode ?? this.testMode,
+        trustJSInteropTypeAnnotations:
+            trustJSInteropTypeAnnotations ?? this.trustJSInteropTypeAnnotations,
+        trustPrimitives: trustPrimitives ?? this.trustPrimitives,
+        trustTypeAnnotations: trustTypeAnnotations ?? this.trustTypeAnnotations,
+        useContentSecurityPolicy:
+            useContentSecurityPolicy ?? this.useContentSecurityPolicy,
+        useCpsIr: useCpsIr ?? this.useCpsIr,
+        useFrequencyNamer: useFrequencyNamer ?? this.useFrequencyNamer,
+        useNewSourceInfo: useNewSourceInfo ?? this.useNewSourceInfo,
+        useStartupEmitter: useStartupEmitter ?? this.useStartupEmitter,
+        verbose: verbose ?? this.verbose);
+  }
 
   /// Returns `true` if warnings and hints are shown for all packages.
   bool get showAllPackageWarnings {

@@ -26,6 +26,15 @@ class _AssertionError extends Error implements AssertionError {
   static _throwNew(int assertionStart, int assertionEnd)
       native "AssertionError_throwNew";
 
+  static void _checkAssertion(condition, int start, int end) {
+    if (condition is Function) {
+      condition = condition();
+    }
+    if (!condition) {
+      _throwNew(start, end);
+    }
+  }
+
   String toString() {
     if (_url == null) {
       return _failedAssertion;
@@ -105,6 +114,12 @@ class _InternalError {
   const _InternalError(this._msg);
   String toString() => "InternalError: '${_msg}'";
   final String _msg;
+}
+
+patch class UnsupportedError {
+  static _throwNew(String msg) {
+    throw new UnsupportedError(msg);
+  }
 }
 
 patch class CyclicInitializationError {

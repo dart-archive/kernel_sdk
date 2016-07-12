@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import '../tokens/token.dart' show BeginGroupToken, Token;
+import '../tokens/token.dart' show Token;
 import '../util/util.dart';
 import 'nodes.dart';
 
@@ -122,14 +122,19 @@ class PrettyPrinter extends Indentation with Tagging<Node> implements Visitor {
     visitNodeWithChildren(node, "For");
   }
 
+  visitForIn(ForIn node) {
+    node.visitChildren(this);
+    closeNode();
+  }
+
   visitAsyncForIn(AsyncForIn node) {
     openNode(node, "AsyncForIn");
+    visitForIn(node);
   }
 
   visitSyncForIn(SyncForIn node) {
-    openNode(node, "ForIn");
-    node.visitChildren(this);
-    closeNode();
+    openNode(node, "SyncForIn");
+    visitForIn(node);
   }
 
   visitFunctionDeclaration(FunctionDeclaration node) {

@@ -779,13 +779,13 @@ dart::String& TranslationHelper::DartString(String* content,
 
 
 const dart::String& TranslationHelper::DartSymbol(const char* content) const {
-  return dart::String::ZoneHandle(Z, Symbols::New(content));
+  return dart::String::ZoneHandle(Z, Symbols::New(thread_, content));
 }
 
 
 const dart::String& TranslationHelper::DartSymbol(String* content) const {
   return dart::String::ZoneHandle(Z,
-      dart::Symbols::FromUTF8(content->buffer(), content->size()));
+      dart::Symbols::FromUTF8(thread_, content->buffer(), content->size()));
 }
 
 
@@ -824,7 +824,7 @@ const dart::String& TranslationHelper::DartClassName(dil::Class* dil_klass) {
     partial = dart::String::Concat(amp, partial);
     partial = dart::String::Concat(tmp, partial);
 
-    partial = dart::Symbols::New(partial);
+    partial = dart::Symbols::New(thread_, partial);
     return partial;
   }
 }
@@ -879,7 +879,7 @@ const dart::String& TranslationHelper::DartGetterName(String* content) {
 
 const dart::String& TranslationHelper::DartInitializerName(String* content) {
   return dart::String::Handle(Z,
-      Symbols::FromConcat(Symbols::InitPrefix(), DartSymbol(content)));
+      Symbols::FromConcat(thread_, Symbols::InitPrefix(), DartSymbol(content)));
 }
 
 
@@ -889,7 +889,7 @@ const dart::String& TranslationHelper::DartFactoryName(Class* klass,
   dart::String& temp = dart::String::Handle(Z, DartClassName(klass).raw());
   temp = dart::String::Concat(temp, Symbols::Dot());
   temp = dart::String::Concat(temp, DartString(method_name));
-  return dart::String::ZoneHandle(Z, dart::Symbols::New(temp));
+  return dart::String::ZoneHandle(Z, dart::Symbols::New(thread_, temp));
 }
 
 
@@ -897,7 +897,8 @@ dart::RawLibrary* TranslationHelper::LookupLibraryByDilLibrary(
     Library* dil_library) {
   const dart::String& library_name = DartSymbol(dil_library->import_uri());
   ASSERT(!library_name.IsNull());
-  dart::RawLibrary* library = dart::Library::LookupLibrary(library_name);
+  dart::RawLibrary* library =
+      dart::Library::LookupLibrary(thread_, library_name);
   ASSERT(library != Object::null());
   return library;
 }
@@ -1372,7 +1373,7 @@ RawInstance* ConstantEvaluator::Canonicalize(const Instance& instance) {
     return instance.raw();
   } else {
     const char* error_str = NULL;
-    RawInstance* result = instance.CheckAndCanonicalize(&error_str);
+    RawInstance* result = instance.CheckAndCanonicalize(H.thread(), &error_str);
     if (result == Object::null()) {
       H.ReportError("Invalid const object %s", error_str);
     }
@@ -1436,7 +1437,7 @@ FlowGraphBuilder::FlowGraphBuilder(
     intptr_t osr_id,
     intptr_t first_block_id)
   : zone_(Thread::Current()->zone()),
-    translation_helper_(zone_, Thread::Current()->isolate()),
+    translation_helper_(Thread::Current(), zone_, Thread::Current()->isolate()),
     node_(node),
     parsed_function_(parsed_function),
     osr_id_(osr_id),
@@ -2696,7 +2697,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfNoSuchMethodDispatcher(
   for (intptr_t i = 0; i < descriptor.NamedCount(); ++i) {
     intptr_t parameter_index = descriptor.PositionalCount() + i;
     name = descriptor.NameAt(i);
-    name = dart::Symbols::New(name);
+    name = dart::Symbols::New(H.thread(), name);
     body += LoadLocal(array);
     body += IntConstant(descriptor.PositionAt(i));
     body += LoadLocal(scope->VariableAt(parameter_index));
@@ -2749,7 +2750,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfInvokeFieldDispatcher(
   ASSERT(!owner.IsNull());
   const dart::String& field_name = dart::String::Handle(Z, function.name());
   const dart::String& getter_name = dart::String::ZoneHandle(Z,
-      Symbols::New(dart::String::Handle(Z,
+      Symbols::New(H.thread(), dart::String::Handle(Z,
           dart::Field::GetterSymbol(field_name))));
 
   // Determine if this is `class Closure { get call => this; }`
@@ -3444,7 +3445,7 @@ void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
         H.LookupClassByDilClass(Class::Cast(node->target()->parent())));
     const dart::String& getter_name = H.DartGetterName(
         node->target()->name()->string());
-    target = Resolver::ResolveDynamicAnyArgs(klass, getter_name);
+    target = Resolver::ResolveDynamicAnyArgs(zone_, klass, getter_name);
     ASSERT(!target.IsNull());
   } else {
     ASSERT(node->target()->IsField());

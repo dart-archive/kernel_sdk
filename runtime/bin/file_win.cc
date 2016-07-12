@@ -38,7 +38,9 @@ class FileHandle {
 
 
 File::~File() {
-  Close();
+  if (!IsClosed()) {
+    Close();
+  }
   delete handle_;
 }
 
@@ -68,6 +70,12 @@ intptr_t File::GetFD() {
 
 bool File::IsClosed() {
   return handle_->fd() == kClosedFd;
+}
+
+
+void* File::MapExecutable(intptr_t* len) {
+  UNIMPLEMENTED();
+  return NULL;
 }
 
 
@@ -130,9 +138,15 @@ bool File::Lock(File::LockType lock, int64_t start, int64_t end) {
       rc = UnlockFileEx(handle, 0, length_low, length_high, &overlapped);
       break;
     case File::kLockShared:
-    case File::kLockExclusive: {
-      DWORD flags = LOCKFILE_FAIL_IMMEDIATELY;
-      if (lock == File::kLockExclusive) {
+    case File::kLockExclusive:
+    case File::kLockBlockingShared:
+    case File::kLockBlockingExclusive: {
+      DWORD flags = 0;
+      if ((lock == File::kLockShared) || (lock == File::kLockExclusive)) {
+        flags |= LOCKFILE_FAIL_IMMEDIATELY;
+      }
+      if ((lock == File::kLockExclusive) ||
+          (lock == File::kLockBlockingExclusive)) {
         flags |= LOCKFILE_EXCLUSIVE_LOCK;
       }
       rc = LockFileEx(handle, flags, 0,

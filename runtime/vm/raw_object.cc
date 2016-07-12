@@ -4,6 +4,7 @@
 
 #include "vm/raw_object.h"
 
+#include "vm/become.h"
 #include "vm/class_table.h"
 #include "vm/dart.h"
 #include "vm/freelist.h"
@@ -13,11 +14,6 @@
 
 
 namespace dart {
-
-#if defined(DEBUG)
-DEFINE_FLAG(bool, validate_overwrite, true, "Verify overwritten fields.");
-#endif  // DEBUG
-
 
 void RawObject::Validate(Isolate* isolate) const {
   if (Object::void_class_ == reinterpret_cast<RawClass*>(kHeapObjectTag)) {
@@ -177,20 +173,25 @@ intptr_t RawObject::SizeFromClass() const {
       instance_size = element->Size();
       break;
     }
+    case kForwardingCorpse: {
+      uword addr = RawObject::ToAddr(this);
+      ForwardingCorpse* element = reinterpret_cast<ForwardingCorpse*>(addr);
+      instance_size = element->Size();
+      break;
+    }
     default: {
       // Get the (constant) instance size out of the class object.
       // TODO(koda): Add Size(ClassTable*) interface to allow caching in loops.
       Isolate* isolate = Isolate::Current();
-      ClassTable* class_table = isolate->class_table();
 #if defined(DEBUG)
+      ClassTable* class_table = isolate->class_table();
       if (!class_table->IsValidIndex(class_id) ||
           !class_table->HasValidClassAt(class_id)) {
         FATAL2("Invalid class id: %" Pd " from tags %" Px "\n",
                class_id, ptr()->tags_);
       }
 #endif  // DEBUG
-      RawClass* raw_class = class_table->At(class_id);
-      ASSERT(raw_class->ptr()->id_ == class_id);
+      RawClass* raw_class = isolate->GetClassForHeapWalkAt(class_id);
       instance_size =
           raw_class->ptr()->instance_size_in_words_ << kWordSizeLog2;
     }
@@ -218,22 +219,6 @@ intptr_t RawObject::SizeFromClass() const {
 #endif  // DEBUG
   return instance_size;
 }
-
-
-#if defined(DEBUG)
-void RawObject::ValidateOverwrittenPointer(RawObject* raw) {
-  if (FLAG_validate_overwrite) {
-    raw->Validate(Isolate::Current());
-  }
-}
-
-
-void RawObject::ValidateOverwrittenSmi(RawSmi* raw) {
-  if (FLAG_validate_overwrite && raw->IsHeapObject() && raw != Object::null()) {
-    FATAL1("Expected smi/null, found: %" Px "\n", reinterpret_cast<uword>(raw));
-  }
-}
-#endif  // DEBUG
 
 
 intptr_t RawObject::VisitPointers(ObjectPointerVisitor* visitor) {
@@ -287,6 +272,12 @@ intptr_t RawObject::VisitPointers(ObjectPointerVisitor* visitor) {
         uword addr = RawObject::ToAddr(this);
         FreeListElement* element = reinterpret_cast<FreeListElement*>(addr);
         size = element->Size();
+        break;
+      }
+      case kForwardingCorpse: {
+        uword addr = RawObject::ToAddr(this);
+        ForwardingCorpse* forwarder = reinterpret_cast<ForwardingCorpse*>(addr);
+        size = forwarder->Size();
         break;
       }
       case kNullCid:
@@ -713,7 +704,7 @@ intptr_t RawInstance::VisitInstancePointers(RawInstance* raw_obj,
   intptr_t instance_size = SizeTag::decode(tags);
   if (instance_size == 0) {
     RawClass* cls =
-        visitor->isolate()->class_table()->At(raw_obj->GetClassId());
+        visitor->isolate()->GetClassForHeapWalkAt(raw_obj->GetClassId());
     instance_size = cls->ptr()->instance_size_in_words_ << kWordSizeLog2;
   }
 

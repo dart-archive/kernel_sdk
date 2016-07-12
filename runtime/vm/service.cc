@@ -35,6 +35,7 @@
 #include "vm/stack_frame.h"
 #include "vm/symbols.h"
 #include "vm/timeline.h"
+#include "vm/type_table.h"
 #include "vm/unicode.h"
 #include "vm/version.h"
 
@@ -45,6 +46,7 @@ namespace dart {
 
 DECLARE_FLAG(bool, trace_service);
 DECLARE_FLAG(bool, trace_service_pause_events);
+DECLARE_FLAG(bool, profile_vm);
 DEFINE_FLAG(charp, vm_name, "vm",
             "The default name of this vm as reported by the VM service "
             "protocol");
@@ -411,6 +413,10 @@ class MethodParameter {
     return true;
   }
 
+  virtual bool ValidateObject(const Object& value) const {
+    return true;
+  }
+
   const char* name() const {
     return name_;
   }
@@ -425,9 +431,39 @@ class MethodParameter {
     PrintInvalidParamError(js, name);
   }
 
+  virtual void PrintErrorObject(const char* name,
+                                const Object& value,
+                                JSONStream* js) const {
+    PrintInvalidParamError(js, name);
+  }
+
  private:
   const char* name_;
   bool required_;
+};
+
+
+class DartStringParameter : public MethodParameter {
+ public:
+  DartStringParameter(const char* name, bool required)
+      : MethodParameter(name, required) {
+  }
+
+  virtual bool ValidateObject(const Object& value) const {
+    return value.IsString();
+  }
+};
+
+
+class DartListParameter : public MethodParameter {
+ public:
+  DartListParameter(const char* name, bool required)
+      : MethodParameter(name, required) {
+  }
+
+  virtual bool ValidateObject(const Object& value) const {
+    return value.IsArray() || value.IsGrowableObjectArray();
+  }
 };
 
 
@@ -439,6 +475,10 @@ class NoSuchParameter : public MethodParameter {
 
   virtual bool Validate(const char* value) const {
     return (value == NULL);
+  }
+
+  virtual bool ValidateObject(const Object& value) const {
+    return value.IsNull();
   }
 };
 
@@ -735,19 +775,38 @@ static bool ValidateParameters(const MethodParameter* const* parameters,
   if (parameters == NULL) {
     return true;
   }
-  for (intptr_t i = 0; parameters[i] != NULL; i++) {
-    const MethodParameter* parameter = parameters[i];
-    const char* name = parameter->name();
-    const bool required = parameter->required();
-    const char* value = js->LookupParam(name);
-    const bool has_parameter = (value != NULL);
-    if (required && !has_parameter) {
-      PrintMissingParamError(js, name);
-      return false;
+  if (js->NumObjectParameters() > 0) {
+    Object& value = Object::Handle();
+    for (intptr_t i = 0; parameters[i] != NULL; i++) {
+      const MethodParameter* parameter = parameters[i];
+      const char* name = parameter->name();
+      const bool required = parameter->required();
+      value = js->LookupObjectParam(name);
+      const bool has_parameter = !value.IsNull();
+      if (required && !has_parameter) {
+        PrintMissingParamError(js, name);
+        return false;
+      }
+      if (has_parameter && !parameter->ValidateObject(value)) {
+        parameter->PrintErrorObject(name, value, js);
+        return false;
+      }
     }
-    if (has_parameter && !parameter->Validate(value)) {
-      parameter->PrintError(name, value, js);
-      return false;
+  } else {
+    for (intptr_t i = 0; parameters[i] != NULL; i++) {
+      const MethodParameter* parameter = parameters[i];
+      const char* name = parameter->name();
+      const bool required = parameter->required();
+      const char* value = js->LookupParam(name);
+      const bool has_parameter = (value != NULL);
+      if (required && !has_parameter) {
+        PrintMissingParamError(js, name);
+        return false;
+      }
+      if (has_parameter && !parameter->Validate(value)) {
+        parameter->PrintError(name, value, js);
+        return false;
+      }
     }
   }
   return true;
@@ -773,7 +832,9 @@ void Service::PostError(const String& method_name,
 }
 
 
-void Service::InvokeMethod(Isolate* I, const Array& msg) {
+void Service::InvokeMethod(Isolate* I,
+                           const Array& msg,
+                           bool parameters_are_dart_objects) {
   Thread* T = Thread::Current();
   ASSERT(I == T->isolate());
   ASSERT(I != NULL);
@@ -807,7 +868,11 @@ void Service::InvokeMethod(Isolate* I, const Array& msg) {
 
     JSONStream js;
     js.Setup(zone.GetZone(), SendPort::Cast(reply_port).Id(),
-             seq, method_name, param_keys, param_values);
+             seq,
+             method_name,
+             param_keys,
+             param_values,
+             parameters_are_dart_objects);
 
     // RPC came in with a custom service id zone.
     const char* id_zone_param = js.LookupParam("_idZone");
@@ -857,7 +922,6 @@ void Service::InvokeMethod(Isolate* I, const Array& msg) {
 
     if (handler != NULL) {
       EmbedderHandleMessage(handler, &js);
-      js.PostReply();
       return;
     }
 
@@ -885,6 +949,12 @@ void Service::InvokeMethod(Isolate* I, const Array& msg) {
 void Service::HandleRootMessage(const Array& msg_instance) {
   Isolate* isolate = Isolate::Current();
   InvokeMethod(isolate, msg_instance);
+}
+
+
+void Service::HandleObjectRootMessage(const Array& msg_instance) {
+  Isolate* isolate = Isolate::Current();
+  InvokeMethod(isolate, msg_instance, true);
 }
 
 
@@ -1008,15 +1078,16 @@ static void ReportPauseOnConsole(ServiceEvent* event) {
 
 
 void Service::HandleEvent(ServiceEvent* event) {
-  if (event->isolate() != NULL &&
-      ServiceIsolate::IsServiceIsolateDescendant(event->isolate())) {
+  if (event->stream_info() != NULL &&
+      !event->stream_info()->enabled()) {
+    if (FLAG_warn_on_pause_with_no_debugger &&
+        event->IsPause()) {
+      // If we are about to pause a running program which has no
+      // debugger connected, tell the user about it.
+      ReportPauseOnConsole(event);
+    }
+    // Ignore events when no one is listening to the event stream.
     return;
-  }
-  if (FLAG_warn_on_pause_with_no_debugger &&
-      event->IsPause() && !Service::debug_stream.enabled()) {
-    // If we are about to pause a running program which has no
-    // debugger connected, tell the user about it.
-    ReportPauseOnConsole(event);
   }
   if (!ServiceIsolate::IsRunning()) {
     return;
@@ -1123,16 +1194,16 @@ void Service::EmbedderHandleMessage(EmbedderServiceHandler* handler,
   ASSERT(handler != NULL);
   Dart_ServiceRequestCallback callback = handler->callback();
   ASSERT(callback != NULL);
-  const char* r = NULL;
-  const char* method = js->method();
-  const char** keys = js->param_keys();
-  const char** values = js->param_values();
-  r = callback(method, keys, values, js->num_params(), handler->user_data());
-  ASSERT(r != NULL);
-  // TODO(johnmccutchan): Allow for NULL returns?
-  TextBuffer* buffer = js->buffer();
-  buffer->AddString(r);
-  free(const_cast<char*>(r));
+  const char* response = NULL;
+  bool success = callback(js->method(), js->param_keys(), js->param_values(),
+                          js->num_params(), handler->user_data(), &response);
+  ASSERT(response != NULL);
+  if (!success) {
+    js->SetupError();
+  }
+  js->buffer()->AddString(response);
+  js->PostReply();
+  free(const_cast<char*>(response));
 }
 
 
@@ -1451,14 +1522,21 @@ static RawObject* LookupHeapObjectLibraries(Isolate* isolate,
     return lib.raw();
   }
   if (strcmp(parts[2], "scripts") == 0) {
-    // Script ids look like "libraries/35/scripts/library%2Furl.dart"
-    if (num_parts != 4) {
+    // Script ids look like "libraries/35/scripts/library%2Furl.dart/12345"
+    if (num_parts != 5) {
       return Object::sentinel().raw();
     }
     const String& id = String::Handle(String::New(parts[3]));
     ASSERT(!id.IsNull());
     // The id is the url of the script % encoded, decode it.
     const String& requested_url = String::Handle(String::DecodeIRI(id));
+
+    // Each script id is tagged with a load time.
+    int64_t timestamp;
+    if (!GetInteger64Id(parts[4], &timestamp, 16) || (timestamp < 0)) {
+      return Object::sentinel().raw();
+    }
+
     Script& script = Script::Handle();
     String& script_url = String::Handle();
     const Array& loaded_scripts = Array::Handle(lib.LoadedScripts());
@@ -1468,7 +1546,8 @@ static RawObject* LookupHeapObjectLibraries(Isolate* isolate,
       script ^= loaded_scripts.At(i);
       ASSERT(!script.IsNull());
       script_url ^= script.url();
-      if (script_url.Equals(requested_url)) {
+      if (script_url.Equals(requested_url) &&
+          (timestamp == script.load_timestamp())) {
         return script.raw();
       }
     }
@@ -1587,12 +1666,13 @@ static RawObject* LookupHeapObjectClasses(Thread* thread,
     if (!GetIntegerId(parts[3], &id)) {
       return Object::sentinel().raw();
     }
-    Type& type = Type::Handle(zone);
-    type ^= cls.CanonicalTypeFromIndex(id);
-    if (type.IsNull()) {
+    if (id != 0) {
       return Object::sentinel().raw();
     }
-    return type.raw();
+    const Type& type = Type::Handle(zone, cls.CanonicalType());
+    if (!type.IsNull()) {
+      return type.raw();
+    }
   }
 
   // Not found.
@@ -2205,7 +2285,7 @@ class GetInstancesVisitor : public ObjectGraph::Visitor {
 
   virtual Direction VisitObject(ObjectGraph::StackIterator* it) {
     RawObject* raw_obj = it->Get();
-    if (raw_obj->IsFreeListElement()) {
+    if (raw_obj->IsPseudoObject()) {
       return kProceed;
     }
     Thread* thread = Thread::Current();
@@ -2370,6 +2450,57 @@ static bool GetSourceReport(Thread* thread, JSONStream* js) {
                    script,
                    TokenPosition(start_pos),
                    TokenPosition(end_pos));
+  return true;
+}
+
+
+static const MethodParameter* reload_sources_params[] = {
+  RUNNABLE_ISOLATE_PARAMETER,
+  NULL,
+};
+
+
+static bool ReloadSources(Thread* thread, JSONStream* js) {
+  Isolate* isolate = thread->isolate();
+  if (!isolate->compilation_allowed()) {
+    js->PrintError(kFeatureDisabled,
+        "Cannot reload source when running a precompiled program.");
+    return true;
+  }
+  if (Dart::snapshot_kind() == Snapshot::kAppWithJIT) {
+    js->PrintError(kFeatureDisabled,
+        "Cannot reload source when running an app snapshot.");
+    return true;
+  }
+  Dart_LibraryTagHandler handler = isolate->library_tag_handler();
+  if (handler == NULL) {
+    js->PrintError(kFeatureDisabled,
+                   "A library tag handler must be installed.");
+    return true;
+  }
+  if (isolate->IsReloading()) {
+    js->PrintError(kIsolateIsReloading,
+                   "This isolate is being reloaded.");
+    return true;
+  }
+  if (!isolate->CanReload()) {
+    js->PrintError(kFeatureDisabled,
+                   "This isolate cannot reload sources right now.");
+    return true;
+  }
+
+  isolate->ReloadSources();
+
+  const Error& error = Error::Handle(isolate->sticky_reload_error());
+
+  if (error.IsNull()) {
+    PrintSuccess(js);
+  } else {
+    // Clear the sticky error.
+    isolate->clear_sticky_reload_error();
+    js->PrintError(kIsolateReloadFailed,
+                   "Isolate reload failed: %s", error.ToErrorCString());
+  }
   return true;
 }
 
@@ -2927,7 +3058,7 @@ static bool Resume(Thread* thread, JSONStream* js) {
     return true;
   }
 
-  js->PrintError(kVMMustBePaused, NULL);
+  js->PrintError(kIsolateMustBePaused, NULL);
   return true;
 }
 
@@ -3283,8 +3414,7 @@ class ContainsAddressVisitor : public FindObjectVisitor {
   virtual uword filter_addr() const { return addr_; }
 
   virtual bool FindObject(RawObject* obj) const {
-    // Free list elements are not real objects, so skip them.
-    if (obj->IsFreeListElement()) {
+    if (obj->IsPseudoObject()) {
       return false;
     }
     uword obj_begin = RawObject::ToAddr(obj);
@@ -3539,6 +3669,19 @@ static bool GetObject(Thread* thread, JSONStream* js) {
 }
 
 
+static const MethodParameter* get_object_store_params[] = {
+  RUNNABLE_ISOLATE_PARAMETER,
+  NULL,
+};
+
+
+static bool GetObjectStore(Thread* thread, JSONStream* js) {
+  JSONObject jsobj(js);
+  thread->isolate()->object_store()->PrintToJSONObject(&jsobj);
+  return true;
+}
+
+
 static const MethodParameter* get_class_list_params[] = {
   RUNNABLE_ISOLATE_PARAMETER,
   NULL,
@@ -3564,25 +3707,30 @@ static bool GetTypeArgumentsList(Thread* thread, JSONStream* js) {
   if (js->ParamIs("onlyWithInstantiations", "true")) {
     only_with_instantiations = true;
   }
+  Zone* zone = thread->zone();
   ObjectStore* object_store = thread->isolate()->object_store();
-  const Array& table = Array::Handle(object_store->canonical_type_arguments());
-  ASSERT(table.Length() > 0);
-  TypeArguments& type_args = TypeArguments::Handle();
-  const intptr_t table_size = table.Length() - 1;
-  const intptr_t table_used = Smi::Value(Smi::RawCast(table.At(table_size)));
+  CanonicalTypeArgumentsSet typeargs_table(
+      zone, object_store->canonical_type_arguments());
+  const intptr_t table_size = typeargs_table.NumEntries();
+  const intptr_t table_used = typeargs_table.NumOccupied();
+  const Array& typeargs_array = Array::Handle(
+      zone, HashTables::ToArray(typeargs_table, false));
+  ASSERT(typeargs_array.Length() == table_used);
+  TypeArguments& typeargs = TypeArguments::Handle(zone);
   JSONObject jsobj(js);
   jsobj.AddProperty("type", "TypeArgumentsList");
   jsobj.AddProperty("canonicalTypeArgumentsTableSize", table_size);
   jsobj.AddProperty("canonicalTypeArgumentsTableUsed", table_used);
   JSONArray members(&jsobj, "typeArguments");
-  for (intptr_t i = 0; i < table_size; i++) {
-    type_args ^= table.At(i);
-    if (!type_args.IsNull()) {
-      if (!only_with_instantiations || type_args.HasInstantiations()) {
-        members.AddValue(type_args);
+  for (intptr_t i = 0; i < table_used; i++) {
+    typeargs ^= typeargs_array.At(i);
+    if (!typeargs.IsNull()) {
+      if (!only_with_instantiations || typeargs.HasInstantiations()) {
+        members.AddValue(typeargs);
       }
     }
   }
+  typeargs_table.Release();
   return true;
 }
 
@@ -3597,7 +3745,7 @@ static bool GetVersion(Thread* thread, JSONStream* js) {
   JSONObject jsobj(js);
   jsobj.AddProperty("type", "Version");
   jsobj.AddProperty("major", static_cast<intptr_t>(3));
-  jsobj.AddProperty("minor", static_cast<intptr_t>(4));
+  jsobj.AddProperty("minor", static_cast<intptr_t>(5));
   jsobj.AddProperty("_privateMajor", static_cast<intptr_t>(0));
   jsobj.AddProperty("_privateMinor", static_cast<intptr_t>(0));
   return true;
@@ -3642,6 +3790,7 @@ void Service::PrintJSONForVM(JSONStream* js, bool ref) {
   jsobj.AddProperty("targetCPU", CPU::Id());
   jsobj.AddProperty("hostCPU", HostCPUFeatures::hardware());
   jsobj.AddProperty("version", Version::String());
+  jsobj.AddProperty("_profilerMode", FLAG_profile_vm ? "VM" : "Dart");
   jsobj.AddProperty64("pid", OS::ProcessId());
   int64_t start_time_millis = (vm_isolate->start_time() /
                                kMicrosecondsPerMillisecond);
@@ -3808,6 +3957,7 @@ static bool SetName(Thread* thread, JSONStream* js) {
 
 
 static const MethodParameter* set_vm_name_params[] = {
+  NO_ISOLATE_PARAMETER,
   new MethodParameter("name", true),
   NULL,
 };
@@ -3909,6 +4059,8 @@ static const ServiceMethodDescriptor service_methods_[] = {
     get_isolate_metric_list_params },
   { "getObject", GetObject,
     get_object_params },
+  { "_getObjectStore", GetObjectStore,
+    get_object_store_params },
   { "_getObjectByAddress", GetObjectByAddress,
     get_object_by_address_params },
   { "_getPersistentHandles", GetPersistentHandles,
@@ -3947,6 +4099,8 @@ static const ServiceMethodDescriptor service_methods_[] = {
     remove_breakpoint_params },
   { "_restartVM", RestartVM,
     restart_vm_params },
+  { "_reloadSources", ReloadSources,
+    reload_sources_params },
   { "resume", Resume,
     resume_params },
   { "_requestHeapSnapshot", RequestHeapSnapshot,

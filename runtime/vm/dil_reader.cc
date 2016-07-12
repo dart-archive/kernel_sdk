@@ -26,8 +26,8 @@ namespace dil {
 
 class SimpleExpressionConverter : public ExpressionVisitor {
  public:
-  explicit SimpleExpressionConverter(Zone* zone)
-      : translation_helper_(zone, NULL),
+  SimpleExpressionConverter(Thread* thread, Zone* zone)
+      : translation_helper_(thread, zone, NULL),
         zone_(zone), is_simple_(false), simple_value_(NULL) {}
 
   virtual void VisitDefaultExpression(Expression* node) {
@@ -151,8 +151,7 @@ void DilReader::ReadLibrary(Library* dil_library) {
     script.SetLocationOffset(0, 0);
     script.Tokenize(H.DartString("nop() {}"));
     dart::Class& toplevel_class = dart::Class::Handle(dart::Class::New(
-          Symbols::TopLevel(), script, TokenPosition::kNoSource));
-    toplevel_class.set_library(library);
+          library, Symbols::TopLevel(), script, TokenPosition::kNoSource));
     library.set_toplevel_class(toplevel_class);
 
     // Load toplevel fields.
@@ -531,7 +530,7 @@ void DilReader::GenerateStaticFieldInitializer(const dart::Field& field,
   if (initializer != NULL) {
     field.set_has_initializer(true);
 
-    SimpleExpressionConverter converter(Z);
+    SimpleExpressionConverter converter(H.thread(), Z);
     if (converter.IsSimple(initializer)) {
       field.SetStaticValue(converter.SimpleValue(), true);
     } else {
@@ -568,11 +567,11 @@ dart::Library& DilReader::LookupLibrary(Library* library) {
     // If this is a core library, we'll use the VM version.
     const dart::String& url = H.DartSymbol(library->import_uri());
     if (library->IsCorelibrary()) {
-      *handle = dart::Library::LookupLibrary(url);
+      *handle = dart::Library::LookupLibrary(thread_, url);
     } else {
       *handle = dart::Library::New(url);
       handle->SetLoadInProgress();
-      handle->Register();
+      handle->Register(thread_);
     }
     ASSERT(!handle->IsNull());
     libraries_.Insert(library, handle);
@@ -599,10 +598,10 @@ dart::Class& DilReader::LookupClass(Class* klass) {
       TokenPosition pos(0);
       Script& script = Script::Handle(Z, Script::New(H.DartString(""),
           H.DartString(""), RawScript::kScriptTag));
-      handle = &dart::Class::Handle(Z, dart::Class::New(name, script, pos));
+      handle = &dart::Class::Handle(Z,
+          dart::Class::New(library, name, script, pos));
       classes_.Insert(klass, handle);
 
-      handle->set_library(library);
       library.AddClass(*handle);
 
       ReadPreliminaryClass(handle, klass);

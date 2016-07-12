@@ -17,8 +17,10 @@ import '../elements/modelx.dart'
         EnumClassElementX,
         FieldElementX,
         LibraryElementX,
+        MetadataAnnotationX,
         NamedMixinApplicationElementX,
         VariableList;
+import '../id_generator.dart';
 import '../native/native.dart' as native;
 import '../string_validator.dart' show StringValidator;
 import '../tokens/keyword.dart' show Keyword;
@@ -39,8 +41,6 @@ import 'partial_elements.dart'
         PartialTypedefElement;
 import 'listener.dart' show closeBraceFor, Listener, ParserError, VERBOSE;
 
-typedef int IdGenerator();
-
 /// Options used for scanning.
 ///
 /// Use this to conditionally support special tokens.
@@ -52,9 +52,6 @@ class ScannerOptions {
   final bool canUseNative;
 
   const ScannerOptions({this.canUseNative: false});
-
-  ScannerOptions.from(Compiler compiler, LibraryElement libraryElement)
-      : canUseNative = compiler.backend.canLibraryUseNative(libraryElement);
 }
 
 /**
@@ -171,7 +168,7 @@ class ElementListener extends Listener {
     NodeList names = makeNodeList(count, enumKeyword.next.next, endBrace, ",");
     Identifier name = popNode();
 
-    int id = idGenerator();
+    int id = idGenerator.getNextFreeId();
     Element enclosing = compilationUnitElement;
     pushElement(new EnumClassElementX(
         name.source, enclosing, id, new Enum(enumKeyword, name, names)));
@@ -237,8 +234,8 @@ class ElementListener extends Listener {
 
   void endTopLevelDeclaration(Token token) {
     if (!metadata.isEmpty) {
-      recoverableError(
-          metadata.first.beginToken, 'Metadata not supported here.');
+      MetadataAnnotationX first = metadata.first;
+      recoverableError(first.beginToken, 'Metadata not supported here.');
       metadata.clear();
     }
   }
@@ -249,7 +246,7 @@ class ElementListener extends Listener {
     popNode(); // superType
     popNode(); // typeParameters
     Identifier name = popNode();
-    int id = idGenerator();
+    int id = idGenerator.getNextFreeId();
     PartialClassElement element = new PartialClassElement(
         name.source, beginToken, endToken, compilationUnitElement, id);
     pushElement(element);
@@ -290,7 +287,7 @@ class ElementListener extends Listener {
         classKeyword,
         endToken);
 
-    int id = idGenerator();
+    int id = idGenerator.getNextFreeId();
     Element enclosing = compilationUnitElement;
     pushElement(new NamedMixinApplicationElementX(
         name.source, enclosing, id, namedMixinApplication));
@@ -310,6 +307,7 @@ class ElementListener extends Listener {
   void endTopLevelMethod(Token beginToken, Token getOrSet, Token endToken) {
     bool hasParseError = currentMemberHasParseError;
     memberErrors = memberErrors.tail;
+    popNode(); // typeVariables
     Identifier name = popNode();
     popNode(); // type
     Modifiers modifiers = popNode();
@@ -368,10 +366,10 @@ class ElementListener extends Listener {
     pushNode(null);
   }
 
-  void endTypeVariable(Token token) {
+  void endTypeVariable(Token token, Token extendsOrSuper) {
     TypeAnnotation bound = popNode();
     Identifier name = popNode();
-    pushNode(new TypeVariable(name, bound));
+    pushNode(new TypeVariable(name, extendsOrSuper, bound));
     rejectBuiltInIdentifier(name);
   }
 
@@ -379,7 +377,7 @@ class ElementListener extends Listener {
     pushNode(makeNodeList(count, beginToken, endToken, ','));
   }
 
-  void handleNoTypeVariables(token) {
+  void handleNoTypeVariables(Token token) {
     pushNode(null);
   }
 
@@ -758,7 +756,8 @@ class ElementListener extends Listener {
     throw new ParserError(message);
   }
 
-  void reportError(Spannable spannable, MessageKind errorCode,
+  @override
+  void reportErrorHelper(Spannable spannable, MessageKind errorCode,
       [Map arguments = const {}]) {
     if (currentMemberHasParseError) return; // Error already reported.
     if (suppressParseErrors) return;

@@ -10,6 +10,7 @@
 #include <errno.h>  // NOLINT
 #include <fcntl.h>  // NOLINT
 #include <libgen.h>  // NOLINT
+#include <sys/mman.h>  // NOLINT
 #include <sys/sendfile.h>  // NOLINT
 #include <sys/stat.h>  // NOLINT
 #include <sys/types.h>  // NOLINT
@@ -38,7 +39,9 @@ class FileHandle {
 
 
 File::~File() {
-  Close();
+  if (!IsClosed()) {
+    Close();
+  }
   delete handle_;
 }
 
@@ -70,6 +73,21 @@ intptr_t File::GetFD() {
 
 bool File::IsClosed() {
   return handle_->fd() == kClosedFd;
+}
+
+
+void* File::MapExecutable(intptr_t* len) {
+  ASSERT(handle_->fd() >= 0);
+  intptr_t length = Length();
+  void* addr = mmap(0, length,
+                    PROT_READ | PROT_EXEC, MAP_PRIVATE,
+                    handle_->fd(), 0);
+  if (addr == MAP_FAILED) {
+    *len = -1;
+  } else {
+    *len = length;
+  }
+  return addr;
 }
 
 
@@ -118,9 +136,11 @@ bool File::Lock(File::LockType lock, int64_t start, int64_t end) {
       fl.l_type = F_UNLCK;
       break;
     case File::kLockShared:
+    case File::kLockBlockingShared:
       fl.l_type = F_RDLCK;
       break;
     case File::kLockExclusive:
+    case File::kLockBlockingExclusive:
       fl.l_type = F_WRLCK;
       break;
     default:
@@ -129,9 +149,12 @@ bool File::Lock(File::LockType lock, int64_t start, int64_t end) {
   fl.l_whence = SEEK_SET;
   fl.l_start = start;
   fl.l_len = end == -1 ? 0 : end - start;
-  // fcntl does not block, but fails if the lock cannot be acquired.
-  int rc = fcntl(handle_->fd(), F_SETLK, &fl);
-  return rc != -1;
+  int cmd = F_SETLK;
+  if ((lock == File::kLockBlockingShared) ||
+      (lock == File::kLockBlockingExclusive)) {
+    cmd = F_SETLKW;
+  }
+  return TEMP_FAILURE_RETRY(fcntl(handle_->fd(), cmd, &fl)) != -1;
 }
 
 
@@ -155,8 +178,8 @@ File* File::ScopedOpen(const char* name, FileOpenMode mode) {
   // Report errors for non-regular files.
   struct stat64 st;
   if (TEMP_FAILURE_RETRY(stat64(name, &st)) == 0) {
-    // Only accept regular files and character devices.
-    if (!S_ISREG(st.st_mode) && !S_ISCHR(st.st_mode)) {
+    // Only accept regular files, character devices, and pipes.
+    if (!S_ISREG(st.st_mode) && !S_ISCHR(st.st_mode) && !S_ISFIFO(st.st_mode)) {
       errno = (S_ISDIR(st.st_mode)) ? EISDIR : ENOENT;
       return NULL;
     }
@@ -196,10 +219,7 @@ File* File::Open(const char* path, FileOpenMode mode) {
 
 
 File* File::OpenStdio(int fd) {
-  if ((fd < 0) || (2 < fd)) {
-    return NULL;
-  }
-  return new File(new FileHandle(fd));
+  return ((fd < 0) || (2 < fd)) ? NULL : new File(new FileHandle(fd));
 }
 
 

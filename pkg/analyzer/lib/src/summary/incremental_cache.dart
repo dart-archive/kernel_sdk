@@ -2,22 +2,67 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import 'dart:convert' show UTF8;
+import 'dart:collection';
+import 'dart:convert';
 import 'dart:core' hide Resource;
 
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/src/generated/engine.dart';
+import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/summary/format.dart';
 import 'package:analyzer/src/summary/idl.dart';
 import 'package:analyzer/src/summary/summarize_elements.dart';
+import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
+
+/**
+ * The version of the incremental cache.  It should be incremented every time
+ * when any cache data structure is changed.
+ */
+const int _VERSION = 1;
+
+/**
+ * Compare the given file paths [a] and [b].  Because paths usually have long
+ * equal prefix, comparison is done not as comparision of two generic [String]s.
+ * Instead it starts from the ends of each strings.
+ *
+ * Return `-1` if [a] is ordered before [b], `1` if `this` is ordered after [b],
+ * and zero if [a] and [b] are ordered together.
+ */
+int comparePaths(String a, String b) {
+  int thisLength = a.length;
+  int otherLength = b.length;
+  int len = (thisLength < otherLength) ? thisLength : otherLength;
+  for (int i = 0; i < len; i++) {
+    int thisCodeUnit = a.codeUnitAt(thisLength - 1 - i);
+    int otherCodeUnit = b.codeUnitAt(otherLength - 1 - i);
+    if (thisCodeUnit < otherCodeUnit) {
+      return -1;
+    }
+    if (thisCodeUnit > otherCodeUnit) {
+      return 1;
+    }
+  }
+  if (thisLength < otherLength) {
+    return -1;
+  }
+  if (thisLength > otherLength) {
+    return 1;
+  }
+  return 0;
+}
 
 /**
  * Storage for cache data.
  */
 abstract class CacheStorage {
+  /**
+   * Compact the storage, e.g. remove unused entries.
+   */
+  void compact();
+
   /**
    * Return bytes for the given [key], `null` if [key] is not in the storage.
    */
@@ -41,6 +86,11 @@ abstract class CacheStorage {
  */
 class FolderCacheStorage implements CacheStorage {
   /**
+   * The maximum number of entries to keep in the cache.
+   */
+  static const MAX_ENTRIES = 20000;
+
+  /**
    * The folder to read and write files.
    */
   final Folder folder;
@@ -52,14 +102,46 @@ class FolderCacheStorage implements CacheStorage {
    */
   final String tempFileName;
 
-  FolderCacheStorage(this.folder, this.tempFileName);
+  /**
+   * The set of recently used entries, with the most recently used entries
+   * on the bottom.
+   */
+  final LinkedHashSet<String> _recentEntries = new LinkedHashSet<String>();
+
+  FolderCacheStorage(this.folder, this.tempFileName) {
+    try {
+      File file = folder.getChildAssumingFile('.entries');
+      if (file.exists) {
+        String entriesString = file.readAsStringSync();
+        List<String> entriesLists = entriesString.split('\n');
+        _recentEntries.addAll(entriesLists);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void compact() {
+    while (_recentEntries.length > MAX_ENTRIES) {
+      String key = _recentEntries.first;
+      _recentEntries.remove(key);
+      try {
+        folder.getChildAssumingFile(key).delete();
+      } catch (_) {}
+    }
+    try {
+      List<int> bytes = UTF8.encode(_recentEntries.join('\n'));
+      folder.getChildAssumingFile('.entries').writeAsBytesSync(bytes);
+    } catch (_) {}
+  }
 
   @override
   List<int> get(String key) {
     Resource file = folder.getChild(key);
     if (file is File) {
       try {
-        return file.readAsBytesSync();
+        List<int> bytes = file.readAsBytesSync();
+        _accessedKey(key);
+        return bytes;
       } on FileSystemException {}
     }
     return null;
@@ -72,7 +154,16 @@ class FolderCacheStorage implements CacheStorage {
     tempFile.writeAsBytesSync(bytes);
     try {
       tempFile.renameSync(absPath);
+      _accessedKey(key);
     } catch (e) {}
+  }
+
+  /**
+   * The given [key] was accessed, update recently used entries.
+   */
+  void _accessedKey(String key) {
+    _recentEntries.remove(key);
+    _recentEntries.add(key);
   }
 }
 
@@ -138,9 +229,6 @@ class IncrementalCache {
       List<Source> closureSources = _getLibraryClosure(librarySource);
       List<LibraryBundleWithId> closureBundles = <LibraryBundleWithId>[];
       for (Source source in closureSources) {
-        if (source.isInSystemLibrary) {
-          continue;
-        }
         if (getSourceKind(source) == SourceKind.PART) {
           continue;
         }
@@ -152,6 +240,48 @@ class IncrementalCache {
         closureBundles.add(new LibraryBundleWithId(source, key, bundle));
       }
       return closureBundles;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Return the parts of the given [librarySource], or `null` if unknown.
+   */
+  List<Source> getLibraryParts(Source librarySource) {
+    try {
+      CacheSourceContent contentSource = _getCacheSourceContent(librarySource);
+      if (contentSource != null) {
+        return contentSource.partUris.map((String partUri) {
+          Source partSource = _resolveUri(librarySource, partUri);
+          if (partSource == null) {
+            throw new StateError(
+                'Unable to resolve $partUri in $librarySource');
+          }
+          return partSource;
+        }).toList();
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  /**
+   * Return cached errors in the given [source] in the context of the given
+   * [librarySource], or `null` if the cache does not have this information.
+   */
+  List<AnalysisError> getSourceErrorsInLibrary(
+      Source librarySource, Source source) {
+    try {
+      String key = _getSourceErrorsKey(librarySource, source);
+      List<int> bytes = storage.get(key);
+      if (bytes == null) {
+        return null;
+      }
+      CacheSourceErrorsInLibrary errorsObject =
+          new CacheSourceErrorsInLibrary.fromBuffer(bytes);
+      return errorsObject.errors
+          .map((e) => _convertErrorFromCached(source, e))
+          .toList();
     } catch (e) {
       return null;
     }
@@ -188,11 +318,27 @@ class IncrementalCache {
   }
 
   /**
+   * Associate the given [errors] with the [source] in the [librarySource].
+   */
+  void putSourceErrorsInLibrary(
+      Source librarySource, Source source, List<AnalysisError> errors) {
+    CacheSourceErrorsInLibraryBuilder builder =
+        new CacheSourceErrorsInLibraryBuilder(
+            errors: errors.map(_convertErrorToCached).toList());
+    String key = _getSourceErrorsKey(librarySource, source);
+    List<int> bytes = builder.toBuffer();
+    storage.put(key, bytes);
+  }
+
+  /**
    * Fill the whole source closure of the library with the given
    * [librarySource]. It includes defining units and parts of the library and
    * all its directly or indirectly imported or exported libraries.
    */
   void _appendLibraryClosure(Set<Source> closure, Source librarySource) {
+    if (librarySource.isInSystemLibrary) {
+      return;
+    }
     if (closure.add(librarySource)) {
       CacheSourceContent contentSource = _getCacheSourceContent(librarySource);
       if (contentSource == null) {
@@ -212,11 +358,64 @@ class IncrementalCache {
         if (refSource == null) {
           throw new StateError('Unable to resolve $refUri in $librarySource');
         }
-        _appendLibraryClosure(closure, refSource);
+        // If we have already the closure for the 'refSource', use it.
+        // Otherwise, continue computing recursively.
+        // It's not the most efficient algorithm, but in practice we might
+        // visit each library multiple times only for the first top-level
+        // bundle requested in `getLibraryClosureBundles`.
+        List<Source> refClosure = _libraryClosureMap[refSource];
+        if (refClosure != null) {
+          closure.addAll(refClosure);
+        } else {
+          _appendLibraryClosure(closure, refSource);
+        }
       }
       contentSource.importedUris.forEach(appendLibrarySources);
       contentSource.exportedUris.forEach(appendLibrarySources);
     }
+  }
+
+  List<int> _computeSaltedMD5OfBytes(addData(ByteConversionSink byteSink)) {
+    Digest digest;
+    ChunkedConversionSink<Digest> digestSink =
+        new ChunkedConversionSink<Digest>.withCallback((List<Digest> digests) {
+      digest = digests.single;
+    });
+    ByteConversionSink byteSink = md5.startChunkedConversion(digestSink);
+    // Add data.
+    addData(byteSink);
+    byteSink.add(const <int>[_VERSION]);
+    byteSink.add(configSalt);
+    // Done.
+    byteSink.close();
+    return digest.bytes;
+  }
+
+  /**
+   * Return the [AnalysisError] for the given [cachedError].
+   */
+  AnalysisError _convertErrorFromCached(
+      Source source, CacheAnalysisError cachedError) {
+    ErrorCode errorCode = _getErrorCode(cachedError);
+    return new AnalysisError.forValues(
+        source,
+        cachedError.offset,
+        cachedError.length,
+        errorCode,
+        cachedError.message,
+        cachedError.correction);
+  }
+
+  /**
+   * Return the [CacheAnalysisError] for the given [error].
+   */
+  CacheAnalysisError _convertErrorToCached(AnalysisError error) {
+    return new CacheAnalysisErrorBuilder(
+        errorCodeUniqueName: error.errorCode.uniqueName,
+        offset: error.offset,
+        length: error.length,
+        message: error.message,
+        correction: error.correction);
   }
 
   /**
@@ -242,8 +441,20 @@ class IncrementalCache {
    */
   String _getCacheSourceContentKey(Source source) {
     List<int> hash = _getSourceContentHash(source);
-    String hashStr = CryptoUtils.bytesToHex(hash);
+    String hashStr = hex.encode(hash);
     return '$hashStr.content';
+  }
+
+  /**
+   * Return the [ErrorCode] of the given [error], throws if not found.
+   */
+  ErrorCode _getErrorCode(CacheAnalysisError error) {
+    String uniqueName = error.errorCodeUniqueName;
+    ErrorCode errorCode = ErrorCode.byUniqueName(uniqueName);
+    if (errorCode != null) {
+      return errorCode;
+    }
+    throw new StateError('Unable to find ErrorCode: $uniqueName');
   }
 
   /**
@@ -257,6 +468,10 @@ class IncrementalCache {
         return null;
       }
       bundle = new PackageBundle.fromBuffer(bytes);
+      if (bundle.majorVersion != PackageBundleAssembler.currentMajorVersion ||
+          bundle.minorVersion != PackageBundleAssembler.currentMinorVersion) {
+        return null;
+      }
       _bundleMap[key] = bundle;
     }
     return bundle;
@@ -267,7 +482,7 @@ class IncrementalCache {
    */
   String _getLibraryBundleKey(Source librarySource) {
     List<int> hash = _getLibraryClosureHash(librarySource);
-    String hashStr = CryptoUtils.bytesToHex(hash);
+    String hashStr = hex.encode(hash);
     return '$hashStr.summary';
   }
 
@@ -278,9 +493,11 @@ class IncrementalCache {
    */
   List<Source> _getLibraryClosure(Source librarySource) {
     return _libraryClosureMap.putIfAbsent(librarySource, () {
-      Set<Source> closure = new Set<Source>();
-      _appendLibraryClosure(closure, librarySource);
-      return closure.toList();
+      Set<Source> closureSet = new Set<Source>();
+      _appendLibraryClosure(closureSet, librarySource);
+      List<Source> closureList = closureSet.toList();
+      closureList.sort((a, b) => comparePaths(a.fullName, b.fullName));
+      return closureList;
     });
   }
 
@@ -291,13 +508,21 @@ class IncrementalCache {
   List<int> _getLibraryClosureHash(Source librarySource) {
     return _libraryClosureHashMap.putIfAbsent(librarySource, () {
       List<Source> closure = _getLibraryClosure(librarySource);
-      MD5 md5 = new MD5();
-      for (Source source in closure) {
-        List<int> sourceHash = _getSourceContentHash(source);
-        md5.add(sourceHash);
-      }
-      md5.add(configSalt);
-      return md5.close();
+      return _computeSaltedMD5OfBytes((ByteConversionSink byteSink) {
+        for (Source source in closure) {
+          List<int> sourceHash = _getSourceContentHash(source);
+          byteSink.add(sourceHash);
+        }
+        // When we sort closure sources for two libraries (A, B) we get exactly
+        // the same list of sources for both A and B. So, their hash is exactly
+        // the same. But we use it to store separate summary bundles for
+        // separate libraries. Ideally would be nice to group these libraries
+        // into a single summary bundle. But this would require delaying
+        // saving bundles until we know all of them.
+        // So, for now we make hashes for separate libraries unique be mixing
+        // in the library source again.
+        byteSink.add(_getSourceContentHash(librarySource));
+      });
     });
   }
 
@@ -308,8 +533,20 @@ class IncrementalCache {
     return _sourceContentHashMap.putIfAbsent(source, () {
       String sourceText = source.contents.data;
       List<int> sourceBytes = UTF8.encode(sourceText);
-      return (new MD5()..add(sourceBytes)).close();
+      return md5.convert(sourceBytes).bytes;
     });
+  }
+
+  /**
+   * Return the key for errors in the [source] in the [librarySource].
+   */
+  String _getSourceErrorsKey(Source librarySource, Source source) {
+    List<int> hash = _computeSaltedMD5OfBytes((ByteConversionSink byteSink) {
+      byteSink.add(_getLibraryClosureHash(librarySource));
+      byteSink.add(_getSourceContentHash(source));
+    });
+    String hashStr = hex.encode(hash);
+    return '$hashStr.errorsInLibrary';
   }
 
   /**
@@ -335,11 +572,13 @@ class IncrementalCache {
    * Write the content based information about the given [source].
    */
   void _writeCacheSourceContent(Source source, CacheSourceContentBuilder b) {
-    String key = _getCacheSourceContentKey(source);
-    List<int> bytes = b.toBuffer();
-    storage.put(key, bytes);
-    // Put into the cache to avoid reading it later.
-    _sourceContentMap[source] = new CacheSourceContent.fromBuffer(bytes);
+    if (!_sourceContentMap.containsKey(source)) {
+      String key = _getCacheSourceContentKey(source);
+      List<int> bytes = b.toBuffer();
+      storage.put(key, bytes);
+      // Put into the cache to avoid reading it later.
+      _sourceContentMap[source] = new CacheSourceContent.fromBuffer(bytes);
+    }
   }
 
   /**
@@ -349,10 +588,6 @@ class IncrementalCache {
   void _writeCacheSourceContents(LibraryElement library,
       [Set<LibraryElement> writtenLibraries]) {
     Source librarySource = library.source;
-    // Do nothing if already cached.
-    if (_sourceContentMap.containsKey(librarySource)) {
-      return;
-    }
     // Stop recursion cycle.
     writtenLibraries ??= new Set<LibraryElement>();
     if (!writtenLibraries.add(library)) {

@@ -32,6 +32,7 @@ import 'members.dart' show lookupInScope, ResolverVisitor;
 import 'registry.dart' show ResolutionRegistry;
 import 'resolution_common.dart' show CommonResolverVisitor;
 import 'resolution_result.dart';
+import 'scope.dart' show Scope, ExtensionScope;
 
 class InitializerResolver {
   final ResolverVisitor visitor;
@@ -77,7 +78,7 @@ class InitializerResolver {
     if (initialized.containsKey(field)) {
       reportDuplicateInitializerError(field, init, initialized[field]);
     } else if (field.isFinal) {
-      field.parseNode(visitor.resolution.parsing);
+      field.parseNode(visitor.resolution.parsingContext);
       Expression initializer = field.initializer;
       if (initializer != null) {
         reportDuplicateInitializerError(
@@ -171,7 +172,6 @@ class InitializerResolver {
     ConstructorElement foundConstructor =
         findConstructor(constructor.library, lookupTarget, constructorName);
 
-    final bool isImplicitSuperCall = false;
     final String className = lookupTarget.name;
     CallStructure callStructure = argumentsResult.callStructure;
     ConstructorElement calledConstructor = verifyThatConstructorMatchesCall(
@@ -250,7 +250,7 @@ class InitializerResolver {
   /// reported and an [ErroneousConstructorElement] is returned.
   ConstructorElement verifyThatConstructorMatchesCall(
       Node node,
-      ConstructorElementX lookedupConstructor,
+      ConstructorElement lookedupConstructor,
       CallStructure callStructure,
       String className,
       {String constructorName: '',
@@ -295,14 +295,30 @@ class InitializerResolver {
    * Resolve all initializers of this constructor. In the case of a redirecting
    * constructor, the resolved constructor's function element is returned.
    */
-  ConstructorElement resolveInitializers() {
+  ConstructorElement resolveInitializers(
+      {bool enableInitializingFormalAccess: false}) {
     Map<dynamic /*String|int*/, ConstantExpression> defaultValues =
         <dynamic /*String|int*/, ConstantExpression>{};
     ConstructedConstantExpression constructorInvocation;
     // Keep track of all "this.param" parameters specified for constructor so
     // that we can ensure that fields are initialized only once.
     FunctionSignature functionParameters = constructor.functionSignature;
+    Scope oldScope = visitor.scope;
+    if (enableInitializingFormalAccess) {
+      // In order to get the correct detection of name clashes between all
+      // parameters (regular ones and initializing formals) we must extend
+      // the parameter scope rather than adding a new nested scope.
+      visitor.scope = new ExtensionScope(visitor.scope);
+    }
+    Link<Node> parameterNodes = (functionNode.parameters == null)
+        ? const Link<Node>()
+        : functionNode.parameters.nodes;
     functionParameters.forEachParameter((ParameterElementX element) {
+      List<Element> optionals = functionParameters.optionalParameters;
+      if (!optionals.isEmpty && element == optionals.first) {
+        NodeList nodes = parameterNodes.head;
+        parameterNodes = nodes.nodes;
+      }
       if (isConst) {
         if (element.isOptional) {
           if (element.constantCache == null) {
@@ -326,9 +342,15 @@ class InitializerResolver {
         }
       }
       if (element.isInitializingFormal) {
+        VariableDefinitions variableDefinitions = parameterNodes.head;
+        Node parameterNode = variableDefinitions.definitions.nodes.head;
         InitializingFormalElementX initializingFormal = element;
         FieldElement field = initializingFormal.fieldElement;
         checkForDuplicateInitializers(field, element.initializer);
+        if (enableInitializingFormalAccess) {
+          visitor.defineLocalVariable(parameterNode, initializingFormal);
+          visitor.addToScope(initializingFormal);
+        }
         if (isConst) {
           if (element.isNamed) {
             fieldInitializers[field] = new NamedArgumentReference(element.name);
@@ -340,6 +362,7 @@ class InitializerResolver {
           isValidAsConstant = false;
         }
       }
+      parameterNodes = parameterNodes.tail;
     });
 
     if (functionNode.initializers == null) {
@@ -425,12 +448,26 @@ class InitializerResolver {
       constructorInvocation = resolveImplicitSuperConstructorSend();
     }
     if (isConst && isValidAsConstant) {
-      constructor.constantConstructor = new GenerativeConstantConstructor(
-          constructor.enclosingClass.thisType,
-          defaultValues,
-          fieldInitializers,
-          constructorInvocation);
+      constructor.enclosingClass.forEachInstanceField((_, FieldElement field) {
+        if (!fieldInitializers.containsKey(field)) {
+          visitor.resolution.ensureResolved(field);
+          // TODO(johnniwinther): Report error if `field.constant` is `null`.
+          if (field.constant != null) {
+            fieldInitializers[field] = field.constant;
+          } else {
+            isValidAsConstant = false;
+          }
+        }
+      });
+      if (isValidAsConstant) {
+        constructor.constantConstructor = new GenerativeConstantConstructor(
+            constructor.enclosingClass.thisType,
+            defaultValues,
+            fieldInitializers,
+            constructorInvocation);
+      }
     }
+    visitor.scope = oldScope;
     return null; // If there was no redirection always return null.
   }
 }
@@ -720,7 +757,17 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
   ConstructorResult constructorResultForType(Node node, DartType type,
       {PrefixElement prefix}) {
     String name = type.name;
-    if (type.isMalformed) {
+    if (type.isTypeVariable) {
+      return reportAndCreateErroneousConstructorElement(
+          node,
+          ConstructorResultKind.INVALID_TYPE,
+          type,
+          resolver.enclosingElement,
+          name,
+          MessageKind.CANNOT_INSTANTIATE_TYPE_VARIABLE,
+          {'typeVariableName': name});
+    } else if (type.isMalformed) {
+      // `type is MalformedType`: `MethodTypeVariableType` is handled above.
       return new ConstructorResult.forError(
           ConstructorResultKind.INVALID_TYPE, type.element, type);
     } else if (type.isInterfaceType) {
@@ -734,15 +781,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
           name,
           MessageKind.CANNOT_INSTANTIATE_TYPEDEF,
           {'typedefName': name});
-    } else if (type.isTypeVariable) {
-      return reportAndCreateErroneousConstructorElement(
-          node,
-          ConstructorResultKind.INVALID_TYPE,
-          type,
-          resolver.enclosingElement,
-          name,
-          MessageKind.CANNOT_INSTANTIATE_TYPE_VARIABLE,
-          {'typeVariableName': name});
     }
     return reporter.internalError(node, "Unexpected constructor type $type");
   }

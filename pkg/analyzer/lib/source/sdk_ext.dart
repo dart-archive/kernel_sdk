@@ -8,6 +8,8 @@ import 'dart:convert';
 import 'dart:core' hide Resource;
 
 import 'package:analyzer/file_system/file_system.dart';
+import 'package:analyzer/source/package_map_provider.dart'
+    show PackageMapProvider;
 import 'package:analyzer/src/generated/java_io.dart' show JavaFile;
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart' show FileBasedSource;
@@ -40,6 +42,13 @@ class SdkExtUriResolver extends UriResolver {
 
   /// Number of sdk extensions.
   int get length => _urlMappings.length;
+
+  /**
+   * Return a table mapping the names of extensions to the paths where those
+   * extensions can be found.
+   */
+  Map<String, String> get urlMappings =>
+      new Map<String, String>.from(_urlMappings);
 
   /// Return the path mapping for [libName] or null if there is none.
   String operator [](String libName) => _urlMappings[libName];

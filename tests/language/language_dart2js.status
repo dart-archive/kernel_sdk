@@ -7,7 +7,6 @@ getter_setter_in_lib_test: Fail # Issue 23288
 method_name_test: Fail # issue 25574
 
 async_star_cancel_while_paused_test: RuntimeError # Issue 22853
-async_star_await_pauses_test: Fail, Timeout # Issue 22853
 tearoff_basic_test: Skip # Tear-off not supported
 tearoff_constructor_basic_test: Skip # Tear-off not supported
 
@@ -16,6 +15,8 @@ try_catch_on_syntax_test/11: Fail # Issue 19823
 
 deep_nesting1_negative_test: Crash # Issue 25557
 deep_nesting2_negative_test: Crash # Issue 25557
+
+regress_18713_test: Fail # Issue 26743
 
 call_function_apply_test: RuntimeError # Issue 23873
 mixin_supertype_subclass_test: CompileTimeError # Issue 23773
@@ -36,19 +37,30 @@ accessor_conflict_import_prefixed2_test: RuntimeError # Issue 25626
 accessor_conflict_import_prefixed_test: RuntimeError # Issue 25626
 accessor_conflict_import_test: RuntimeError # Issue 25626
 
-# Experimental feature: Syntactic support for generic methods.
-generic_functions_test: CompileTimeError # Issue 25835
-generic_methods_test: CompileTimeError # Issue 25835
-generic_sends_test: CompileTimeError # Issue 25835
-
 [ $compiler == dart2js && $runtime == jsshell ]
 await_for_test: Skip # Jsshell does not provide periodic timers, Issue 7728
 async_star_test: RuntimeError # Jsshell does not provide non-zero timers, Issue 7728
+regress_23996_test: RuntimeError # Jsshell does not provide non-zero timers, Issue 7728
 async_star_no_cancel_test: RuntimeError # Need triage
 async_star_no_cancel2_test: RuntimeError # Need triage
 
 [ $compiler == dart2js && $browser ]
 config_import_test: Fail # Test flag is not passed to the compiler.
+
+# Experimental feature: Syntactic support for generic methods.
+generic_functions_test: CompileTimeError # DartOptions not passed to compiler.
+generic_local_functions_test: CompileTimeError # DartOptions not passed to compiler.
+generic_methods_test: CompileTimeError # DartOptions not passed to compiler.
+generic_sends_test: CompileTimeError # DartOptions not passed to compiler.
+generic_methods_new_test: CompiletimeError # DartOptions not passed to compiler.
+generic_methods_function_type_test: CompiletimeError # DartOptions not passed to compiler.
+generic_methods_type_expression_test: CompiletimeError # DartOptions not passed to compiler.
+
+# Experimental feature: Use initializing formals in initializers and constructor body.
+initializing_formal_access_test: CompiletimeError # DartOptions not passed to compiler.
+initializing_formal_capture_test: CompiletimeError # DartOptions not passed to compiler.
+initializing_formal_final_test: CompiletimeError # DartOptions not passed to compiler.
+initializing_formal_type_test: CompiletimeError # DartOptions not passed to compiler.
 
 [ $compiler == dart2js ]
 invocation_mirror_empty_arguments_test: Fail # Issue 24331
@@ -111,6 +123,9 @@ multiline_newline_test/06: MissingCompileTimeError # Issue 23888
 multiline_newline_test/none: RuntimeError # Issue 23888
 
 [ $compiler == dart2js && $checked ]
+async_return_types_test/nestedFuture: Fail # Issue 26429
+async_return_types_test/wrongTypeParameter: Fail # Issue 26429
+regress_26133_test: RuntimeError # Issue 26429
 type_variable_bounds_test/02: Fail # Issue 12702
 type_variable_bounds2_test/01: Fail # Issue 12702
 type_variable_bounds2_test/04: Fail # Issue 12702
@@ -213,6 +228,9 @@ round_test: Fail, OK # Common JavaScript engine Math.round bug.
 
 [ $compiler == dart2js && $runtime == ff ]
 round_test: Pass, Fail, OK # Fixed in ff 35. Common JavaScript engine Math.round bug.
+
+[ $compiler == dart2js && $runtime == chrome && $system == macos ]
+await_future_test: Pass, Timeout # Issue 26735
 
 [ $compiler == dart2js && ($runtime == safari || $runtime == safarimobilesim)]
 # Safari codegen bug, fixed on some versions of Safari 7.1 (Version 7.1 (9537.85.10.17.1))

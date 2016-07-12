@@ -16,10 +16,14 @@ namespace dart {
 VM_TEST_CASE(FindCodeObject) {
 #if defined(TARGET_ARCH_IA32) || defined(TARGET_ARCH_X64)
   const int kLoopCount = 50000;
+  const int kScriptSize = 512 * KB;
+#elif defined(TARGET_ARCH_DBC)
+  const int kLoopCount = 60000;
+  const int kScriptSize = 1 * MB;
 #else
   const int kLoopCount = 25000;
-#endif
   const int kScriptSize = 512 * KB;
+#endif
   const int kNumFunctions = 1024;
   char scriptChars[kScriptSize];
 
@@ -55,7 +59,7 @@ VM_TEST_CASE(FindCodeObject) {
   source = String::New(scriptChars);
   script = Script::New(url, source, RawScript::kScriptTag);
   EXPECT(CompilerTest::TestCompileScript(lib, script));
-  clsA = lib.LookupClass(String::Handle(Symbols::New("A")));
+  clsA = lib.LookupClass(String::Handle(Symbols::New(thread, "A")));
   EXPECT(!clsA.IsNull());
   ClassFinalizer::ProcessPendingClasses();
   for (int i = 0; i < kNumFunctions; i++) {
@@ -105,7 +109,7 @@ VM_TEST_CASE(FindCodeObject) {
   source = String::New(scriptChars);
   script = Script::New(url, source, RawScript::kScriptTag);
   EXPECT(CompilerTest::TestCompileScript(lib, script));
-  clsB = lib.LookupClass(String::Handle(Symbols::New("B")));
+  clsB = lib.LookupClass(String::Handle(Symbols::New(thread, "B")));
   EXPECT(!clsB.IsNull());
   ClassFinalizer::ProcessPendingClasses();
   for (int i = 0; i < kNumFunctions; i++) {

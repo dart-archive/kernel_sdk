@@ -39,6 +39,8 @@ class Profiler : public AllStatic {
     return sample_buffer_;
   }
 
+  static void DumpStackTrace(bool native_stack_trace = true);
+
   static void SampleAllocation(Thread* thread, intptr_t cid);
 
   // SampleThread is called from inside the signal handler and hence it is very
@@ -354,8 +356,8 @@ class Sample {
     kTruncatedTraceBit = 5,
     kClassAllocationSampleBit = 6,
     kContinuationSampleBit = 7,
-    kThreadTaskBit = 8,  // 4 bits.
-    kNextFreeBit = 12,
+    kThreadTaskBit = 8,  // 5 bits.
+    kNextFreeBit = 13,
   };
   class HeadSampleBit : public BitField<uword, bool, kHeadSampleBit, 1> {};
   class LeafFrameIsDart :
@@ -371,7 +373,7 @@ class Sample {
   class ContinuationSampleBit
       : public BitField<uword, bool, kContinuationSampleBit, 1> {};
   class ThreadTaskBit
-      : public BitField<uword, Thread::TaskKind, kThreadTaskBit, 4> {};
+      : public BitField<uword, Thread::TaskKind, kThreadTaskBit, 5> {};
 
   int64_t timestamp_;
   ThreadId tid_;

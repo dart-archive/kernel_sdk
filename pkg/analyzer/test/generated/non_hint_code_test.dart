@@ -18,6 +18,25 @@ main() {
 
 @reflectiveTest
 class NonHintCodeTest extends ResolverTestCase {
+  void test_deadCode_afterTryCatch() {
+    Source source = addSource('''
+main() {
+  try {
+    return f();
+  } catch (e) {
+    print(e);
+  }
+  print('not dead');
+}
+f() {
+  throw 'foo';
+}
+''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
   void test_deadCode_deadBlock_conditionalElse_debugConst() {
     Source source = addSource(r'''
 const bool DEBUG = true;
@@ -152,6 +171,39 @@ f() {
 const bool DEBUG = true;
 f() {
   bool b = DEBUG || true;
+}''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
+  void test_deadCode_statementAfterIfWithoutElse() {
+    Source source = addSource(r'''
+f() {
+  if (1 < 0) {
+    return;
+  }
+  int a = 1;
+}''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
+  void test_deadCode_deadFinalBreakInCase() {
+    Source source = addSource(r'''
+f() {
+  switch (true) {
+  case true:
+    try {
+      int a = 1;
+    } finally {
+      return;
+    }
+    break;
+  default:
+    break;
+  }
 }''');
     computeLibrarySourceErrors(source);
     assertNoErrors(source);
@@ -1083,6 +1135,30 @@ class A {
   static void x() {
     One o;
     one.topLevelFunction();
+  }
+}''');
+    addNamedSource(
+        "/lib1.dart",
+        r'''
+library lib1;
+class One {}
+topLevelFunction() {}''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
+  void test_unusedImport_prefix_topLevelFunction2() {
+    Source source = addSource(r'''
+library L;
+import 'lib1.dart' hide topLevelFunction;
+import 'lib1.dart' as one show topLevelFunction;
+import 'lib1.dart' as two show topLevelFunction;
+class A {
+  static void x() {
+    One o;
+    one.topLevelFunction();
+    two.topLevelFunction();
   }
 }''');
     addNamedSource(

@@ -17,10 +17,12 @@ class ObjectPointerVisitor;
 class RawCode;
 class SnapshotReader;
 class SnapshotWriter;
-
+class Serializer;
+class Deserializer;
 
 // List of stubs created in the VM isolate, these stubs are shared by different
 // isolates running in this dart process.
+#if !defined(TARGET_ARCH_DBC)
 #define VM_STUB_CODE_LIST(V)                                                   \
   V(GetStackPointer)                                                           \
   V(JumpToExceptionHandler)                                                    \
@@ -65,6 +67,16 @@ class SnapshotWriter;
   V(CallClosureNoSuchMethod)                                                   \
   V(FrameAwaitingMaterialization)                                              \
 
+#else
+#define VM_STUB_CODE_LIST(V)                                                   \
+  V(LazyCompile)                                                               \
+  V(FixCallersTarget)                                                          \
+  V(Deoptimize)                                                                \
+  V(DeoptimizeLazy)                                                            \
+  V(FrameAwaitingMaterialization)                                              \
+
+#endif  // !defined(TARGET_ARCH_DBC)
+
 // Is it permitted for the stubs above to refer to Object::null(), which is
 // allocated in the VM isolate and shared across all isolates.
 // However, in cases where a simple GC-safe placeholder is needed on the stack,
@@ -103,8 +115,9 @@ class StubCode : public AllStatic {
   // only once and the stub code resides in the vm_isolate heap.
   static void InitOnce();
 
-  static void ReadFrom(SnapshotReader* reader);
-  static void WriteTo(SnapshotWriter* writer);
+  static void Push(Serializer* serializer);
+  static void WriteRef(Serializer* serializer);
+  static void ReadRef(Deserializer* deserializer);
 
   // Generate all stubs which are generated on a per isolate basis as they
   // have embedded objects which are isolate specific.

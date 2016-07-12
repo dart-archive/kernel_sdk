@@ -11,12 +11,10 @@ import '../common/names.dart' show Identifiers;
 import '../compiler.dart' show Compiler;
 import '../constants/values.dart';
 import '../cps_ir/cps_ir_nodes.dart' as cps_ir show Node;
-import '../dart_types.dart'
-    show DartType, FunctionType, InterfaceType, TypeKind;
+import '../dart_types.dart' show DartType, FunctionType, TypeKind;
 import '../elements/elements.dart';
 import '../native/native.dart' as native;
-import '../tree/tree.dart' as ast
-    show DartString, Node, LiteralBool, Send, SendSet, TryStatement;
+import '../tree/tree.dart' as ast show DartString, Node, LiteralBool, Send;
 import '../types/types.dart'
     show
         ContainerTypeMask,
@@ -27,11 +25,10 @@ import '../types/types.dart'
 import '../universe/selector.dart' show Selector;
 import '../util/util.dart' show ImmutableEmptySet, Setlet;
 import '../world.dart' show ClassWorld;
-
+import 'debug.dart' as debug;
 import 'inferrer_visitor.dart' show ArgumentsTypes;
 import 'type_graph_inferrer.dart'
     show TypeGraphInferrerEngine, TypeInformationSystem;
-import 'debug.dart' as debug;
 
 /**
  * Common class for all nodes in the graph. The current nodes are:
@@ -476,7 +473,7 @@ class MemberTypeInformation extends ElementTypeInformation
       if (element.isField) {
         return inferrer
             .typeOfNativeBehavior(
-                native.NativeBehavior.ofFieldLoad(element, inferrer.compiler))
+                inferrer.backend.getNativeFieldLoadBehavior(element))
             .type;
       } else {
         assert(element.isFunction ||
@@ -490,22 +487,25 @@ class MemberTypeInformation extends ElementTypeInformation
         } else {
           return inferrer
               .typeOfNativeBehavior(
-                  native.NativeBehavior.ofMethod(element, inferrer.compiler))
+                  inferrer.backend.getNativeMethodBehavior(element))
               .type;
         }
       }
     }
 
     Compiler compiler = inferrer.compiler;
-    if (element.declaration == compiler.intEnvironment) {
-      giveUp(inferrer);
-      return compiler.typesTask.intType.nullable();
-    } else if (element.declaration == compiler.boolEnvironment) {
-      giveUp(inferrer);
-      return compiler.typesTask.boolType.nullable();
-    } else if (element.declaration == compiler.stringEnvironment) {
-      giveUp(inferrer);
-      return compiler.typesTask.stringType.nullable();
+    if (element.isConstructor) {
+      ConstructorElement constructor = element;
+      if (constructor.isIntFromEnvironmentConstructor) {
+        giveUp(inferrer);
+        return compiler.typesTask.intType.nullable();
+      } else if (constructor.isBoolFromEnvironmentConstructor) {
+        giveUp(inferrer);
+        return compiler.typesTask.boolType.nullable();
+      } else if (constructor.isStringFromEnvironmentConstructor) {
+        giveUp(inferrer);
+        return compiler.typesTask.stringType.nullable();
+      }
     }
     return null;
   }

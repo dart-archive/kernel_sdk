@@ -11,6 +11,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
+import 'package:analyzer/plugin/resolver_provider.dart';
 import 'package:analyzer/source/embedder.dart';
 import 'package:analyzer/src/cancelable_future.dart';
 import 'package:analyzer/src/context/cache.dart';
@@ -83,6 +84,12 @@ abstract class AnalysisContext {
    * An empty list of contexts.
    */
   static const List<AnalysisContext> EMPTY_LIST = const <AnalysisContext>[];
+
+  /**
+   * The file resolver provider used to override the way file URI's are
+   * resolved in some contexts.
+   */
+  ResolverProvider fileResolverProvider;
 
   /**
    * Return the set of analysis options controlling the behavior of this
@@ -729,9 +736,14 @@ class AnalysisEngine {
   static const String SUFFIX_HTML = "html";
 
   /**
-   * The file name used for analysis options files.
+   * The deprecated file name used for analysis options files.
    */
   static const String ANALYSIS_OPTIONS_FILE = '.analysis_options';
+
+  /**
+   * The file name used for analysis options files.
+   */
+  static const String ANALYSIS_OPTIONS_YAML_FILE = 'analysis_options.yaml';
 
   /**
    * The unique instance of this class.
@@ -775,12 +787,6 @@ class AnalysisEngine {
   final PartitionManager partitionManager = new PartitionManager();
 
   /**
-   * A flag indicating whether the task model should attempt to limit
-   * invalidation after a change.
-   */
-  bool limitInvalidationInTaskModel = false;
-
-  /**
    * The task manager used to manage the tasks used to analyze code.
    */
   TaskManager _taskManager;
@@ -816,7 +822,7 @@ class AnalysisEngine {
    * analysis engine to the given [logger].
    */
   void set logger(Logger logger) {
-    this._logger = logger == null ? Logger.NULL : logger;
+    this._logger = logger ?? Logger.NULL;
   }
 
   /**
@@ -876,8 +882,9 @@ class AnalysisEngine {
     if (fileName == null) {
       return false;
     }
-    return (context ?? pathos.posix).basename(fileName) ==
-        ANALYSIS_OPTIONS_FILE;
+    String basename = (context ?? pathos.posix).basename(fileName);
+    return basename == ANALYSIS_OPTIONS_FILE ||
+        basename == ANALYSIS_OPTIONS_YAML_FILE;
   }
 
   /**
@@ -1062,6 +1069,7 @@ abstract class AnalysisOptions {
   /**
    * Return `true` to enable interface libraries (DEP 40).
    */
+  @deprecated
   bool get enableConditionalDirectives;
 
   /**
@@ -1085,6 +1093,20 @@ abstract class AnalysisOptions {
    * Return `true` if timing data should be gathered during execution.
    */
   bool get enableTiming;
+
+  /**
+   * Return `true` to enable trailing commas in parameter and argument lists
+   * (sdk#26647).
+   */
+  bool get enableTrailingCommas;
+
+  /**
+   * A flag indicating whether finer grained dependencies should be used
+   * instead of just source level dependencies.
+   *
+   * This option is experimental and subject to change.
+   */
+  bool get finerGrainedInvalidation;
 
   /**
    * Return `true` if errors, warnings and hints should be generated for sources
@@ -1135,6 +1157,14 @@ abstract class AnalysisOptions {
    * Return `true` if strong mode analysis should be used.
    */
   bool get strongMode;
+
+  /**
+   * Return `true` if dependencies between computed results should be tracked
+   * by analysis cache.  This option should only be set to `false` if analysis
+   * is performed in such a way that none of the inputs is ever changed
+   * during the life time of the context.
+   */
+  bool get trackCacheDependencies;
 
   /**
    * Return an integer encoding of the values of the options that need to be the
@@ -1199,11 +1229,6 @@ class AnalysisOptionsImpl implements AnalysisOptions {
   bool enableAsync = true;
 
   /**
-   * A flag indicating whether interface libraries are to be supported (DEP 40).
-   */
-  bool enableConditionalDirectives = false;
-
-  /**
    * A flag indicating whether generic methods are to be supported (DEP 22).
    */
   bool enableGenericMethods = false;
@@ -1222,6 +1247,9 @@ class AnalysisOptionsImpl implements AnalysisOptions {
 
   @override
   bool enableTiming = false;
+
+  @override
+  bool enableTrailingCommas = false;
 
   /**
    * A flag indicating whether errors, warnings and hints should be generated
@@ -1281,6 +1309,32 @@ class AnalysisOptionsImpl implements AnalysisOptions {
   // TODO(leafp): replace this with something more general
   bool strongModeHints = false;
 
+  @override
+  bool trackCacheDependencies = true;
+
+  /**
+   * A flag indicating whether implicit casts are allowed in [strongMode]
+   * (they are always allowed in Dart 1.0 mode).
+   *
+   * This option is experimental and subject to change.
+   */
+  bool implicitCasts = true;
+
+  @override
+  bool finerGrainedInvalidation = false;
+
+  /**
+   * A flag indicating whether implicit dynamic type is allowed, on by default.
+   *
+   * This flag can be used without necessarily enabling [strongMode], but it is
+   * designed with strong mode's type inference in mind. Without type inference,
+   * it will raise many errors. Also it does not provide type safety without
+   * strong mode.
+   *
+   * This option is experimental and subject to change.
+   */
+  bool implicitDynamic = true;
+
   /**
    * Initialize a newly created set of analysis options to have their default
    * values.
@@ -1297,11 +1351,11 @@ class AnalysisOptionsImpl implements AnalysisOptions {
     dart2jsHint = options.dart2jsHint;
     enableAssertMessage = options.enableAssertMessage;
     enableAsync = options.enableAsync;
-    enableConditionalDirectives = options.enableConditionalDirectives;
     enableStrictCallChecks = options.enableStrictCallChecks;
     enableGenericMethods = options.enableGenericMethods;
     enableSuperMixins = options.enableSuperMixins;
     enableTiming = options.enableTiming;
+    enableTrailingCommas = options.enableTrailingCommas;
     generateImplicitErrors = options.generateImplicitErrors;
     generateSdkErrors = options.generateSdkErrors;
     hint = options.hint;
@@ -1313,7 +1367,11 @@ class AnalysisOptionsImpl implements AnalysisOptions {
     strongMode = options.strongMode;
     if (options is AnalysisOptionsImpl) {
       strongModeHints = options.strongModeHints;
+      implicitCasts = options.implicitCasts;
+      implicitDynamic = options.implicitDynamic;
     }
+    trackCacheDependencies = options.trackCacheDependencies;
+    finerGrainedInvalidation = options.finerGrainedInvalidation;
   }
 
   bool get analyzeFunctionBodies {
@@ -1346,6 +1404,14 @@ class AnalysisOptionsImpl implements AnalysisOptions {
     _analyzeFunctionBodiesPredicate = value;
   }
 
+  /**
+   * A flag indicating whether interface libraries are to be supported (DEP 40).
+   */
+  bool get enableConditionalDirectives => true;
+
+  @deprecated
+  void set enableConditionalDirectives(_) {}
+
   @override
   int encodeCrossContextOptions() =>
       (enableAssertMessage ? ENABLE_ASSERT_FLAG : 0) |
@@ -1367,6 +1433,48 @@ class AnalysisOptionsImpl implements AnalysisOptions {
     if (options is AnalysisOptionsImpl) {
       strongModeHints = options.strongModeHints;
     }
+  }
+
+  /**
+   * Produce a human readable list of option names corresponding to the options
+   * encoded in the given [encoding], presumably from invoking the method
+   * [encodeCrossContextOptions].
+   */
+  static String decodeCrossContextOptions(int encoding) {
+    if (encoding == 0) {
+      return 'none';
+    }
+    StringBuffer buffer = new StringBuffer();
+    bool needsSeparator = false;
+    void add(String optionName) {
+      if (needsSeparator) {
+        buffer.write(', ');
+      }
+      buffer.write(optionName);
+      needsSeparator = true;
+    }
+    if (encoding & ENABLE_ASSERT_FLAG > 0) {
+      add('assert');
+    }
+    if (encoding & ENABLE_ASYNC_FLAG > 0) {
+      add('async');
+    }
+    if (encoding & ENABLE_GENERIC_METHODS_FLAG > 0) {
+      add('genericMethods');
+    }
+    if (encoding & ENABLE_STRICT_CALL_CHECKS_FLAG > 0) {
+      add('strictCallChecks');
+    }
+    if (encoding & ENABLE_STRONG_MODE_FLAG > 0) {
+      add('strongMode');
+    }
+    if (encoding & ENABLE_STRONG_MODE_HINTS_FLAG > 0) {
+      add('strongModeHints');
+    }
+    if (encoding & ENABLE_SUPER_MIXINS_FLAG > 0) {
+      add('superMixins');
+    }
+    return buffer.toString();
   }
 
   /**
@@ -1935,13 +2043,22 @@ abstract class InternalAnalysisContext implements AnalysisContext {
    */
   set contentCache(ContentCache value);
 
-  /// Get the [EmbedderYamlLocator] for this context.
+  /**
+   * Get the [EmbedderYamlLocator] for this context.
+   */
+  @deprecated
   EmbedderYamlLocator get embedderYamlLocator;
 
   /**
    * Return a list of the explicit targets being analyzed by this context.
    */
   List<AnalysisTarget> get explicitTargets;
+
+  /**
+   * Return the [StreamController] reporting [InvalidatedResult]s for everything
+   * in this context's cache.
+   */
+  ReentrantSynchronousStream<InvalidatedResult> get onResultInvalidated;
 
   /**
    * Return a list containing all of the sources that have been marked as

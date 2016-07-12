@@ -8,51 +8,52 @@ import 'dart:async' show Future;
 
 import '../common.dart';
 import '../common/codegen.dart' show CodegenImpact;
-import '../common/resolution.dart' show ResolutionImpact;
-import '../compiler.dart' show Compiler;
+import '../common/resolution.dart' show ResolutionImpact, Frontend, Target;
 import '../compile_time_constants.dart'
     show BackendConstantEnvironment, ConstantCompilerTask;
-import '../constants/expressions.dart' show ConstantExpression;
+import '../compiler.dart' show Compiler;
 import '../constants/constant_system.dart' show ConstantSystem;
+import '../constants/expressions.dart' show ConstantExpression;
 import '../constants/values.dart' show ConstantValue;
 import '../dart_types.dart' show DartType, InterfaceType;
 import '../elements/elements.dart'
     show
         ClassElement,
-        ConstructorElement,
         Element,
         FunctionElement,
         LibraryElement,
         MetadataAnnotation,
         MethodElement;
-import '../enqueue.dart' show Enqueuer, CodegenEnqueuer, ResolutionEnqueuer;
+import '../enqueue.dart'
+    show Enqueuer, EnqueueTask, CodegenEnqueuer, ResolutionEnqueuer;
 import '../io/code_output.dart' show CodeBuffer;
 import '../io/source_information.dart' show SourceInformationStrategy;
 import '../js_backend/backend_helpers.dart' as js_backend show BackendHelpers;
-import '../js_backend/js_backend.dart' as js_backend show JavaScriptBackend;
+import '../js_backend/js_backend.dart' as js_backend;
 import '../library_loader.dart' show LibraryLoader, LoadedLibraries;
 import '../native/native.dart' as native show NativeEnqueuer, maybeEnableNative;
 import '../patch_parser.dart'
     show checkNativeAnnotation, checkJsInteropAnnotation;
-import '../resolution/tree_elements.dart' show TreeElements;
 import '../serialization/serialization.dart'
-    show DeserializerPlugin, ObjectDecoder, ObjectEncoder, SerializerPlugin;
+    show DeserializerPlugin, SerializerPlugin;
 import '../tree/tree.dart' show Node, Send;
 import '../universe/call_structure.dart' show CallStructure;
 import '../universe/world_impact.dart' show ImpactStrategy, WorldImpact;
-
 import 'codegen.dart' show CodegenWorkItem;
 import 'registry.dart' show Registry;
 import 'tasks.dart' show CompilerTask;
 import 'work.dart' show ItemCompilationContext;
 
-abstract class Backend {
+abstract class Backend extends Target {
   final Compiler compiler;
 
   Backend(this.compiler);
 
   /// Returns true if the backend supports reflection.
   bool get supportsReflection;
+
+  /// Returns true if the backend supports reflection.
+  bool get supportsAsyncAwait;
 
   /// The [ConstantSystem] used to interpret compile-time constants for this
   /// backend.
@@ -129,11 +130,6 @@ abstract class Backend {
 
   /// Called during codegen when [constant] has been used.
   void registerCompileTimeConstant(ConstantValue constant, Registry registry) {}
-
-  /// Called during resolution when a constant value for [metadata] on
-  /// [annotatedElement] has been evaluated.
-  void registerMetadataConstant(MetadataAnnotation metadata,
-      Element annotatedElement, Registry registry) {}
 
   /// Called to notify to the backend that a class is being instantiated.
   // TODO(johnniwinther): Remove this. It's only called once for each [cls] and
@@ -255,10 +251,8 @@ abstract class Backend {
   /// defines the implementation of [element].
   MethodElement resolveExternalFunction(MethodElement element) => element;
 
-  /// Returns `true` if [library] is a backend specific library whose members
-  /// have special treatment, such as being allowed to extends blacklisted
-  /// classes or member being eagerly resolved.
-  bool isBackendLibrary(LibraryElement library) {
+  @override
+  bool isTargetSpecificLibrary(LibraryElement library) {
     // TODO(johnniwinther): Remove this when patching is only done by the
     // JavaScript backend.
     Uri canonicalUri = library.canonicalUri;
@@ -279,23 +273,25 @@ abstract class Backend {
   /// been scanned.
   Future onLibraryScanned(LibraryElement library, LibraryLoader loader) {
     // TODO(johnniwinther): Move this to [JavaScriptBackend].
-    if (canLibraryUseNative(library)) {
+    if (!compiler.serialization.isDeserialized(library)) {
+      if (canLibraryUseNative(library)) {
+        library.forEachLocalMember((Element element) {
+          if (element.isClass) {
+            checkNativeAnnotation(compiler, element);
+          }
+        });
+      }
+      checkJsInteropAnnotation(compiler, library);
       library.forEachLocalMember((Element element) {
-        if (element.isClass) {
-          checkNativeAnnotation(compiler, element);
+        checkJsInteropAnnotation(compiler, element);
+        if (element.isClass && isJsInterop(element)) {
+          ClassElement classElement = element;
+          classElement.forEachMember((_, memberElement) {
+            checkJsInteropAnnotation(compiler, memberElement);
+          });
         }
       });
     }
-    checkJsInteropAnnotation(compiler, library);
-    library.forEachLocalMember((Element element) {
-      checkJsInteropAnnotation(compiler, element);
-      if (element.isClass && isJsInterop(element)) {
-        ClassElement classElement = element;
-        classElement.forEachMember((_, memberElement) {
-          checkJsInteropAnnotation(compiler, memberElement);
-        });
-      }
-    });
     return new Future.value();
   }
 
@@ -361,9 +357,7 @@ abstract class Backend {
   void onCodegenStart() {}
 
   /// Called after [element] has been resolved.
-  // TODO(johnniwinther): Change [TreeElements] to [Registry] or a dependency
-  // node. [elements] is currently unused by the implementation.
-  void onElementResolved(Element element, TreeElements elements) {}
+  void onElementResolved(Element element) {}
 
   // Does this element belong in the output
   bool shouldOutput(Element element) => true;
@@ -381,8 +375,10 @@ abstract class Backend {
   void registerAsyncMarker(
       FunctionElement element, Enqueuer enqueuer, Registry registry) {}
 
-  /// Called when resolving a call to a foreign function.
-  void registerForeignCall(Send node, Element element,
+  /// Called when resolving a call to a foreign function. If a non-null value
+  /// is returned, this is stored as native data for [node] in the resolved
+  /// AST.
+  dynamic resolveForeignCall(Send node, Element element,
       CallStructure callStructure, ForeignResolver resolver) {}
 
   /// Returns the location of the patch-file associated with [libraryName]
@@ -398,6 +394,17 @@ abstract class Backend {
       bool supportSerialization: true}) {
     return const ImpactStrategy();
   }
+
+  /// Backend access to the front-end.
+  Frontend get frontend => compiler.resolution;
+
+  EnqueueTask makeEnqueuer() => new EnqueueTask(compiler);
+}
+
+/// Interface for resolving native data for a target specific element.
+abstract class NativeRegistry {
+  /// Registers [nativeData] as part of the resolution impact.
+  void registerNativeData(dynamic nativeData);
 }
 
 /// Interface for resolving calls to foreign functions.

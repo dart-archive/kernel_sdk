@@ -116,7 +116,9 @@ class ClassHeapStats {
   void ResetAccumulator();
   void UpdatePromotedAfterNewGC();
   void UpdateSize(intptr_t instance_size);
+#ifndef PRODUCT
   void PrintToJSONObject(const Class& cls, JSONObject* obj) const;
+#endif
   void Verify();
 
   bool trace_allocation() const {
@@ -156,6 +158,10 @@ class ClassTable {
     return table_[index];
   }
 
+  void SetAt(intptr_t index, RawClass* raw_cls) {
+    table_[index] = raw_cls;
+  }
+
   bool IsValidIndex(intptr_t index) const {
     return (index > 0) && (index < top_);
   }
@@ -167,7 +173,15 @@ class ClassTable {
 
   intptr_t NumCids() const { return top_; }
 
+  // Used to drop recently added classes.
+  void SetNumCids(intptr_t num_cids) {
+    ASSERT(num_cids <= top_);
+    top_ = num_cids;
+  }
+
   void Register(const Class& cls);
+
+  void AllocateIndex(intptr_t index);
 
   void RegisterAt(intptr_t index, const Class& cls);
 
@@ -180,8 +194,9 @@ class ClassTable {
   void Validate();
 
   void Print();
-
+#ifndef PRODUCT
   void PrintToJSONObject(JSONObject* object);
+#endif
 
   // Used by the generated code.
   static intptr_t table_offset() {

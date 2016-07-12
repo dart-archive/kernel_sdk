@@ -7,22 +7,20 @@ import 'dart:collection' show Queue;
 import '../common.dart';
 import '../common/backend_api.dart' show ForeignResolver;
 import '../common/registry.dart' show Registry;
-import '../common/resolution.dart' show Parsing, Resolution;
+import '../common/resolution.dart' show Resolution;
 import '../compiler.dart' show Compiler;
 import '../constants/values.dart';
 import '../core_types.dart' show CoreTypes;
 import '../dart_types.dart';
-import '../enqueue.dart' show Enqueuer, ResolutionEnqueuer;
 import '../elements/elements.dart';
-import '../elements/modelx.dart'
-    show BaseClassElementX, ElementX, FunctionElementX, LibraryElementX;
+import '../elements/modelx.dart' show FunctionElementX;
+import '../enqueue.dart' show Enqueuer;
 import '../js_backend/backend_helpers.dart' show BackendHelpers;
 import '../js_backend/js_backend.dart';
 import '../js_emitter/js_emitter.dart' show CodeEmitterTask, NativeEmitter;
 import '../tokens/token.dart' show BeginGroupToken, Token;
-import '../tokens/token_constants.dart' as Tokens show EOF_TOKEN, STRING_TOKEN;
+import '../tokens/token_constants.dart' as Tokens show EOF_TOKEN;
 import '../tree/tree.dart';
-
 import 'behavior.dart';
 
 /**
@@ -36,21 +34,17 @@ class NativeEnqueuer {
   /// types to the world.
   void registerNativeBehavior(NativeBehavior nativeBehavior, cause) {}
 
-  /// Notification of a main Enqueuer worklist element.  For methods, adds
-  /// information from metadata attributes, and computes types instantiated due
-  /// to calling the method.
-  void registerElement(Element element) {}
-
-  /// Notification of native field.  Adds information from metadata attributes.
+  // TODO(johnniwinther): Move [handleFieldAnnotations] and
+  // [handleMethodAnnotations] to [JavaScriptBackend] or [NativeData].
+  // TODO(johnniwinther): Change the return type to 'bool' and rename them to
+  // something like `computeNativeField`.
+  /// Process the potentially native [field]. Adds information from metadata
+  /// attributes.
   void handleFieldAnnotations(Element field) {}
 
-  /// Computes types instantiated due to getting a native field.
-  void registerFieldLoad(Element field) {}
-
-  /// Computes types instantiated due to setting a native field.
-  void registerFieldStore(Element field) {}
-
-  NativeBehavior getNativeBehaviorOf(Send node) => new NativeBehavior();
+  /// Process the potentially native [method]. Adds information from metadata
+  /// attributes.
+  void handleMethodAnnotations(Element method) {}
 
   /// Returns whether native classes are being used.
   bool hasInstantiatedNativeClasses() => false;
@@ -96,10 +90,6 @@ abstract class NativeEnqueuerBase implements NativeEnqueuer {
   /// [queue] to register the class.
   final queue = new Queue();
   bool flushing = false;
-
-  /// Maps JS foreign calls to their computed native behavior.
-  final Map<Node, NativeBehavior> nativeBehaviors =
-      new Map<Node, NativeBehavior>();
 
   final Enqueuer world;
   final Compiler compiler;
@@ -328,7 +318,7 @@ abstract class NativeEnqueuerBase implements NativeEnqueuer {
       // TODO(sra): Better validation of the constant.
       if (fields.length != 1 || fields.single is! StringConstantValue) {
         reporter.internalError(
-            annotation, 'Annotations needs one string: ${annotation.node}');
+            annotation, 'Annotations needs one string: ${annotation}');
       }
       StringConstantValue specStringConstant = fields.single;
       String specString = specStringConstant.toDartString().slowToString();
@@ -336,7 +326,7 @@ abstract class NativeEnqueuerBase implements NativeEnqueuer {
         name = specString;
       } else {
         reporter.internalError(
-            annotation, 'Too many JSName annotations: ${annotation.node}');
+            annotation, 'Too many JSName annotations: ${annotation}');
       }
     }
     return name;
@@ -377,26 +367,6 @@ abstract class NativeEnqueuerBase implements NativeEnqueuer {
     if (firstTime) {
       queue.add(onFirstNativeClass);
     }
-  }
-
-  registerElement(Element element) {
-    reporter.withCurrentElement(element, () {
-      if (element.isFunction ||
-          element.isFactoryConstructor ||
-          element.isGetter ||
-          element.isSetter) {
-        handleMethodAnnotations(element);
-        if (backend.isNative(element)) {
-          registerMethodUsed(element);
-        }
-      } else if (element.isField) {
-        handleFieldAnnotations(element);
-        if (backend.isNative(element)) {
-          registerFieldLoad(element);
-          registerFieldStore(element);
-        }
-      }
-    });
   }
 
   void handleFieldAnnotations(Element element) {
@@ -468,7 +438,7 @@ abstract class NativeEnqueuerBase implements NativeEnqueuer {
     if (!backend.canLibraryUseNative(element.library)) return false;
     // Native method?
     return reporter.withCurrentElement(element, () {
-      Node node = element.parseNode(resolution.parsing);
+      Node node = element.parseNode(resolution.parsingContext);
       if (node is! FunctionExpression) return false;
       FunctionExpression functionExpression = node;
       node = functionExpression.body;
@@ -482,20 +452,6 @@ abstract class NativeEnqueuerBase implements NativeEnqueuer {
     processNativeBehavior(nativeBehavior, cause);
     flushQueue();
   }
-
-  void registerMethodUsed(Element method) {
-    registerNativeBehavior(NativeBehavior.ofMethod(method, compiler), method);
-  }
-
-  void registerFieldLoad(Element field) {
-    registerNativeBehavior(NativeBehavior.ofFieldLoad(field, compiler), field);
-  }
-
-  void registerFieldStore(Element field) {
-    registerNativeBehavior(NativeBehavior.ofFieldStore(field, compiler), field);
-  }
-
-  NativeBehavior getNativeBehaviorOf(Send node) => nativeBehaviors[node];
 
   processNativeBehavior(NativeBehavior behavior, cause) {
     // TODO(ahe): Is this really a global dependency?
@@ -530,12 +486,23 @@ abstract class NativeEnqueuerBase implements NativeEnqueuer {
             .isSubtype(type, backend.listImplementation.rawType)) {
           backend.registerInstantiatedType(type, world, registry);
         }
+        // TODO(johnniwinther): Improve spec string precision to handle type
+        // arguments and implements relations that preserve generics. Currently
+        // we cannot distinguish between `List`, `List<dynamic>`, and
+        // `List<int>` and take all to mean `List<E>`; in effect not including
+        // any native subclasses of generic classes.
+        // TODO(johnniwinther,sra): Find and replace uses of `List` with the
+        // actual implementation classes such as `JSArray` et al.
+        enqueueUnusedClassesMatching((ClassElement nativeClass) {
+          InterfaceType nativeType = nativeClass.thisType;
+          InterfaceType specType = type.element.thisType;
+          return compiler.types.isSubtype(nativeType, specType);
+        }, cause, 'subtypeof($type)');
+      } else if (type.isDynamic) {
+        enqueueUnusedClassesMatching((_) => true, cause, 'subtypeof($type)');
+      } else {
+        assert(type is VoidType);
       }
-      assert(type is DartType);
-      enqueueUnusedClassesMatching(
-          (nativeClass) => compiler.types.isSubtype(nativeClass.thisType, type),
-          cause,
-          'subtypeof($type)');
     }
 
     // Give an info so that library developers can compile with -v to find why
@@ -615,11 +582,9 @@ class NativeResolutionEnqueuer extends NativeEnqueuerBase {
    *     JS('_DOMWindowImpl', 'window')
    *
    */
-  void registerJsCall(Send node, ForeignResolver resolver) {
-    NativeBehavior behavior = NativeBehavior.ofJsCall(
-        node, reporter, compiler.parsing, compiler.coreTypes, resolver);
-    registerNativeBehavior(behavior, node);
-    nativeBehaviors[node] = behavior;
+  NativeBehavior resolveJsCall(Send node, ForeignResolver resolver) {
+    return NativeBehavior.ofJsCall(
+        node, reporter, compiler.parsingContext, compiler.coreTypes, resolver);
   }
 
   /**
@@ -631,11 +596,10 @@ class NativeResolutionEnqueuer extends NativeEnqueuerBase {
    *     JS_EMBEDDED_GLOBAL('String', 'foo')
    *
    */
-  void registerJsEmbeddedGlobalCall(Send node, ForeignResolver resolver) {
-    NativeBehavior behavior = NativeBehavior.ofJsEmbeddedGlobalCall(
-        node, reporter, compiler.parsing, compiler.coreTypes, resolver);
-    registerNativeBehavior(behavior, node);
-    nativeBehaviors[node] = behavior;
+  NativeBehavior resolveJsEmbeddedGlobalCall(
+      Send node, ForeignResolver resolver) {
+    return NativeBehavior.ofJsEmbeddedGlobalCall(
+        node, reporter, compiler.parsingContext, compiler.coreTypes, resolver);
   }
 
   /**
@@ -647,11 +611,9 @@ class NativeResolutionEnqueuer extends NativeEnqueuerBase {
    *     JS_BUILTIN('String', 'int2string', 0)
    *
    */
-  void registerJsBuiltinCall(Send node, ForeignResolver resolver) {
-    NativeBehavior behavior = NativeBehavior.ofJsBuiltinCall(
-        node, reporter, compiler.parsing, compiler.coreTypes, resolver);
-    registerNativeBehavior(behavior, node);
-    nativeBehaviors[node] = behavior;
+  NativeBehavior resolveJsBuiltinCall(Send node, ForeignResolver resolver) {
+    return NativeBehavior.ofJsBuiltinCall(
+        node, reporter, compiler.parsingContext, compiler.coreTypes, resolver);
   }
 }
 

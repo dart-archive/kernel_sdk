@@ -544,9 +544,7 @@ class _CodeGenerator {
     out('class $builderName extends Object with $mixinName '
         'implements ${idlPrefix(name)} {');
     indent(() {
-      out('bool _finished = false;');
       // Generate fields.
-      out();
       for (idlModel.FieldDeclaration field in cls.fields) {
         String fieldName = field.name;
         idlModel.FieldType type = field.type;
@@ -572,7 +570,6 @@ class _CodeGenerator {
           out('void set $fieldName($typeStr _value) {');
           indent(() {
             String stateFieldName = '_' + fieldName;
-            out('assert(!_finished);');
             // Validate that int(s) are non-negative.
             if (fieldType.typeName == 'int') {
               if (!fieldType.isList) {
@@ -637,8 +634,6 @@ class _CodeGenerator {
       out();
       out('fb.Offset finish(fb.Builder fbBuilder) {');
       indent(() {
-        out('assert(!_finished);');
-        out('_finished = true;');
         // Write objects and remember Offset(s).
         for (idlModel.FieldDeclaration field in cls.fields) {
           idlModel.FieldType fieldType = field.type;
@@ -749,9 +744,9 @@ class _CodeGenerator {
       out('int get size => 1;');
       out();
       out('@override');
-      out('${idlPrefix(name)} read(fb.BufferPointer bp) {');
+      out('${idlPrefix(name)} read(fb.BufferContext bc, int offset) {');
       indent(() {
-        out('int index = const fb.Uint8Reader().read(bp);');
+        out('int index = const fb.Uint8Reader().read(bc, offset);');
         out('return index < $count ? ${idlPrefix(name)}.values[index] : $def;');
       });
       out('}');
@@ -766,9 +761,10 @@ class _CodeGenerator {
     out('class $implName extends Object with $mixinName'
         ' implements ${idlPrefix(name)} {');
     indent(() {
-      out('final fb.BufferPointer _bp;');
+      out('final fb.BufferContext _bc;');
+      out('final int _bcOffset;');
       out();
-      out('$implName(this._bp);');
+      out('$implName(this._bc, this._bcOffset);');
       out();
       // Write cache fields.
       for (idlModel.FieldDeclaration field in cls.fields) {
@@ -824,7 +820,7 @@ class _CodeGenerator {
         } else {
           out('$returnType get $fieldName {');
           indent(() {
-            String readExpr = '$readCode.vTableGet(_bp, $index, $def)';
+            String readExpr = '$readCode.vTableGet(_bc, _bcOffset, $index, $def)';
             out('_$fieldName ??= $readExpr;');
             out('return _$fieldName;');
           });
@@ -906,7 +902,7 @@ class _CodeGenerator {
       out('const $readerName();');
       out();
       out('@override');
-      out('$implName createObject(fb.BufferPointer bp) => new $implName(bp);');
+      out('$implName createObject(fb.BufferContext bc, int offset) => new $implName(bc, offset);');
     });
     out('}');
   }
@@ -915,8 +911,8 @@ class _CodeGenerator {
     String name = cls.name;
     out('${idlPrefix(name)} read$name(List<int> buffer) {');
     indent(() {
-      out('fb.BufferPointer rootRef = new fb.BufferPointer.fromBytes(buffer);');
-      out('return const _${name}Reader().read(rootRef);');
+      out('fb.BufferContext rootRef = new fb.BufferContext.fromBytes(buffer);');
+      out('return const _${name}Reader().read(rootRef, 0);');
     });
     out('}');
   }

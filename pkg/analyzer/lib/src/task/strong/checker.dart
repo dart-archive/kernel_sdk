@@ -8,16 +8,17 @@ library analyzer.src.task.strong.checker;
 
 import 'package:analyzer/analyzer.dart';
 import 'package:analyzer/dart/ast/ast.dart';
-import 'package:analyzer/dart/ast/token.dart' show Token, TokenType;
+import 'package:analyzer/dart/ast/token.dart' show TokenType;
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
-import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/type.dart';
+import 'package:analyzer/src/generated/engine.dart' show AnalysisOptionsImpl;
+import 'package:analyzer/src/generated/error.dart' show StrongModeCode;
 import 'package:analyzer/src/generated/resolver.dart' show TypeProvider;
 import 'package:analyzer/src/generated/type_system.dart';
 
-import 'info.dart';
+import 'ast_properties.dart';
 
 DartType _elementType(Element e) {
   if (e == null) {
@@ -101,27 +102,27 @@ class CodeChecker extends RecursiveAstVisitor {
   final StrongTypeSystemImpl rules;
   final TypeProvider typeProvider;
   final AnalysisErrorListener reporter;
-  final _OverrideChecker _overrideChecker;
-  final bool _hints;
+  final AnalysisOptionsImpl _options;
+  _OverrideChecker _overrideChecker;
 
   bool _failure = false;
-  CodeChecker(this.typeProvider, StrongTypeSystemImpl rules,
-      AnalysisErrorListener reporter,
-      {bool hints: false})
-      : rules = rules,
-        reporter = reporter,
-        _hints = hints,
-        _overrideChecker = new _OverrideChecker(rules, reporter);
+  bool _hasImplicitCasts;
 
-  bool get failure => _failure || _overrideChecker._failure;
+  CodeChecker(TypeProvider typeProvider, StrongTypeSystemImpl rules,
+      AnalysisErrorListener reporter, this._options)
+      : typeProvider = typeProvider,
+        rules = rules,
+        reporter = reporter {
+    _overrideChecker = new _OverrideChecker(this);
+  }
+
+  bool get failure => _failure;
 
   void checkArgument(Expression arg, DartType expectedType) {
     // Preserve named argument structure, so their immediate parent is the
     // method invocation.
-    if (arg is NamedExpression) {
-      arg = (arg as NamedExpression).expression;
-    }
-    checkAssignment(arg, expectedType);
+    Expression baseExpression = arg is NamedExpression ? arg.expression : arg;
+    checkAssignment(baseExpression, expectedType);
   }
 
   void checkArgumentList(ArgumentList node, FunctionType type) {
@@ -172,7 +173,13 @@ class CodeChecker extends RecursiveAstVisitor {
 
   void reset() {
     _failure = false;
-    _overrideChecker._failure = false;
+  }
+
+  @override
+  void visitCompilationUnit(CompilationUnit node) {
+    _hasImplicitCasts = false;
+    node.visitChildren(this);
+    setHasImplicitCasts(node, _hasImplicitCasts);
   }
 
   @override
@@ -266,7 +273,7 @@ class CodeChecker extends RecursiveAstVisitor {
     for (int i = 0, last = init.length - 1; i < last; i++) {
       final node = init[i];
       if (node is SuperConstructorInvocation) {
-        _recordMessage(new InvalidSuperInvocation(node));
+        _recordMessage(node, StrongModeCode.INVALID_SUPER_INVOCATION, [node]);
       }
     }
   }
@@ -317,9 +324,8 @@ class CodeChecker extends RecursiveAstVisitor {
           node.identifier.staticElement as FieldFormalParameterElement;
       var fieldType = _elementType(fieldElement.field);
       if (!rules.isSubtypeOf(type, fieldType)) {
-        var staticInfo =
-            new InvalidParameterDeclaration(rules, node, fieldType);
-        _recordMessage(staticInfo);
+        _recordMessage(node, StrongModeCode.INVALID_PARAMETER_DECLARATION,
+            [node, fieldType]);
       }
     }
     node.visitChildren(this);
@@ -327,9 +333,7 @@ class CodeChecker extends RecursiveAstVisitor {
 
   @override
   void visitForEachStatement(ForEachStatement node) {
-    var loopVariable = node.identifier != null
-        ? node.identifier
-        : node.loopVariable?.identifier;
+    var loopVariable = node.identifier ?? node.loopVariable?.identifier;
 
     // Safely handle malformed statements.
     if (loopVariable != null) {
@@ -349,8 +353,7 @@ class CodeChecker extends RecursiveAstVisitor {
             sequenceInterface.instantiate([DynamicTypeImpl.instance]);
 
         if (rules.isSubtypeOf(sequenceType, iterableType)) {
-          _recordMessage(DownCast.create(
-              rules, node.iterable, iterableType, sequenceType));
+          _recordImplicitCast(node.iterable, iterableType, sequenceType);
           elementType = DynamicTypeImpl.instance;
         }
       }
@@ -428,16 +431,22 @@ class CodeChecker extends RecursiveAstVisitor {
 
   @override
   void visitListLiteral(ListLiteral node) {
-    var type = DynamicTypeImpl.instance;
+    DartType type = DynamicTypeImpl.instance;
     if (node.typeArguments != null) {
-      var targs = node.typeArguments.arguments;
-      if (targs.length > 0) type = targs[0].type;
-    } else if (node.staticType is InterfaceType) {
-      InterfaceType listT = node.staticType;
-      var targs = listT.typeArguments;
-      if (targs != null && targs.length > 0) type = targs[0];
+      NodeList<TypeName> targs = node.typeArguments.arguments;
+      if (targs.length > 0) {
+        type = targs[0].type;
+      }
+    } else {
+      DartType staticType = node.staticType;
+      if (staticType is InterfaceType) {
+        List<DartType> targs = staticType.typeArguments;
+        if (targs != null && targs.length > 0) {
+          type = targs[0];
+        }
+      }
     }
-    var elements = node.elements;
+    NodeList<Expression> elements = node.elements;
     for (int i = 0; i < elements.length; i++) {
       checkArgument(elements[i], type);
     }
@@ -446,23 +455,33 @@ class CodeChecker extends RecursiveAstVisitor {
 
   @override
   void visitMapLiteral(MapLiteral node) {
-    var ktype = DynamicTypeImpl.instance;
-    var vtype = DynamicTypeImpl.instance;
+    DartType ktype = DynamicTypeImpl.instance;
+    DartType vtype = DynamicTypeImpl.instance;
     if (node.typeArguments != null) {
-      var targs = node.typeArguments.arguments;
-      if (targs.length > 0) ktype = targs[0].type;
-      if (targs.length > 1) vtype = targs[1].type;
-    } else if (node.staticType is InterfaceType) {
-      InterfaceType mapT = node.staticType;
-      var targs = mapT.typeArguments;
-      if (targs != null) {
-        if (targs.length > 0) ktype = targs[0];
-        if (targs.length > 1) vtype = targs[1];
+      NodeList<TypeName> targs = node.typeArguments.arguments;
+      if (targs.length > 0) {
+        ktype = targs[0].type;
+      }
+      if (targs.length > 1) {
+        vtype = targs[1].type;
+      }
+    } else {
+      DartType staticType = node.staticType;
+      if (staticType is InterfaceType) {
+        List<DartType> targs = staticType.typeArguments;
+        if (targs != null) {
+          if (targs.length > 0) {
+            ktype = targs[0];
+          }
+          if (targs.length > 1) {
+            vtype = targs[1];
+          }
+        }
       }
     }
-    var entries = node.entries;
+    NodeList<MapLiteralEntry> entries = node.entries;
     for (int i = 0; i < entries.length; i++) {
-      var entry = entries[i];
+      MapLiteralEntry entry = entries[i];
       checkArgument(entry.key, ktype);
       checkArgument(entry.value, vtype);
     }
@@ -488,7 +507,7 @@ class CodeChecker extends RecursiveAstVisitor {
       //
       // The first case is handled here, the second case is handled below when
       // we call [checkFunctionApplication].
-      DynamicInvoke.set(node.methodName, true);
+      setIsDynamicInvoke(node.methodName, true);
     } else {
       checkFunctionApplication(node, node.methodName, node.argumentList);
     }
@@ -607,11 +626,10 @@ class CodeChecker extends RecursiveAstVisitor {
       assert(functionType.optionalParameterTypes.isEmpty);
 
       // Check the LHS type.
-      var staticInfo;
       var rhsType = _getStaticType(expr.rightHandSide);
       var lhsType = _getStaticType(expr.leftHandSide);
-      var returnType = _specializedBinaryReturnType(
-          op, lhsType, rhsType, functionType.returnType);
+      var returnType = rules.refineBinaryExpressionType(
+          typeProvider, lhsType, op, rhsType, functionType.returnType);
 
       if (!rules.isSubtypeOf(returnType, lhsType)) {
         final numType = typeProvider.numType;
@@ -620,19 +638,17 @@ class CodeChecker extends RecursiveAstVisitor {
             rules.isSubtypeOf(lhsType, rhsType)) {
           // This is also slightly different from spec, but allows us to keep
           // compound operators in the int += num and num += dynamic cases.
-          staticInfo =
-              DownCast.create(rules, expr.rightHandSide, rhsType, lhsType);
-          rhsType = lhsType;
+          _recordImplicitCast(expr.rightHandSide, rhsType, lhsType);
         } else {
-          staticInfo = new StaticTypeError(rules, expr, lhsType);
+          _recordMessage(expr, StrongModeCode.STATIC_TYPE_ERROR,
+              [expr, returnType, lhsType]);
         }
-        _recordMessage(staticInfo);
-      }
-
-      // Check the rhs type
-      if (staticInfo is! CoercionInfo) {
-        var paramType = paramTypes.first;
-        _checkDowncast(expr.rightHandSide, paramType);
+      } else {
+        // Check the RHS type.
+        //
+        // This is only needed if we didn't already need a cast, and avoids
+        // emitting two messages for the same expression.
+        _checkDowncast(expr.rightHandSide, paramTypes.first);
       }
     }
   }
@@ -667,7 +683,7 @@ class CodeChecker extends RecursiveAstVisitor {
 
     // Downcast if toT <: fromT
     if (rules.isSubtypeOf(to, from)) {
-      _recordMessage(DownCast.create(rules, expr, from, to));
+      _recordImplicitCast(expr, from, to);
       return;
     }
 
@@ -682,7 +698,7 @@ class CodeChecker extends RecursiveAstVisitor {
     // Iterable<T> for some concrete T (e.g. Object).  These are unrelated
     // in the restricted system, but List<dynamic> <: Iterable<T> in dart.
     if (from.isAssignableTo(to)) {
-      _recordMessage(DownCast.create(rules, expr, from, to));
+      _recordImplicitCast(expr, from, to);
     }
   }
 
@@ -719,7 +735,7 @@ class CodeChecker extends RecursiveAstVisitor {
   void _checkRuntimeTypeCheck(AstNode node, TypeName typeName) {
     var type = getType(typeName);
     if (!rules.isGroundType(type)) {
-      _recordMessage(new NonGroundTypeCheckInfo(node, type));
+      _recordMessage(node, StrongModeCode.NON_GROUND_TYPE_CHECK_INFO, [type]);
     }
   }
 
@@ -735,6 +751,86 @@ class CodeChecker extends RecursiveAstVisitor {
       // that the user defined method accepts an `int` as the RHS.
       // We assume Analyzer has done this already.
     }
+  }
+
+  /// Records an implicit cast for the [expression] from [fromType] to [toType].
+  ///
+  /// This will emit the appropriate error/warning/hint message as well as mark
+  /// the AST node.
+  void _recordImplicitCast(
+      Expression expression, DartType fromType, DartType toType) {
+    // toT <:_R fromT => to <: fromT
+    // NB: classes with call methods are subtypes of function
+    // types, but the function type is not assignable to the class
+    assert(toType.isSubtypeOf(fromType) || fromType.isAssignableTo(toType));
+
+    // Inference "casts":
+    if (expression is Literal || expression is FunctionExpression) {
+      // fromT should be an exact type - this will almost certainly fail at
+      // runtime.
+      _recordMessage(expression, StrongModeCode.STATIC_TYPE_ERROR,
+          [expression, fromType, toType]);
+      return;
+    }
+
+    if (expression is InstanceCreationExpression) {
+      ConstructorElement e = expression.staticElement;
+      if (e == null || !e.isFactory) {
+        // fromT should be an exact type - this will almost certainly fail at
+        // runtime.
+
+        _recordMessage(expression, StrongModeCode.STATIC_TYPE_ERROR,
+            [expression, fromType, toType]);
+        return;
+      }
+    }
+
+    if (isKnownFunction(expression)) {
+      _recordMessage(expression, StrongModeCode.STATIC_TYPE_ERROR,
+          [expression, fromType, toType]);
+      return;
+    }
+
+    // TODO(vsm): Change this to an assert when we have generic methods and
+    // fix TypeRules._coerceTo to disallow implicit sideways casts.
+    bool downCastComposite = false;
+    if (!rules.isSubtypeOf(toType, fromType)) {
+      assert(toType.isSubtypeOf(fromType) || fromType.isAssignableTo(toType));
+      downCastComposite = true;
+    }
+
+    // Composite cast: these are more likely to fail.
+    if (!rules.isGroundType(toType)) {
+      // This cast is (probably) due to our different treatment of dynamic.
+      // It may be more likely to fail at runtime.
+      if (fromType is InterfaceType) {
+        // For class types, we'd like to allow non-generic down casts, e.g.,
+        // Iterable<T> to List<T>.  The intuition here is that raw (generic)
+        // casts are problematic, and we should complain about those.
+        var typeArgs = fromType.typeArguments;
+        downCastComposite =
+            typeArgs.isEmpty || typeArgs.any((t) => t.isDynamic);
+      } else {
+        downCastComposite = true;
+      }
+    }
+
+    var parent = expression.parent;
+    ErrorCode errorCode;
+    if (downCastComposite) {
+      errorCode = StrongModeCode.DOWN_CAST_COMPOSITE;
+    } else if (fromType.isDynamic) {
+      errorCode = StrongModeCode.DYNAMIC_CAST;
+    } else if (parent is VariableDeclaration &&
+        parent.initializer == expression) {
+      errorCode = StrongModeCode.ASSIGNMENT_CAST;
+    } else {
+      errorCode = StrongModeCode.DOWN_CAST_IMPLICIT;
+    }
+
+    _recordMessage(expression, errorCode, [fromType, toType]);
+    setImplicitCast(expression, toType);
+    _hasImplicitCasts = true;
   }
 
   // Produce a coercion which coerces something of type fromT
@@ -799,8 +895,8 @@ class CodeChecker extends RecursiveAstVisitor {
     DartType t = expr.staticType ?? DynamicTypeImpl.instance;
 
     // Remove fuzzy arrow if possible.
-    if (t is FunctionType && StaticInfo.isKnownFunction(expr)) {
-      t = _removeFuzz(t);
+    if (t is FunctionType && isKnownFunction(expr)) {
+      t = rules.functionTypeToConcreteType(typeProvider, t);
     }
 
     return t;
@@ -821,7 +917,9 @@ class CodeChecker extends RecursiveAstVisitor {
     if (t is InterfaceType) {
       return rules.getCallMethodType(t);
     }
-    if (t is FunctionType) return t;
+    if (t is FunctionType) {
+      return t;
+    }
     return null;
   }
 
@@ -879,120 +977,57 @@ class CodeChecker extends RecursiveAstVisitor {
     return _isObjectGetter(target, id) || _isObjectMethod(target, id);
   }
 
-  void _recordDynamicInvoke(AstNode node, AstNode target) {
-    if (_hints) {
-      reporter.onError(new DynamicInvoke(rules, node).toAnalysisError());
-    }
+  void _recordDynamicInvoke(AstNode node, Expression target) {
+    _recordMessage(node, StrongModeCode.DYNAMIC_INVOKE, [node]);
     // TODO(jmesserly): we may eventually want to record if the whole operation
     // (node) was dynamic, rather than the target, but this is an easier fit
     // with what we used to do.
-    DynamicInvoke.set(target, true);
+    setIsDynamicInvoke(target, true);
   }
 
-  void _recordMessage(StaticInfo info) {
-    if (info == null) return;
-    var error = info.toAnalysisError();
-    var severity = error.errorCode.errorSeverity;
+  void _recordMessage(AstNode node, ErrorCode errorCode, List arguments) {
+    var severity = errorCode.errorSeverity;
     if (severity == ErrorSeverity.ERROR) _failure = true;
-    if (severity != ErrorSeverity.INFO || _hints) {
+    if (severity != ErrorSeverity.INFO || _options.strongModeHints) {
+      int begin = node is AnnotatedNode
+          ? node.firstTokenAfterCommentAndMetadata.offset
+          : node.offset;
+      int length = node.end - begin;
+      var source = (node.root as CompilationUnit).element.source;
+      var error =
+          new AnalysisError(source, begin, length, errorCode, arguments);
       reporter.onError(error);
     }
-
-    if (info is CoercionInfo) {
-      // TODO(jmesserly): if we're run again on the same AST, we'll produce the
-      // same annotations. This should be harmless. This might go away once
-      // CodeChecker is integrated better with analyzer, as it will know that
-      // checking has already been performed.
-      // assert(CoercionInfo.get(info.node) == null);
-      CoercionInfo.set(info.node, info);
-    }
   }
+}
 
-  /// Remove "fuzzy arrow" in this function type.
-  ///
-  /// Normally we treat dynamically typed parameters as bottom for function
-  /// types. This allows type tests such as `if (f is SingleArgFunction)`.
-  /// It also requires a dynamic check on the parameter type to call these
-  /// functions.
-  ///
-  /// When we convert to a strict arrow, dynamically typed parameters become
-  /// top. This is safe to do for known functions, like top-level or local
-  /// functions and static methods. Those functions must already be essentially
-  /// treating dynamic as top.
-  ///
-  /// Only the outer-most arrow can be strict. Any others must be fuzzy, because
-  /// we don't know what function value will be passed there.
-  // TODO(jmesserly): should we use a real "fuzzyArrow" bit on the function
-  // type? That would allow us to implement this in the subtype relation.
-  // TODO(jmesserly): we'll need to factor this differently if we want to
-  // move CodeChecker's functionality into existing analyzer. Likely we can
-  // let the Expression have a strict arrow, then in places were we do
-  // inference, convert back to a fuzzy arrow.
-  FunctionType _removeFuzz(FunctionType t) {
-    bool foundFuzz = false;
-    List<ParameterElement> parameters = <ParameterElement>[];
-    for (ParameterElement p in t.parameters) {
-      ParameterElement newP = _removeParameterFuzz(p);
-      parameters.add(newP);
-      if (p != newP) foundFuzz = true;
-    }
-    if (!foundFuzz) {
-      return t;
-    }
-
-    FunctionElementImpl function = new FunctionElementImpl("", -1);
-    function.synthetic = true;
-    function.returnType = t.returnType;
-    function.shareTypeParameters(t.typeFormals);
-    function.shareParameters(parameters);
-    return function.type = new FunctionTypeImpl(function);
+bool isKnownFunction(Expression expression) {
+  Element element = null;
+  if (expression is FunctionExpression) {
+    return true;
+  } else if (expression is PropertyAccess) {
+    element = expression.propertyName.staticElement;
+  } else if (expression is Identifier) {
+    element = expression.staticElement;
   }
-
-  /// Removes fuzzy arrow, see [_removeFuzz].
-  ParameterElement _removeParameterFuzz(ParameterElement p) {
-    if (p.type.isDynamic) {
-      return new ParameterElementImpl.synthetic(
-          p.name, typeProvider.objectType, p.parameterKind);
-    }
-    return p;
-  }
-
-  DartType _specializedBinaryReturnType(
-      TokenType op, DartType t1, DartType t2, DartType normalReturnType) {
-    // This special cases binary return types as per 16.26 and 16.27 of the
-    // Dart language spec.
-    switch (op) {
-      case TokenType.PLUS:
-      case TokenType.MINUS:
-      case TokenType.STAR:
-      case TokenType.TILDE_SLASH:
-      case TokenType.PERCENT:
-      case TokenType.PLUS_EQ:
-      case TokenType.MINUS_EQ:
-      case TokenType.STAR_EQ:
-      case TokenType.TILDE_SLASH_EQ:
-      case TokenType.PERCENT_EQ:
-        if (t1 == typeProvider.intType && t2 == typeProvider.intType) return t1;
-        if (t1 == typeProvider.doubleType && t2 == typeProvider.doubleType)
-          return t1;
-        // This particular combo is not spelled out in the spec, but all
-        // implementations and analyzer seem to follow this.
-        if (t1 == typeProvider.doubleType && t2 == typeProvider.intType)
-          return t1;
-    }
-    return normalReturnType;
-  }
+// First class functions and static methods, where we know the original
+// declaration, will have an exact type, so we know a downcast will fail.
+  return element is FunctionElement ||
+      element is MethodElement && element.isStatic;
 }
 
 /// Checks for overriding declarations of fields and methods. This is used to
 /// check overrides between classes and superclasses, interfaces, and mixin
 /// applications.
 class _OverrideChecker {
-  bool _failure = false;
   final StrongTypeSystemImpl rules;
-  final AnalysisErrorListener _reporter;
+  final TypeProvider _typeProvider;
+  final CodeChecker _checker;
 
-  _OverrideChecker(this.rules, this._reporter);
+  _OverrideChecker(CodeChecker checker)
+      : _checker = checker,
+        rules = checker.rules,
+        _typeProvider = checker.typeProvider;
 
   void check(ClassDeclaration node) {
     if (node.element.type.isObject) return;
@@ -1052,7 +1087,7 @@ class _OverrideChecker {
         includeParents: false);
   }
 
-  /// Check that individual methods and fields in [subType] correctly override
+  /// Check that individual methods and fields in [node] correctly override
   /// the declarations in [baseType].
   ///
   /// The [errorLocation] node indicates where errors are reported, see
@@ -1061,11 +1096,15 @@ class _OverrideChecker {
       InterfaceType baseType, Set<String> seen, bool isSubclass) {
     for (var member in node.members) {
       if (member is FieldDeclaration) {
-        if (member.isStatic) continue;
+        if (member.isStatic) {
+          continue;
+        }
         for (var variable in member.fields.variables) {
           var element = variable.element as PropertyInducingElement;
           var name = element.name;
-          if (seen.contains(name)) continue;
+          if (seen.contains(name)) {
+            continue;
+          }
           var getter = element.getter;
           var setter = element.setter;
           bool found = _checkSingleOverride(
@@ -1076,12 +1115,18 @@ class _OverrideChecker {
                   setter, baseType, variable.name, member, isSubclass)) {
             found = true;
           }
-          if (found) seen.add(name);
+          if (found) {
+            seen.add(name);
+          }
         }
       } else if (member is MethodDeclaration) {
-        if (member.isStatic) continue;
+        if (member.isStatic) {
+          continue;
+        }
         var method = member.element;
-        if (seen.contains(method.name)) continue;
+        if (seen.contains(method.name)) {
+          continue;
+        }
         if (_checkSingleOverride(
             method, baseType, member.name, member, isSubclass)) {
           seen.add(method.name);
@@ -1156,8 +1201,7 @@ class _OverrideChecker {
 
     // Check overrides from its mixins
     for (int i = 0; i < type.mixins.length; i++) {
-      var loc =
-          errorLocation != null ? errorLocation : node.withClause.mixinTypes[i];
+      var loc = errorLocation ?? node.withClause.mixinTypes[i];
       for (var interfaceType in interfaces) {
         // We copy [seen] so we can report separately if more than one mixin or
         // the base class have an invalid override.
@@ -1169,8 +1213,10 @@ class _OverrideChecker {
     // Check overrides from its superclasses
     if (includeParents) {
       var parent = type.superclass;
-      if (parent.isObject) return;
-      var loc = errorLocation != null ? errorLocation : node.extendsClause;
+      if (parent.isObject) {
+        return;
+      }
+      var loc = errorLocation ?? node.extendsClause;
       // No need to copy [seen] here because we made copies above when reporting
       // errors on mixins.
       _checkInterfacesOverrides(parent, interfaces, seen,
@@ -1245,11 +1291,30 @@ class _OverrideChecker {
       // as a field.  We effectively treat fields as final / non-virtual.
       PropertyInducingElement field = _getMemberField(type, element);
       if (field != null) {
-        _recordMessage(new InvalidFieldOverride(
-            errorLocation, element, type, subType, baseType));
+        _checker._recordMessage(
+            errorLocation, StrongModeCode.INVALID_FIELD_OVERRIDE, [
+          element.enclosingElement.name,
+          element.name,
+          subType,
+          type,
+          baseType
+        ]);
       }
     }
-    if (!rules.isSubtypeOf(subType, baseType)) {
+    FunctionType concreteSubType = subType;
+    FunctionType concreteBaseType = baseType;
+    if (element is MethodElement) {
+      if (concreteSubType.typeFormals.isNotEmpty) {
+        if (concreteBaseType.typeFormals.isEmpty) {
+          concreteSubType = rules.instantiateToBounds(concreteSubType);
+        }
+      }
+      concreteSubType =
+          rules.typeToConcreteType(_typeProvider, concreteSubType);
+      concreteBaseType =
+          rules.typeToConcreteType(_typeProvider, concreteBaseType);
+    }
+    if (!rules.isSubtypeOf(concreteSubType, concreteBaseType)) {
       // See whether non-subtype cases fit one of our common patterns:
       //
       // Common pattern 1: Inferable return type (on getters and methods)
@@ -1261,8 +1326,23 @@ class _OverrideChecker {
       //     get foo => e; // no type specified.
       //     toString() { ... } // no return type specified.
       //   }
-      _recordMessage(new InvalidMethodOverride(
-          errorLocation, element, type, subType, baseType));
+
+      ErrorCode errorCode;
+      if (errorLocation is ExtendsClause) {
+        errorCode = StrongModeCode.INVALID_METHOD_OVERRIDE_FROM_BASE;
+      } else if (errorLocation.parent is WithClause) {
+        errorCode = StrongModeCode.INVALID_METHOD_OVERRIDE_FROM_MIXIN;
+      } else {
+        errorCode = StrongModeCode.INVALID_METHOD_OVERRIDE;
+      }
+
+      _checker._recordMessage(errorLocation, errorCode, [
+        element.enclosingElement.name,
+        element.name,
+        subType,
+        type,
+        baseType
+      ]);
     }
     return true;
   }
@@ -1300,12 +1380,5 @@ class _OverrideChecker {
       _checkIndividualOverridesFromClass(node, current.superclass, seen, true);
       current = current.superclass;
     } while (!current.isObject && !visited.contains(current));
-  }
-
-  void _recordMessage(StaticInfo info) {
-    if (info == null) return;
-    var error = info.toAnalysisError();
-    if (error.errorCode.errorSeverity == ErrorSeverity.ERROR) _failure = true;
-    _reporter.onError(error);
   }
 }

@@ -10,7 +10,7 @@ import '../constants/values.dart';
 import '../constant_system_dart.dart';
 import '../core_types.dart' show CoreTypes;
 import '../dart_types.dart';
-import '../elements/elements.dart' show ClassElement;
+import '../elements/elements.dart' show ClassElement, FieldElement;
 import '../tree/tree.dart' show DartString, LiteralDartString;
 import 'js_backend.dart';
 
@@ -344,6 +344,22 @@ class JavaScriptConstantSystem extends ConstantSystem {
     }
     return new JavaScriptMapConstant(
         type, keysList, values, protoValue, onlyStringKeys);
+  }
+
+  @override
+  ConstantValue createSymbol(Compiler compiler, String text) {
+    // TODO(johnniwinther): Create a backend agnostic value.
+    JavaScriptBackend backend = compiler.backend;
+    ClassElement symbolClass = backend.helpers.symbolImplementationClass;
+    InterfaceType type = symbolClass.rawType;
+    ConstantValue argument = createString(new DartString.literal(text));
+    Map<FieldElement, ConstantValue> fields = <FieldElement, ConstantValue>{};
+    symbolClass.forEachInstanceField(
+        (ClassElement enclosingClass, FieldElement field) {
+      fields[field] = argument;
+    }, includeSuperAndInjectedMembers: true);
+    assert(fields.length == 1);
+    return new ConstructedConstantValue(type, fields);
   }
 }
 

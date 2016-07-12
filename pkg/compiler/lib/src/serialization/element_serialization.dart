@@ -5,27 +5,37 @@
 library dart2js.serialization.elements;
 
 import '../common.dart';
+import '../common/names.dart';
 import '../constants/constructors.dart';
 import '../constants/expressions.dart';
 import '../dart_types.dart';
+import '../diagnostics/messages.dart';
 import '../elements/elements.dart';
+import '../elements/modelx.dart'
+    show DeferredLoaderGetterElementX, ErroneousElementX;
 import 'constant_serialization.dart';
 import 'keys.dart';
 import 'modelz.dart';
 import 'serialization.dart';
+import 'serialization_util.dart';
 
 /// Enum kinds used for encoding [Element]s.
 enum SerializedElementKind {
+  ERROR,
   LIBRARY,
   COMPILATION_UNIT,
   CLASS,
   ENUM,
   NAMED_MIXIN_APPLICATION,
   GENERATIVE_CONSTRUCTOR,
+  DEFAULT_CONSTRUCTOR,
   FACTORY_CONSTRUCTOR,
+  REDIRECTING_FACTORY_CONSTRUCTOR,
+  FORWARDING_CONSTRUCTOR,
   TOPLEVEL_FIELD,
   STATIC_FIELD,
   INSTANCE_FIELD,
+  ENUM_CONSTANT,
   TOPLEVEL_FUNCTION,
   TOPLEVEL_GETTER,
   TOPLEVEL_SETTER,
@@ -43,9 +53,11 @@ enum SerializedElementKind {
   IMPORT,
   EXPORT,
   PREFIX,
+  DEFERRED_LOAD_LIBRARY,
+  LOCAL_VARIABLE,
   EXTERNAL_LIBRARY,
   EXTERNAL_LIBRARY_MEMBER,
-  EXTERNAL_STATIC_MEMBER,
+  EXTERNAL_CLASS_MEMBER,
   EXTERNAL_CONSTRUCTOR,
 }
 
@@ -57,8 +69,11 @@ enum SerializedElementKind {
 /// and [ConstantExpression] that the serialized [Element] depends upon are also
 /// serialized.
 const List<ElementSerializer> ELEMENT_SERIALIZERS = const [
+  const ErrorSerializer(),
   const LibrarySerializer(),
   const CompilationUnitSerializer(),
+  const PrefixSerializer(),
+  const DeferredLoadLibrarySerializer(),
   const ClassSerializer(),
   const ConstructorSerializer(),
   const FieldSerializer(),
@@ -68,7 +83,7 @@ const List<ElementSerializer> ELEMENT_SERIALIZERS = const [
   const ParameterSerializer(),
   const ImportSerializer(),
   const ExportSerializer(),
-  const PrefixSerializer(),
+  const LocalVariableSerializer(),
 ];
 
 /// Interface for a function that can serialize a set of element kinds.
@@ -102,14 +117,54 @@ class SerializerUtil {
     if (element.sourcePosition != null) {
       SourceSpan position = element.sourcePosition;
       encoder.setInt(Key.OFFSET, position.begin);
+      // TODO(johnniwinther): What is the base URI in the case?
       if (position.uri != element.compilationUnit.script.resourceUri) {
-        // TODO(johnniwinther): What is the base URI in the case?
         encoder.setUri(Key.URI, element.library.canonicalUri, position.uri);
       }
       int length = position.end - position.begin;
       if (element.name.length != length) {
         encoder.setInt(Key.LENGTH, length);
       }
+    }
+  }
+
+  /// Serialize the metadata of [element] into [encoder].
+  static void serializeMetadata(Element element, ObjectEncoder encoder) {
+    ListEncoder list;
+
+    void encodeAnnotation(MetadataAnnotation metadata) {
+      ObjectEncoder object = list.createObject();
+      object.setElement(Key.ELEMENT, metadata.annotatedElement);
+      SourceSpan sourcePosition = metadata.sourcePosition;
+      // TODO(johnniwinther): What is the base URI here?
+      object.setUri(Key.URI, sourcePosition.uri, sourcePosition.uri);
+      object.setInt(Key.OFFSET, sourcePosition.begin);
+      object.setInt(Key.LENGTH, sourcePosition.end - sourcePosition.begin);
+      object.setConstant(Key.CONSTANT, metadata.constant);
+    }
+
+    if (element.metadata.isNotEmpty) {
+      list = encoder.createList(Key.METADATA);
+      element.metadata.forEach(encodeAnnotation);
+    }
+    if (element.isPatched && element.implementation.metadata.isNotEmpty) {
+      list ??= encoder.createList(Key.METADATA);
+      element.implementation.metadata.forEach(encodeAnnotation);
+    }
+  }
+
+  /// Serialize the parent relation for [element] into [encoder], i.e library,
+  /// enclosing class, and compilation unit references.
+  static void serializeParentRelation(Element element, ObjectEncoder encoder) {
+    if (element.enclosingClass != null) {
+      encoder.setElement(Key.CLASS, element.enclosingClass);
+      if (element.enclosingClass.declaration.compilationUnit !=
+          element.compilationUnit) {
+        encoder.setElement(Key.COMPILATION_UNIT, element.compilationUnit);
+      }
+    } else {
+      encoder.setElement(Key.LIBRARY, element.library);
+      encoder.setElement(Key.COMPILATION_UNIT, element.compilationUnit);
     }
   }
 
@@ -143,6 +198,30 @@ class SerializerUtil {
         set.add(element);
       }
     };
+  }
+}
+
+class ErrorSerializer implements ElementSerializer {
+  const ErrorSerializer();
+
+  SerializedElementKind getSerializedKind(Element element) {
+    if (element.isError) {
+      return SerializedElementKind.ERROR;
+    }
+    return null;
+  }
+
+  void serialize(ErroneousElement element, ObjectEncoder encoder,
+      SerializedElementKind kind) {
+    encoder.setElement(Key.ENCLOSING, element.enclosingElement);
+    encoder.setString(Key.NAME, element.name);
+    encoder.setEnum(Key.MESSAGE_KIND, element.messageKind);
+    if (element.messageArguments.isNotEmpty) {
+      MapEncoder mapEncoder = encoder.createMap(Key.ARGUMENTS);
+      element.messageArguments.forEach((String key, var value) {
+        mapEncoder.setString(key, Message.convertToString(value));
+      });
+    }
   }
 }
 
@@ -203,6 +282,7 @@ class LibrarySerializer implements ElementSerializer {
 
   void serialize(LibraryElement element, ObjectEncoder encoder,
       SerializedElementKind kind) {
+    SerializerUtil.serializeMetadata(element, encoder);
     encoder.setUri(
         Key.CANONICAL_URI, element.canonicalUri, element.canonicalUri);
     encoder.setString(Key.LIBRARY_NAME, element.libraryName);
@@ -213,7 +293,6 @@ class LibrarySerializer implements ElementSerializer {
     encoder.setElements(Key.EXPORTS, element.exports);
 
     encoder.setElements(Key.IMPORT_SCOPE, getImportedElements(element));
-
     encoder.setElements(Key.EXPORT_SCOPE, getExportedElements(element));
   }
 }
@@ -230,6 +309,7 @@ class CompilationUnitSerializer implements ElementSerializer {
 
   void serialize(CompilationUnitElement element, ObjectEncoder encoder,
       SerializedElementKind kind) {
+    SerializerUtil.serializeMetadata(element, encoder);
     encoder.setElement(Key.LIBRARY, element.library);
     encoder.setUri(
         Key.URI, element.library.canonicalUri, element.script.resourceUri);
@@ -277,6 +357,7 @@ class ClassSerializer implements ElementSerializer {
 
   void serialize(
       ClassElement element, ObjectEncoder encoder, SerializedElementKind kind) {
+    SerializerUtil.serializeMetadata(element, encoder);
     encoder.setElement(Key.LIBRARY, element.library);
     encoder.setElement(Key.COMPILATION_UNIT, element.compilationUnit);
     encoder.setString(Key.NAME, element.name);
@@ -285,6 +366,7 @@ class ClassSerializer implements ElementSerializer {
     encoder.setBool(Key.IS_ABSTRACT, element.isAbstract);
     SerializerUtil.serializeMembers(getMembers(element), encoder);
     encoder.setBool(Key.IS_PROXY, element.isProxy);
+    encoder.setBool(Key.IS_INJECTED, element.isInjected);
     if (kind == SerializedElementKind.ENUM) {
       EnumClassElement enumClass = element;
       encoder.setElements(Key.FIELDS, enumClass.enumValues);
@@ -321,28 +403,61 @@ class ConstructorSerializer implements ElementSerializer {
 
   SerializedElementKind getSerializedKind(Element element) {
     if (element.isGenerativeConstructor) {
-      return SerializedElementKind.GENERATIVE_CONSTRUCTOR;
+      ConstructorElement constructor = element;
+      if (constructor.enclosingClass.isNamedMixinApplication) {
+        return SerializedElementKind.FORWARDING_CONSTRUCTOR;
+      } else if (constructor.definingConstructor != null) {
+        return SerializedElementKind.DEFAULT_CONSTRUCTOR;
+      } else {
+        return SerializedElementKind.GENERATIVE_CONSTRUCTOR;
+      }
     } else if (element.isFactoryConstructor) {
-      return SerializedElementKind.FACTORY_CONSTRUCTOR;
+      ConstructorElement constructor = element;
+      if (constructor.isRedirectingFactory) {
+        return SerializedElementKind.REDIRECTING_FACTORY_CONSTRUCTOR;
+      } else {
+        return SerializedElementKind.FACTORY_CONSTRUCTOR;
+      }
     }
     return null;
   }
 
   void serialize(ConstructorElement element, ObjectEncoder encoder,
       SerializedElementKind kind) {
-    encoder.setElement(Key.CLASS, element.enclosingClass);
-    encoder.setType(Key.TYPE, element.type);
-    encoder.setString(Key.NAME, element.name);
-    SerializerUtil.serializePosition(element, encoder);
-    SerializerUtil.serializeParameters(element, encoder);
-    encoder.setBool(Key.IS_CONST, element.isConst);
-    encoder.setBool(Key.IS_EXTERNAL, element.isExternal);
-    if (element.isExternal) return;
-    if (element.isConst && !element.isFromEnvironmentConstructor) {
-      ConstantConstructor constantConstructor = element.constantConstructor;
-      ObjectEncoder constantEncoder = encoder.createObject(Key.CONSTRUCTOR);
-      const ConstantConstructorSerializer()
-          .visit(constantConstructor, constantEncoder);
+    SerializerUtil.serializeParentRelation(element, encoder);
+    if (kind == SerializedElementKind.FORWARDING_CONSTRUCTOR) {
+      serializeElementReference(element.enclosingClass, Key.ELEMENT, Key.NAME,
+          encoder, element.definingConstructor);
+    } else {
+      SerializerUtil.serializeMetadata(element, encoder);
+      encoder.setType(Key.TYPE, element.type);
+      encoder.setString(Key.NAME, element.name);
+      SerializerUtil.serializePosition(element, encoder);
+      SerializerUtil.serializeParameters(element, encoder);
+      encoder.setBool(Key.IS_CONST, element.isConst);
+      encoder.setBool(Key.IS_EXTERNAL, element.isExternal);
+      encoder.setBool(Key.IS_INJECTED, element.isInjected);
+      if (element.isConst && !element.isFromEnvironmentConstructor) {
+        ConstantConstructor constantConstructor = element.constantConstructor;
+        ObjectEncoder constantEncoder = encoder.createObject(Key.CONSTRUCTOR);
+        const ConstantConstructorSerializer()
+            .visit(constantConstructor, constantEncoder);
+      }
+      if (kind == SerializedElementKind.GENERATIVE_CONSTRUCTOR) {
+        encoder.setBool(Key.IS_REDIRECTING, element.isRedirectingGenerative);
+      }
+      encoder.setElement(Key.EFFECTIVE_TARGET, element.effectiveTarget);
+      if (kind == SerializedElementKind.REDIRECTING_FACTORY_CONSTRUCTOR) {
+        encoder.setType(
+            Key.EFFECTIVE_TARGET_TYPE,
+            element
+                .computeEffectiveTargetType(element.enclosingClass.thisType));
+        encoder.setElement(Key.IMMEDIATE_REDIRECTION_TARGET,
+            element.immediateRedirectionTarget);
+        if (element.redirectionDeferredPrefix != null) {
+          encoder.setElement(Key.PREFIX, element.redirectionDeferredPrefix);
+        }
+      }
     }
   }
 }
@@ -353,7 +468,12 @@ class FieldSerializer implements ElementSerializer {
   SerializedElementKind getSerializedKind(Element element) {
     if (element.isField) {
       if (element.isTopLevel) return SerializedElementKind.TOPLEVEL_FIELD;
-      if (element.isStatic) return SerializedElementKind.STATIC_FIELD;
+      if (element.isStatic) {
+        if (element is EnumConstantElement) {
+          return SerializedElementKind.ENUM_CONSTANT;
+        }
+        return SerializedElementKind.STATIC_FIELD;
+      }
       if (element.isInstanceMember) return SerializedElementKind.INSTANCE_FIELD;
     }
     return null;
@@ -362,19 +482,20 @@ class FieldSerializer implements ElementSerializer {
   void serialize(
       FieldElement element, ObjectEncoder encoder, SerializedElementKind kind) {
     encoder.setString(Key.NAME, element.name);
+    SerializerUtil.serializeMetadata(element, encoder);
     SerializerUtil.serializePosition(element, encoder);
     encoder.setType(Key.TYPE, element.type);
     encoder.setBool(Key.IS_FINAL, element.isFinal);
     encoder.setBool(Key.IS_CONST, element.isConst);
-    if (element.isConst) {
-      ConstantExpression constant = element.constant;
+    encoder.setBool(Key.IS_INJECTED, element.isInjected);
+    ConstantExpression constant = element.constant;
+    if (constant != null) {
       encoder.setConstant(Key.CONSTANT, constant);
     }
-    if (kind != SerializedElementKind.TOPLEVEL_FIELD) {
-      encoder.setElement(Key.CLASS, element.enclosingClass);
-    } else {
-      encoder.setElement(Key.LIBRARY, element.library);
-      encoder.setElement(Key.COMPILATION_UNIT, element.compilationUnit);
+    SerializerUtil.serializeParentRelation(element, encoder);
+    if (element is EnumConstantElement) {
+      EnumConstantElement enumConstant = element;
+      encoder.setInt(Key.INDEX, enumConstant.index);
     }
   }
 }
@@ -383,6 +504,9 @@ class FunctionSerializer implements ElementSerializer {
   const FunctionSerializer();
 
   SerializedElementKind getSerializedKind(Element element) {
+    if (element.isDeferredLoaderGetter) {
+      return null;
+    }
     if (element.isFunction) {
       if (element.isTopLevel) return SerializedElementKind.TOPLEVEL_FUNCTION;
       if (element.isStatic) return SerializedElementKind.STATIC_FUNCTION;
@@ -413,19 +537,18 @@ class FunctionSerializer implements ElementSerializer {
   void serialize(FunctionElement element, ObjectEncoder encoder,
       SerializedElementKind kind) {
     encoder.setString(Key.NAME, element.name);
+    SerializerUtil.serializeMetadata(element, encoder);
     SerializerUtil.serializePosition(element, encoder);
     SerializerUtil.serializeParameters(element, encoder);
     encoder.setType(Key.TYPE, element.type);
     if (element.isFunction) {
       encoder.setBool(Key.IS_OPERATOR, element.isOperator);
+      encoder.setEnum(Key.ASYNC_MARKER, element.asyncMarker);
     }
-    if (element.enclosingClass != null) {
-      encoder.setElement(Key.CLASS, element.enclosingClass);
-    } else {
-      encoder.setElement(Key.LIBRARY, element.library);
-      encoder.setElement(Key.COMPILATION_UNIT, element.compilationUnit);
-    }
+    SerializerUtil.serializeParentRelation(element, encoder);
     encoder.setBool(Key.IS_EXTERNAL, element.isExternal);
+    encoder.setBool(Key.IS_ABSTRACT, element.isAbstract);
+    encoder.setBool(Key.IS_INJECTED, element.isInjected);
     if (element.isLocal) {
       LocalFunctionElement localFunction = element;
       encoder.setElement(
@@ -447,6 +570,7 @@ class TypedefSerializer implements ElementSerializer {
   void serialize(TypedefElement element, ObjectEncoder encoder,
       SerializedElementKind kind) {
     encoder.setString(Key.NAME, element.name);
+    SerializerUtil.serializeMetadata(element, encoder);
     SerializerUtil.serializePosition(element, encoder);
     encoder.setType(Key.ALIAS, element.alias);
     encoder.setElement(Key.LIBRARY, element.library);
@@ -469,6 +593,7 @@ class TypeVariableSerializer implements ElementSerializer {
       SerializedElementKind kind) {
     encoder.setElement(Key.TYPE_DECLARATION, element.typeDeclaration);
     encoder.setString(Key.NAME, element.name);
+    SerializerUtil.serializeMetadata(element, encoder);
     SerializerUtil.serializePosition(element, encoder);
     encoder.setType(Key.TYPE, element.type);
     encoder.setInt(Key.INDEX, element.index);
@@ -492,10 +617,12 @@ class ParameterSerializer implements ElementSerializer {
       SerializedElementKind kind) {
     encoder.setElement(Key.FUNCTION, element.functionDeclaration);
     encoder.setString(Key.NAME, element.name);
+    SerializerUtil.serializeMetadata(element, encoder);
     SerializerUtil.serializePosition(element, encoder);
     encoder.setType(Key.TYPE, element.type);
     encoder.setBool(Key.IS_OPTIONAL, element.isOptional);
     encoder.setBool(Key.IS_NAMED, element.isNamed);
+    encoder.setBool(Key.IS_FINAL, element.isFinal);
     if (element.isOptional) {
       encoder.setConstant(Key.CONSTANT, element.constant);
     }
@@ -503,6 +630,32 @@ class ParameterSerializer implements ElementSerializer {
       InitializingFormalElement initializingFormal = element;
       encoder.setElement(Key.FIELD, initializingFormal.fieldElement);
     }
+  }
+}
+
+class LocalVariableSerializer implements ElementSerializer {
+  const LocalVariableSerializer();
+
+  SerializedElementKind getSerializedKind(Element element) {
+    if (element.isVariable) {
+      return SerializedElementKind.LOCAL_VARIABLE;
+    }
+    return null;
+  }
+
+  void serialize(LocalVariableElement element, ObjectEncoder encoder,
+      SerializedElementKind kind) {
+    encoder.setString(Key.NAME, element.name);
+    SerializerUtil.serializeMetadata(element, encoder);
+    SerializerUtil.serializePosition(element, encoder);
+    encoder.setType(Key.TYPE, element.type);
+    encoder.setBool(Key.IS_FINAL, element.isFinal);
+    encoder.setBool(Key.IS_CONST, element.isConst);
+    if (element.isConst) {
+      ConstantExpression constant = element.constant;
+      encoder.setConstant(Key.CONSTANT, constant);
+    }
+    encoder.setElement(Key.EXECUTABLE_CONTEXT, element.executableContext);
   }
 }
 
@@ -518,6 +671,7 @@ class ImportSerializer implements ElementSerializer {
 
   void serialize(ImportElement element, ObjectEncoder encoder,
       SerializedElementKind kind) {
+    SerializerUtil.serializeMetadata(element, encoder);
     encoder.setElement(Key.LIBRARY, element.library);
     encoder.setElement(Key.COMPILATION_UNIT, element.compilationUnit);
     encoder.setElement(Key.LIBRARY_DEPENDENCY, element.importedLibrary);
@@ -542,6 +696,7 @@ class ExportSerializer implements ElementSerializer {
 
   void serialize(ExportElement element, ObjectEncoder encoder,
       SerializedElementKind kind) {
+    SerializerUtil.serializeMetadata(element, encoder);
     encoder.setElement(Key.LIBRARY, element.library);
     encoder.setElement(Key.COMPILATION_UNIT, element.compilationUnit);
     encoder.setElement(Key.LIBRARY_DEPENDENCY, element.exportedLibrary);
@@ -565,10 +720,27 @@ class PrefixSerializer implements ElementSerializer {
     encoder.setString(Key.NAME, element.name);
     encoder.setElement(Key.LIBRARY, element.library);
     encoder.setElement(Key.COMPILATION_UNIT, element.compilationUnit);
-    if (element.deferredImport != null) {
-      encoder.setElement(Key.IMPORT, element.deferredImport);
-    }
     encoder.setBool(Key.IS_DEFERRED, element.isDeferred);
+    if (element.isDeferred) {
+      encoder.setElement(Key.IMPORT, element.deferredImport);
+      encoder.setElement(Key.GETTER, element.loadLibrary);
+    }
+  }
+}
+
+class DeferredLoadLibrarySerializer implements ElementSerializer {
+  const DeferredLoadLibrarySerializer();
+
+  SerializedElementKind getSerializedKind(Element element) {
+    if (element.isDeferredLoaderGetter) {
+      return SerializedElementKind.DEFERRED_LOAD_LIBRARY;
+    }
+    return null;
+  }
+
+  void serialize(GetterElement element, ObjectEncoder encoder,
+      SerializedElementKind kind) {
+    encoder.setElement(Key.PREFIX, element.enclosingElement);
   }
 }
 
@@ -585,6 +757,19 @@ class ElementDeserializer {
   static Element deserialize(
       ObjectDecoder decoder, SerializedElementKind elementKind) {
     switch (elementKind) {
+      case SerializedElementKind.ERROR:
+        Element enclosing = decoder.getElement(Key.ENCLOSING);
+        String name = decoder.getString(Key.NAME);
+        MessageKind messageKind =
+            decoder.getEnum(Key.MESSAGE_KIND, MessageKind.values);
+        Map<String, String> arguments = <String, String>{};
+        MapDecoder mapDecoder = decoder.getMap(Key.ARGUMENTS, isOptional: true);
+        if (mapDecoder != null) {
+          mapDecoder.forEachKey((String key) {
+            arguments[key] = mapDecoder.getString(key);
+          });
+        }
+        return new ErroneousElementX(messageKind, arguments, name, enclosing);
       case SerializedElementKind.LIBRARY:
         return new LibraryElementZ(decoder);
       case SerializedElementKind.COMPILATION_UNIT:
@@ -599,12 +784,23 @@ class ElementDeserializer {
         return new TopLevelFieldElementZ(decoder);
       case SerializedElementKind.STATIC_FIELD:
         return new StaticFieldElementZ(decoder);
+      case SerializedElementKind.ENUM_CONSTANT:
+        return new EnumConstantElementZ(decoder);
       case SerializedElementKind.INSTANCE_FIELD:
         return new InstanceFieldElementZ(decoder);
       case SerializedElementKind.GENERATIVE_CONSTRUCTOR:
         return new GenerativeConstructorElementZ(decoder);
+      case SerializedElementKind.DEFAULT_CONSTRUCTOR:
+        return new DefaultConstructorElementZ(decoder);
       case SerializedElementKind.FACTORY_CONSTRUCTOR:
         return new FactoryConstructorElementZ(decoder);
+      case SerializedElementKind.REDIRECTING_FACTORY_CONSTRUCTOR:
+        return new RedirectingFactoryConstructorElementZ(decoder);
+      case SerializedElementKind.FORWARDING_CONSTRUCTOR:
+        ClassElement cls = decoder.getElement(Key.CLASS);
+        Element definingConstructor =
+            deserializeElementReference(cls, Key.ELEMENT, Key.NAME, decoder);
+        return new ForwardingConstructorElementZ(cls, definingConstructor);
       case SerializedElementKind.TOPLEVEL_FUNCTION:
         return new TopLevelFunctionElementZ(decoder);
       case SerializedElementKind.STATIC_FUNCTION:
@@ -630,7 +826,7 @@ class ElementDeserializer {
       case SerializedElementKind.TYPEVARIABLE:
         return new TypeVariableElementZ(decoder);
       case SerializedElementKind.PARAMETER:
-        return new ParameterElementZ(decoder);
+        return new LocalParameterElementZ(decoder);
       case SerializedElementKind.INITIALIZING_FORMAL:
         return new InitializingFormalElementZ(decoder);
       case SerializedElementKind.IMPORT:
@@ -639,9 +835,13 @@ class ElementDeserializer {
         return new ExportElementZ(decoder);
       case SerializedElementKind.PREFIX:
         return new PrefixElementZ(decoder);
+      case SerializedElementKind.DEFERRED_LOAD_LIBRARY:
+        return new DeferredLoaderGetterElementX(decoder.getElement(Key.PREFIX));
+      case SerializedElementKind.LOCAL_VARIABLE:
+        return new LocalVariableElementZ(decoder);
       case SerializedElementKind.EXTERNAL_LIBRARY:
       case SerializedElementKind.EXTERNAL_LIBRARY_MEMBER:
-      case SerializedElementKind.EXTERNAL_STATIC_MEMBER:
+      case SerializedElementKind.EXTERNAL_CLASS_MEMBER:
       case SerializedElementKind.EXTERNAL_CONSTRUCTOR:
         break;
     }

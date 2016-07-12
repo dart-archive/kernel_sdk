@@ -68,7 +68,7 @@ void Intrinsifier::InitializeState() {
   String& str = String::Handle(zone);
   Error& error = Error::Handle(zone);
 
-#define SETUP_FUNCTION(class_name, function_name, destination, fp)             \
+#define SETUP_FUNCTION(class_name, function_name, destination, type, fp)       \
   if (strcmp(#class_name, "::") == 0) {                                        \
     str = String::New(#function_name);                                         \
     func = lib.LookupFunctionAllowPrivate(str);                                \
@@ -119,6 +119,9 @@ void Intrinsifier::InitializeState() {
 }
 #endif  // defined(DART_NO_SNAPSHOT).
 
+
+// DBC does not use graph intrinsics.
+#if !defined(TARGET_ARCH_DBC)
 static void EmitCodeFor(FlowGraphCompiler* compiler,
                         FlowGraph* graph) {
   // The FlowGraph here is constructed by the intrinsics builder methods, and
@@ -154,10 +157,12 @@ static void EmitCodeFor(FlowGraphCompiler* compiler,
   }
   compiler->assembler()->Comment("Graph intrinsic end");
 }
+#endif
 
 
 bool Intrinsifier::GraphIntrinsify(const ParsedFunction& parsed_function,
                                    FlowGraphCompiler* compiler) {
+#if !defined(TARGET_ARCH_DBC)
   ZoneGrowableArray<const ICData*>* ic_data_array =
       new ZoneGrowableArray<const ICData*>();
   FlowGraphBuilder builder(parsed_function,
@@ -174,7 +179,7 @@ bool Intrinsifier::GraphIntrinsify(const ParsedFunction& parsed_function,
   FlowGraph* graph = new FlowGraph(parsed_function, graph_entry, block_id);
   const Function& function = parsed_function.function();
   switch (function.recognized_kind()) {
-#define EMIT_CASE(class_name, function_name, enum_name, fp)                    \
+#define EMIT_CASE(class_name, function_name, enum_name, type, fp)              \
     case MethodRecognizer::k##enum_name:                                       \
       if (!Build_##enum_name(graph)) return false;                             \
       break;
@@ -204,6 +209,9 @@ bool Intrinsifier::GraphIntrinsify(const ParsedFunction& parsed_function,
   }
   EmitCodeFor(compiler, graph);
   return true;
+#else
+  return false;
+#endif  // !defined(TARGET_ARCH_DBC)
 }
 
 
@@ -219,7 +227,7 @@ void Intrinsifier::Intrinsify(const ParsedFunction& parsed_function,
     return;
   }
 
-#define EMIT_CASE(class_name, function_name, enum_name, fp)                    \
+#define EMIT_CASE(class_name, function_name, enum_name, type, fp)              \
     case MethodRecognizer::k##enum_name:                                       \
       compiler->assembler()->Comment("Intrinsic");                             \
       enum_name(compiler->assembler());                                        \
@@ -235,10 +243,22 @@ void Intrinsifier::Intrinsify(const ParsedFunction& parsed_function,
     default:
       break;
   }
+
+  // On DBC all graph intrinsics are handled in the same way as non-graph
+  // intrinsics.
+#if defined(TARGET_ARCH_DBC)
+  switch (function.recognized_kind()) {
+    GRAPH_INTRINSICS_LIST(EMIT_CASE)
+    default:
+      break;
+  }
+#endif
+
 #undef EMIT_INTRINSIC
 }
 
 
+#if !defined(TARGET_ARCH_DBC)
 static intptr_t CidForRepresentation(Representation rep) {
   switch (rep) {
     case kUnboxedDouble:
@@ -568,7 +588,9 @@ bool Intrinsifier::Build_Uint32ArrayGetIndexed(FlowGraph* flow_graph) {
 
 
 bool Intrinsifier::Build_Float64ArraySetIndexed(FlowGraph* flow_graph) {
-  if (!FlowGraphCompiler::SupportsUnboxedDoubles()) return false;
+  if (!FlowGraphCompiler::SupportsUnboxedDoubles()) {
+    return false;
+  }
 
   GraphEntryInstr* graph_entry = flow_graph->graph_entry();
   TargetEntryInstr* normal_entry = graph_entry->normal_entry();
@@ -585,7 +607,8 @@ bool Intrinsifier::Build_Float64ArraySetIndexed(FlowGraph* flow_graph) {
       String::Handle(flow_graph->function().name()),
       Object::empty_array(),  // Dummy args. descr.
       Thread::kNoDeoptId,
-      1));
+      1,
+      false));
   value_check.AddReceiverCheck(kDoubleCid, flow_graph->function());
   builder.AddInstruction(
       new CheckClassInstr(new Value(value),
@@ -614,7 +637,9 @@ bool Intrinsifier::Build_Float64ArraySetIndexed(FlowGraph* flow_graph) {
 
 
 bool Intrinsifier::Build_Float64ArrayGetIndexed(FlowGraph* flow_graph) {
-  if (!FlowGraphCompiler::SupportsUnboxedDoubles()) return false;
+  if (!FlowGraphCompiler::SupportsUnboxedDoubles()) {
+    return false;
+  }
 
   GraphEntryInstr* graph_entry = flow_graph->graph_entry();
   TargetEntryInstr* normal_entry = graph_entry->normal_entry();
@@ -639,6 +664,68 @@ bool Intrinsifier::Build_Float64ArrayGetIndexed(FlowGraph* flow_graph) {
 }
 
 
+static bool BuildCodeUnitAt(FlowGraph* flow_graph, intptr_t cid) {
+  GraphEntryInstr* graph_entry = flow_graph->graph_entry();
+  TargetEntryInstr* normal_entry = graph_entry->normal_entry();
+  BlockBuilder builder(flow_graph, normal_entry);
+
+  Definition* index = builder.AddParameter(1);
+  Definition* str = builder.AddParameter(2);
+  PrepareIndexedOp(&builder, str, index, String::length_offset());
+
+  // For external strings: Load external data.
+  if (cid == kExternalOneByteStringCid) {
+    str = builder.AddDefinition(
+        new LoadUntaggedInstr(new Value(str),
+                              ExternalOneByteString::external_data_offset()));
+    str = builder.AddDefinition(
+        new LoadUntaggedInstr(
+            new Value(str),
+            RawExternalOneByteString::ExternalData::data_offset()));
+  } else if (cid == kExternalTwoByteStringCid) {
+    str = builder.AddDefinition(
+      new LoadUntaggedInstr(new Value(str),
+                            ExternalTwoByteString::external_data_offset()));
+    str = builder.AddDefinition(
+        new LoadUntaggedInstr(
+            new Value(str),
+            RawExternalTwoByteString::ExternalData::data_offset()));
+  }
+
+  Definition* result = builder.AddDefinition(
+      new LoadIndexedInstr(new Value(str),
+                           new Value(index),
+                           Instance::ElementSizeFor(cid),
+                           cid,
+                           Thread::kNoDeoptId,
+                           builder.TokenPos()));
+  builder.AddIntrinsicReturn(new Value(result));
+  return true;
+}
+
+
+bool Intrinsifier::Build_OneByteStringCodeUnitAt(FlowGraph* flow_graph) {
+  return BuildCodeUnitAt(flow_graph, kOneByteStringCid);
+}
+
+
+bool Intrinsifier::Build_TwoByteStringCodeUnitAt(FlowGraph* flow_graph) {
+  return BuildCodeUnitAt(flow_graph, kTwoByteStringCid);
+}
+
+
+bool Intrinsifier::Build_ExternalOneByteStringCodeUnitAt(
+    FlowGraph* flow_graph) {
+  return BuildCodeUnitAt(flow_graph, kExternalOneByteStringCid);
+}
+
+
+bool Intrinsifier::Build_ExternalTwoByteStringCodeUnitAt(
+    FlowGraph* flow_graph) {
+  return BuildCodeUnitAt(flow_graph, kExternalTwoByteStringCid);
+}
+
+
 static bool BuildBinaryFloat32x4Op(FlowGraph* flow_graph, Token::Kind kind) {
   if (!FlowGraphCompiler::SupportsUnboxedSimd128()) return false;
 
@@ -654,7 +741,8 @@ static bool BuildBinaryFloat32x4Op(FlowGraph* flow_graph, Token::Kind kind) {
       String::Handle(flow_graph->function().name()),
       Object::empty_array(),  // Dummy args. descr.
       Thread::kNoDeoptId,
-      1));
+      1,
+      false));
   value_check.AddReceiverCheck(kFloat32x4Cid, flow_graph->function());
   // Check argument. Receiver (left) is known to be a Float32x4.
   builder.AddInstruction(
@@ -701,7 +789,10 @@ bool Intrinsifier::Build_Float32x4Add(FlowGraph* flow_graph) {
 
 static bool BuildFloat32x4Shuffle(FlowGraph* flow_graph,
                                   MethodRecognizer::Kind kind) {
-  if (!FlowGraphCompiler::SupportsUnboxedSimd128()) return false;
+  if (!FlowGraphCompiler::SupportsUnboxedDoubles() ||
+      !FlowGraphCompiler::SupportsUnboxedSimd128()) {
+    return false;
+  }
   GraphEntryInstr* graph_entry = flow_graph->graph_entry();
   TargetEntryInstr* normal_entry = graph_entry->normal_entry();
   BlockBuilder builder(flow_graph, normal_entry);
@@ -893,7 +984,8 @@ bool Intrinsifier::Build_GrowableArraySetData(FlowGraph* flow_graph) {
       String::Handle(flow_graph->function().name()),
       Object::empty_array(),  // Dummy args. descr.
       Thread::kNoDeoptId,
-      1));
+      1,
+      false));
   value_check.AddReceiverCheck(kArrayCid, flow_graph->function());
   builder.AddInstruction(
       new CheckClassInstr(new Value(data),
@@ -939,6 +1031,9 @@ bool Intrinsifier::Build_GrowableArraySetLength(FlowGraph* flow_graph) {
 
 
 bool Intrinsifier::Build_DoubleFlipSignBit(FlowGraph* flow_graph) {
+  if (!FlowGraphCompiler::SupportsUnboxedDoubles()) {
+    return false;
+  }
   GraphEntryInstr* graph_entry = flow_graph->graph_entry();
   TargetEntryInstr* normal_entry = graph_entry->normal_entry();
   BlockBuilder builder(flow_graph, normal_entry);
@@ -962,6 +1057,9 @@ bool Intrinsifier::Build_DoubleFlipSignBit(FlowGraph* flow_graph) {
 static bool BuildInvokeMathCFunction(BlockBuilder* builder,
                                      MethodRecognizer::Kind kind,
                                      intptr_t num_parameters = 1) {
+  if (!FlowGraphCompiler::SupportsUnboxedDoubles()) {
+    return false;
+  }
   ZoneGrowableArray<Value*>* args =
       new ZoneGrowableArray<Value*>(num_parameters);
 
@@ -1138,5 +1236,7 @@ bool Intrinsifier::Build_DoubleRound(FlowGraph* flow_graph) {
   return BuildInvokeMathCFunction(&builder,
                                   MethodRecognizer::kDoubleRound);
 }
+#endif  // !defined(TARGET_ARCH_DBC)
+
 
 }  // namespace dart

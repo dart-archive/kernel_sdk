@@ -34,7 +34,7 @@ class EventStreamProvider<T extends Event> {
    * [addEventListener](http://docs.webplatform.org/wiki/dom/methods/addEventListener)
    */
   Stream<T> forTarget(EventTarget e, {bool useCapture: false}) =>
-    new _EventStream(e, _eventType, useCapture);
+    new _EventStream<T>(e, _eventType, useCapture);
 
   /**
    * Gets an [ElementEventStream] for this event type, on the specified element.
@@ -58,7 +58,7 @@ class EventStreamProvider<T extends Event> {
    * [addEventListener](http://docs.webplatform.org/wiki/dom/methods/addEventListener)
    */
   ElementStream<T> forElement(Element e, {bool useCapture: false}) {
-    return new _ElementEventStreamImpl(e, _eventType, useCapture);
+    return new _ElementEventStreamImpl<T>(e, _eventType, useCapture);
   }
 
   /**
@@ -76,7 +76,7 @@ class EventStreamProvider<T extends Event> {
    * [addEventListener](http://docs.webplatform.org/wiki/dom/methods/addEventListener)
    */
   ElementStream<T> _forElementList(ElementList e, {bool useCapture: false}) {
-    return new _ElementListEventStreamImpl(e, _eventType, useCapture);
+    return new _ElementListEventStreamImpl<T>(e, _eventType, useCapture);
   }
 
   /**
@@ -118,6 +118,41 @@ abstract class ElementStream<T extends Event> implements Stream<T> {
   StreamSubscription<T> capture(void onData(T event));
 }
 
+/// Task specification for DOM Events.
+///
+/// *Experimental*. May disappear without notice.
+class EventSubscriptionSpecification<T extends Event>
+    implements TaskSpecification {
+  @override
+  final String name;
+  @override
+  final bool isOneShot;
+
+  final EventTarget target;
+  /// The event-type of the event. For example 'click' for click events.
+  final String eventType;
+  // TODO(floitsch): the first generic argument should be 'void'.
+  final ZoneUnaryCallback<dynamic, T> onData;
+  final bool useCapture;
+
+  EventSubscriptionSpecification({this.name, this.isOneShot, this.target,
+      this.eventType, void this.onData(T event), this.useCapture});
+
+  /// Returns a copy of this instance, with every non-null argument replaced
+  /// by the given value.
+  EventSubscriptionSpecification<T> replace(
+      {String name, bool isOneShot, EventTarget target,
+       String eventType, void onData(T event), bool useCapture}) {
+    return new EventSubscriptionSpecification<T>(
+        name: name ?? this.name,
+        isOneShot: isOneShot ?? this.isOneShot,
+        target: target ?? this.target,
+        eventType: eventType ?? this.eventType,
+        onData: onData ?? this.onData,
+        useCapture: useCapture ?? this.useCapture);
+  }
+}
+
 /**
  * Adapter for exposing DOM events as Dart streams.
  */
@@ -125,23 +160,54 @@ class _EventStream<T extends Event> extends Stream<T> {
   final EventTarget _target;
   final String _eventType;
   final bool _useCapture;
+  /// The name that is used in the task specification.
+  final String _name;
+  /// Whether the stream can trigger multiple times.
+  final bool _isOneShot;
 
-  _EventStream(this._target, this._eventType, this._useCapture);
+  _EventStream(this._target, String eventType, this._useCapture,
+      {String name, bool isOneShot: false})
+      : _eventType = eventType,
+        _isOneShot = isOneShot,
+        _name = name ?? "dart.html.event.$eventType";
 
   // DOM events are inherently multi-subscribers.
-  Stream<T> asBroadcastStream({void onListen(StreamSubscription subscription),
-                               void onCancel(StreamSubscription subscription)})
+  Stream<T> asBroadcastStream({void onListen(StreamSubscription<T> subscription),
+                               void onCancel(StreamSubscription<T> subscription)})
       => this;
   bool get isBroadcast => true;
+
+  StreamSubscription<T> _listen(
+      void onData(T event), {bool useCapture}) {
+
+    if (identical(Zone.current, Zone.ROOT)) {
+      return new _EventStreamSubscription<T>(
+          this._target, this._eventType, onData, this._useCapture,
+          Zone.current);
+    }
+
+    var specification = new EventSubscriptionSpecification<T>(
+        name: this._name, isOneShot: this._isOneShot,
+        target: this._target, eventType: this._eventType,
+        onData: onData, useCapture: useCapture);
+    // We need to wrap the _createStreamSubscription call, since a tear-off
+    // would not bind the generic type 'T'.
+    return Zone.current.createTask((spec, Zone zone) {
+      return _createStreamSubscription/*<T>*/(spec, zone);
+    }, specification);
+  }
 
   StreamSubscription<T> listen(void onData(T event),
       { Function onError,
         void onDone(),
         bool cancelOnError}) {
-
-    return new _EventStreamSubscription<T>(
-        this._target, this._eventType, onData, this._useCapture);
+    return _listen(onData, useCapture: this._useCapture);
   }
+}
+
+bool _matchesWithAncestors(Event event, String selector) {
+  var target = event.target;
+  return target is Element ? target.matchesWithAncestors(selector) : false;
 }
 
 /**
@@ -150,18 +216,19 @@ class _EventStream<T extends Event> extends Stream<T> {
  */
 class _ElementEventStreamImpl<T extends Event> extends _EventStream<T>
     implements ElementStream<T> {
-  _ElementEventStreamImpl(target, eventType, useCapture) :
-      super(target, eventType, useCapture);
+  _ElementEventStreamImpl(target, eventType, useCapture,
+      {String name, bool isOneShot: false}) :
+      super(target, eventType, useCapture, name: name, isOneShot: isOneShot);
 
   Stream<T> matches(String selector) => this.where(
-      (event) => event.target.matchesWithAncestors(selector)).map((e) {
+      (event) => _matchesWithAncestors(event, selector)).map((e) {
         e._selector = selector;
         return e;
       });
 
-  StreamSubscription<T> capture(void onData(T event)) =>
-    new _EventStreamSubscription<T>(
-        this._target, this._eventType, onData, true);
+  StreamSubscription<T> capture(void onData(T event)) {
+    return _listen(onData, useCapture: true);
+  }
 }
 
 /**
@@ -178,7 +245,7 @@ class _ElementListEventStreamImpl<T extends Event> extends Stream<T>
       this._targetList, this._eventType, this._useCapture);
 
   Stream<T> matches(String selector) => this.where(
-      (event) => event.target.matchesWithAncestors(selector)).map((e) {
+      (event) => _matchesWithAncestors(event, selector)).map((e) {
         e._selector = selector;
         return e;
       });
@@ -188,37 +255,56 @@ class _ElementListEventStreamImpl<T extends Event> extends Stream<T>
       { Function onError,
         void onDone(),
         bool cancelOnError}) {
-    var pool = new _StreamPool.broadcast();
+    var pool = new _StreamPool<T>.broadcast();
     for (var target in _targetList) {
-      pool.add(new _EventStream(target, _eventType, _useCapture));
+      pool.add(new _EventStream<T>(target, _eventType, _useCapture));
     }
     return pool.stream.listen(onData, onError: onError, onDone: onDone,
           cancelOnError: cancelOnError);
   }
 
   StreamSubscription<T> capture(void onData(T event)) {
-    var pool = new _StreamPool.broadcast();
+    var pool = new _StreamPool<T>.broadcast();
     for (var target in _targetList) {
-      pool.add(new _EventStream(target, _eventType, true));
+      pool.add(new _EventStream<T>(target, _eventType, true));
     }
     return pool.stream.listen(onData);
   }
 
-  Stream<T> asBroadcastStream({void onListen(StreamSubscription subscription),
-                               void onCancel(StreamSubscription subscription)})
+  Stream<T> asBroadcastStream({void onListen(StreamSubscription<T> subscription),
+                               void onCancel(StreamSubscription<T> subscription)})
       => this;
   bool get isBroadcast => true;
 }
+
+StreamSubscription/*<T>*/ _createStreamSubscription/*<T>*/(
+    EventSubscriptionSpecification/*<T>*/ spec, Zone zone) {
+  return new _EventStreamSubscription/*<T>*/(spec.target, spec.eventType,
+      spec.onData, spec.useCapture, zone);
+}
+
+// We would like this to just be EventListener<T> but that typedef cannot
+// use generics until dartbug/26276 is fixed.
+typedef _EventListener<T extends Event>(T event);
 
 class _EventStreamSubscription<T extends Event> extends StreamSubscription<T> {
   int _pauseCount = 0;
   EventTarget _target;
   final String _eventType;
-  var _onData;
+  EventListener _onData;
+  EventListener _domCallback;
   final bool _useCapture;
+  final Zone _zone;
 
-  _EventStreamSubscription(this._target, this._eventType, onData,
-      this._useCapture) : _onData = _wrapZone(onData) {
+  // TODO(jacobr): for full strong mode correctness we should write
+  // _onData = onData == null ? null : _wrapZone/*<dynamic, Event>*/((e) => onData(e as T))
+  // but that breaks 114 co19 tests as well as multiple html tests as it is reasonable
+  // to pass the wrong type of event object to an event listener as part of a
+  // test.
+  _EventStreamSubscription(this._target, this._eventType, void onData(T event),
+      this._useCapture, Zone zone)
+      : _zone = zone,
+        _onData = _registerZone/*<dynamic, Event>*/(zone, onData) {
     _tryResume();
   }
 
@@ -240,8 +326,7 @@ class _EventStreamSubscription<T extends Event> extends StreamSubscription<T> {
     }
     // Remove current event listener.
     _unlisten();
-
-    _onData = _wrapZone(handleData);
+    _onData = _registerZone/*<dynamic, Event>*/(_zone, handleData);
     _tryResume();
   }
 
@@ -270,20 +355,31 @@ class _EventStreamSubscription<T extends Event> extends StreamSubscription<T> {
   }
 
   void _tryResume() {
-    if (_onData != null && !isPaused) {
-      _target.addEventListener(_eventType, _onData, _useCapture);
+    if (_onData == null || isPaused) return;
+    if (identical(_zone, Zone.ROOT)) {
+      _domCallback = _onData;
+    } else {
+      _domCallback = (event) {
+        _zone.runTask(_runEventNotification, this, event);
+      };
     }
+    _target.addEventListener(_eventType, _domCallback, _useCapture);
+  }
+
+  static void _runEventNotification/*<T>*/(
+      _EventStreamSubscription/*<T>*/ subscription, /*=T*/ event) {
+    subscription._onData(event);
   }
 
   void _unlisten() {
     if (_onData != null) {
-      _target.removeEventListener(_eventType, _onData, _useCapture);
+      _target.removeEventListener(_eventType, _domCallback, _useCapture);
     }
   }
 
-  Future asFuture([var futureValue]) {
+  Future/*<E>*/ asFuture/*<E>*/([var/*=E*/ futureValue]) {
     // We just need a future that will never succeed or fail.
-    Completer completer = new Completer();
+    var completer = new Completer/*<E>*/();
     return completer.future;
   }
 }
@@ -320,8 +416,8 @@ class _CustomEventStreamImpl<T extends Event> extends Stream<T>
         onDone: onDone, cancelOnError: cancelOnError);
   }
 
-  Stream<T> asBroadcastStream({void onListen(StreamSubscription subscription),
-                               void onCancel(StreamSubscription subscription)})
+  Stream<T> asBroadcastStream({void onListen(StreamSubscription<T> subscription),
+                               void onCancel(StreamSubscription<T> subscription)})
       => _streamController.stream;
 
   bool get isBroadcast => true;
@@ -412,16 +508,16 @@ class _CustomEventStreamProvider<T extends Event>
   const _CustomEventStreamProvider(this._eventTypeGetter);
 
   Stream<T> forTarget(EventTarget e, {bool useCapture: false}) {
-    return new _EventStream(e, _eventTypeGetter(e), useCapture);
+    return new _EventStream<T>(e, _eventTypeGetter(e), useCapture);
   }
 
   ElementStream<T> forElement(Element e, {bool useCapture: false}) {
-    return new _ElementEventStreamImpl(e, _eventTypeGetter(e), useCapture);
+    return new _ElementEventStreamImpl<T>(e, _eventTypeGetter(e), useCapture);
   }
 
   ElementStream<T> _forElementList(ElementList e,
       {bool useCapture: false}) {
-    return new _ElementListEventStreamImpl(e, _eventTypeGetter(e), useCapture);
+    return new _ElementListEventStreamImpl<T>(e, _eventTypeGetter(e), useCapture);
   }
 
   String getEventType(EventTarget target) {

@@ -113,13 +113,13 @@ bool ServiceIsolate::IsRunning() {
 }
 
 
-bool ServiceIsolate::IsServiceIsolate(Isolate* isolate) {
+bool ServiceIsolate::IsServiceIsolate(const Isolate* isolate) {
   MonitorLocker ml(monitor_);
   return isolate == isolate_;
 }
 
 
-bool ServiceIsolate::IsServiceIsolateDescendant(Isolate* isolate) {
+bool ServiceIsolate::IsServiceIsolateDescendant(const Isolate* isolate) {
   MonitorLocker ml(monitor_);
   return isolate->origin_id() == origin_;
 }
@@ -336,6 +336,7 @@ class RunServiceTask : public ThreadPool::Task {
       OS::PrintErr("vm-service: Isolate creation error: %s\n", error);
       ServiceIsolate::SetServiceIsolate(NULL);
       ServiceIsolate::FinishedInitializing();
+      ServiceIsolate::FinishedExiting();
       return;
     }
 
@@ -362,6 +363,9 @@ class RunServiceTask : public ThreadPool::Task {
 
  protected:
   static void ShutdownIsolate(uword parameter) {
+    if (FLAG_trace_service) {
+      OS::Print("vm-service: ShutdownIsolate\n");
+    }
     Isolate* I = reinterpret_cast<Isolate*>(parameter);
     ASSERT(ServiceIsolate::IsServiceIsolate(I));
     ServiceIsolate::SetServiceIsolate(NULL);
@@ -378,6 +382,10 @@ class RunServiceTask : public ThreadPool::Task {
       HandleScope handle_scope(T);
       Error& error = Error::Handle(Z);
       error = T->sticky_error();
+      if (!error.IsNull() && !error.IsUnwindError()) {
+        OS::PrintErr("vm-service: Error: %s\n", error.ToErrorCString());
+      }
+      error = I->sticky_error();
       if (!error.IsNull() && !error.IsUnwindError()) {
         OS::PrintErr("vm-service: Error: %s\n", error.ToErrorCString());
       }
@@ -501,8 +509,9 @@ void ServiceIsolate::Shutdown() {
 
 
 void ServiceIsolate::BootVmServiceLibrary() {
+  Thread* thread = Thread::Current();
   const Library& vmservice_library =
-      Library::Handle(Library::LookupLibrary(Symbols::DartVMService()));
+      Library::Handle(Library::LookupLibrary(thread, Symbols::DartVMService()));
   ASSERT(!vmservice_library.IsNull());
   const String& boot_function_name = String::Handle(String::New("boot"));
   const Function& boot_function =
@@ -519,6 +528,10 @@ void ServiceIsolate::BootVmServiceLibrary() {
   }
   ASSERT(port != ILLEGAL_PORT);
   ServiceIsolate::SetServicePort(port);
+}
+
+
+void ServiceIsolate::VisitObjectPointers(ObjectPointerVisitor* visitor) {
 }
 
 }  // namespace dart

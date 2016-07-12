@@ -40,6 +40,11 @@ class FunctionInlineCache {
   final Map<FunctionElement, int> _cachedDecisions =
       new Map<FunctionElement, int>();
 
+  /// Returns the current cache decision. This should only be used for testing.
+  int getCurrentCacheDecisionForTesting(Element element) {
+    return _cachedDecisions[element];
+  }
+
   // Returns `true`/`false` if we have a cached decision.
   // Returns `null` otherwise.
   bool canInline(FunctionElement element, {bool insideLoop}) {
@@ -226,6 +231,8 @@ class JavaScriptBackend extends Backend {
   String get patchVersion => emitter.patchVersion;
 
   bool get supportsReflection => emitter.emitter.supportsReflection;
+
+  bool get supportsAsyncAwait => true;
 
   final Annotations annotations;
 
@@ -447,6 +454,9 @@ class JavaScriptBackend extends Backend {
   /// these constants must be registered.
   final List<Dependency> metadataConstants = <Dependency>[];
 
+  /// Set of elements for which metadata has been registered as dependencies.
+  final Set<Element> _registeredMetadata = new Set<Element>();
+
   /// List of elements that the user has requested for reflection.
   final Set<Element> targetsUsed = new Set<Element>();
 
@@ -511,6 +521,8 @@ class JavaScriptBackend extends Backend {
   final BackendHelpers helpers;
   final BackendImpacts impacts;
 
+  final JSFrontendAccess frontend;
+
   JavaScriptBackend(Compiler compiler,
       {bool generateSourceMap: true,
       bool useStartupEmitter: false,
@@ -529,6 +541,7 @@ class JavaScriptBackend extends Backend {
             : const JavaScriptSourceInformationStrategy(),
         helpers = new BackendHelpers(compiler),
         impacts = new BackendImpacts(compiler),
+        frontend = new JSFrontendAccess(compiler),
         super(compiler) {
     emitter = new CodeEmitterTask(
         compiler, namer, generateSourceMap, useStartupEmitter);
@@ -619,7 +632,7 @@ class JavaScriptBackend extends Backend {
     assert(invariant(element, element.isDeclaration, message: ""));
     if (element == helpers.streamIteratorConstructor ||
         element == helpers.compiler.symbolConstructor ||
-        element == helpers.compiler.symbolValidatedConstructor ||
+        helpers.isSymbolValidatedConstructor(element) ||
         element == helpers.syncCompleterConstructor ||
         element == coreClasses.symbolClass ||
         element == helpers.objectNoSuchMethod) {
@@ -730,6 +743,56 @@ class JavaScriptBackend extends Backend {
   /// JavaScriptInterop mechanism which is allowed for user libraries.
   @override
   bool isNative(Element element) => nativeData.isNative(element);
+
+  /// Returns the [NativeBehavior] for calling the native [method].
+  native.NativeBehavior getNativeMethodBehavior(FunctionElement method) {
+    return nativeData.getNativeMethodBehavior(method);
+  }
+
+  /// Returns the [NativeBehavior] for reading from the native [field].
+  native.NativeBehavior getNativeFieldLoadBehavior(FieldElement field) {
+    return nativeData.getNativeFieldLoadBehavior(field);
+  }
+
+  /// Returns the [NativeBehavior] for writing to the native [field].
+  native.NativeBehavior getNativeFieldStoreBehavior(FieldElement field) {
+    return nativeData.getNativeFieldStoreBehavior(field);
+  }
+
+  @override
+  void resolveNativeElement(Element element, NativeRegistry registry) {
+    if (element.isFunction ||
+        element.isConstructor ||
+        element.isGetter ||
+        element.isSetter) {
+      compiler.enqueuer.resolution.nativeEnqueuer
+          .handleMethodAnnotations(element);
+      if (isNative(element)) {
+        native.NativeBehavior behavior =
+            native.NativeBehavior.ofMethod(element, compiler);
+        nativeData.setNativeMethodBehavior(element, behavior);
+        registry.registerNativeData(behavior);
+      }
+    } else if (element.isField) {
+      compiler.enqueuer.resolution.nativeEnqueuer
+          .handleFieldAnnotations(element);
+      if (isNative(element)) {
+        native.NativeBehavior fieldLoadBehavior =
+            native.NativeBehavior.ofFieldLoad(element, compiler);
+        native.NativeBehavior fieldStoreBehavior =
+            native.NativeBehavior.ofFieldStore(element, compiler);
+        nativeData.setNativeFieldLoadBehavior(element, fieldLoadBehavior);
+        nativeData.setNativeFieldStoreBehavior(element, fieldStoreBehavior);
+
+        // TODO(sra): Process fields for storing separately.
+        // We have to handle both loading and storing to the field because we
+        // only get one look at each member and there might be a load or store
+        // we have not seen yet.
+        registry.registerNativeData(fieldLoadBehavior);
+        registry.registerNativeData(fieldStoreBehavior);
+      }
+    }
+  }
 
   bool isNativeOrExtendsNative(ClassElement element) {
     if (element == null) return false;
@@ -992,19 +1055,10 @@ class JavaScriptBackend extends Backend {
         // helper so we register a use of that.
         registry.registerStaticUse(new StaticUse.staticInvoke(
             // TODO(johnniwinther): Find the right [CallStructure].
-
             helpers.createRuntimeType,
             null));
       }
     }
-  }
-
-  void registerMetadataConstant(MetadataAnnotation metadata,
-      Element annotatedElement, Registry registry) {
-    assert(registry.isForResolution);
-    ConstantValue constant = constants.getConstantValueForMetadata(metadata);
-    registerCompileTimeConstant(constant, registry);
-    metadataConstants.add(new Dependency(constant, annotatedElement));
   }
 
   void registerInstantiatedClass(
@@ -1217,6 +1271,7 @@ class JavaScriptBackend extends Backend {
     super.onResolutionComplete();
     computeMembersNeededForReflection();
     rti.computeClassesNeedingRti();
+    _registeredMetadata.clear();
   }
 
   onTypeInferenceComplete() {
@@ -1291,16 +1346,16 @@ class JavaScriptBackend extends Backend {
   }
 
   /// Called when resolving a call to a foreign function.
-  void registerForeignCall(Send node, Element element,
+  native.NativeBehavior resolveForeignCall(Send node, Element element,
       CallStructure callStructure, ForeignResolver resolver) {
     native.NativeResolutionEnqueuer nativeEnqueuer =
         compiler.enqueuer.resolution.nativeEnqueuer;
     if (element.name == 'JS') {
-      nativeEnqueuer.registerJsCall(node, resolver);
+      return nativeEnqueuer.resolveJsCall(node, resolver);
     } else if (element.name == 'JS_EMBEDDED_GLOBAL') {
-      nativeEnqueuer.registerJsEmbeddedGlobalCall(node, resolver);
+      return nativeEnqueuer.resolveJsEmbeddedGlobalCall(node, resolver);
     } else if (element.name == 'JS_BUILTIN') {
-      nativeEnqueuer.registerJsBuiltinCall(node, resolver);
+      return nativeEnqueuer.resolveJsBuiltinCall(node, resolver);
     } else if (element.name == 'JS_INTERCEPTOR_CONSTANT') {
       // The type constant that is an argument to JS_INTERCEPTOR_CONSTANT names
       // a class that will be instantiated outside the program by attaching a
@@ -1312,13 +1367,16 @@ class JavaScriptBackend extends Backend {
           TypeConstantExpression typeConstant = constant;
           if (typeConstant.type is InterfaceType) {
             resolver.registerInstantiatedType(typeConstant.type);
-            return;
+            // No native behavior for this call.
+            return null;
           }
         }
       }
       reporter.reportErrorMessage(
           node, MessageKind.WRONG_ARGUMENT_FOR_JS_INTERCEPTOR_CONSTANT);
     }
+    // No native behavior for this call.
+    return null;
   }
 
   void enableNoSuchMethod(Enqueuer world) {
@@ -1443,8 +1501,16 @@ class JavaScriptBackend extends Backend {
   WorldImpact codegen(CodegenWorkItem work) {
     Element element = work.element;
     if (compiler.elementHasCompileTimeError(element)) {
-      generatedCode[element] = jsAst.js(
-          "function () { throw new Error('Compile time error in $element') }");
+      DiagnosticMessage message =
+          // If there's more than one error, the first is probably most
+          // informative, as the following errors may be side-effects of the
+          // first error.
+          compiler.elementsWithCompileTimeErrors[element].first;
+      String messageText = message.message.computeMessage();
+      jsAst.LiteralString messageLiteral =
+          js.escapedString("Compile time error in $element: $messageText");
+      generatedCode[element] =
+          js("function () { throw new Error(#); }", [messageLiteral]);
       return const CodegenImpact();
     }
     var kind = element.kind;
@@ -1457,17 +1523,28 @@ class JavaScriptBackend extends Backend {
       return const CodegenImpact();
     }
     if (kind.category == ElementCategory.VARIABLE) {
-      ConstantValue initialValue =
-          constants.getConstantValueForVariable(element);
-      if (initialValue != null) {
-        registerCompileTimeConstant(initialValue, work.registry);
-        addCompileTimeConstantForEmission(initialValue);
-        // We don't need to generate code for static or top-level
-        // variables. For instance variables, we may need to generate
-        // the checked setter.
-        if (Elements.isStaticOrTopLevel(element)) {
-          return impactTransformer
-              .transformCodegenImpact(work.registry.worldImpact);
+      VariableElement variableElement = element;
+      ConstantExpression constant = variableElement.constant;
+      if (constant != null) {
+        ConstantValue initialValue = constants.getConstantValue(constant);
+        if (initialValue != null) {
+          registerCompileTimeConstant(initialValue, work.registry);
+          addCompileTimeConstantForEmission(initialValue);
+          // We don't need to generate code for static or top-level
+          // variables. For instance variables, we may need to generate
+          // the checked setter.
+          if (Elements.isStaticOrTopLevel(element)) {
+            return impactTransformer
+                .transformCodegenImpact(work.registry.worldImpact);
+          }
+        } else {
+          assert(invariant(
+              variableElement,
+              variableElement.isInstanceMember ||
+                  constant.isImplicit ||
+                  constant.isPotential,
+              message: "Constant expression without value: "
+                  "${constant.toStructuredText()}."));
         }
       } else {
         // If the constant-handler was not able to produce a result we have to
@@ -1834,7 +1911,9 @@ class JavaScriptBackend extends Backend {
       if (library.isPlatformLibrary &&
           // Don't patch library currently disallowed.
           !library.isSynthesized &&
-          !library.isPatched) {
+          !library.isPatched &&
+          // Don't patch deserialized libraries.
+          !compiler.serialization.isDeserialized(library)) {
         // Apply patch, if any.
         Uri patchUri = compiler.resolvePatchUri(library.canonicalUri.path);
         if (patchUri != null) {
@@ -2232,15 +2311,65 @@ class JavaScriptBackend extends Backend {
       reporter.log('Retaining metadata.');
 
       compiler.libraryLoader.libraries.forEach(retainMetadataOf);
-      for (Dependency dependency in metadataConstants) {
-        registerCompileTimeConstant(dependency.constant,
-            new EagerRegistry('EagerRegistry for ${dependency}', enqueuer));
-      }
-      if (!enqueuer.isResolutionQueue) {
+
+      if (enqueuer.isResolutionQueue && !enqueuer.queueIsClosed) {
+        /// Register the constant value of [metadata] as live in resolution.
+        void registerMetadataConstant(MetadataAnnotation metadata) {
+          ConstantValue constant =
+              constants.getConstantValueForMetadata(metadata);
+          Dependency dependency =
+              new Dependency(constant, metadata.annotatedElement);
+          metadataConstants.add(dependency);
+          registerCompileTimeConstant(dependency.constant,
+              new EagerRegistry('EagerRegistry for ${dependency}', enqueuer));
+        }
+
+        // TODO(johnniwinther): We should have access to all recently processed
+        // elements and process these instead.
+        processMetadata(compiler.enqueuer.resolution.processedElements,
+            registerMetadataConstant);
+      } else {
+        for (Dependency dependency in metadataConstants) {
+          registerCompileTimeConstant(dependency.constant,
+              new EagerRegistry('EagerRegistry for ${dependency}', enqueuer));
+        }
         metadataConstants.clear();
       }
     }
     return true;
+  }
+
+  /// Call [registerMetadataConstant] on all metadata from [elements].
+  void processMetadata(Iterable<Element> elements,
+      void onMetadata(MetadataAnnotation metadata)) {
+    void processLibraryMetadata(LibraryElement library) {
+      if (_registeredMetadata.add(library)) {
+        library.metadata.forEach(onMetadata);
+        library.entryCompilationUnit.metadata.forEach(onMetadata);
+        for (ImportElement import in library.imports) {
+          import.metadata.forEach(onMetadata);
+        }
+      }
+    }
+
+    void processElementMetadata(Element element) {
+      if (_registeredMetadata.add(element)) {
+        element.metadata.forEach(onMetadata);
+        if (element.isFunction) {
+          FunctionElement function = element;
+          for (ParameterElement parameter in function.parameters) {
+            parameter.metadata.forEach(onMetadata);
+          }
+        }
+        if (element.enclosingClass != null) {
+          processElementMetadata(element.enclosingClass);
+        } else {
+          processLibraryMetadata(element.library);
+        }
+      }
+    }
+
+    elements.forEach(processElementMetadata);
   }
 
   void onQueueClosed() {
@@ -2252,7 +2381,8 @@ class JavaScriptBackend extends Backend {
     lookupMapAnalysis.onCodegenStart();
   }
 
-  void onElementResolved(Element element, TreeElements elements) {
+  @override
+  void onElementResolved(Element element) {
     if (element.isMalformed) {
       // Elements that are marker as malformed during parsing or resolution
       // might be registered here. These should just be ignored.
@@ -2474,6 +2604,19 @@ class JavaScriptBackend extends Backend {
   }
 }
 
+class JSFrontendAccess implements Frontend {
+  final Compiler compiler;
+
+  JSFrontendAccess(this.compiler);
+
+  Resolution get resolution => compiler.resolution;
+
+  @override
+  ResolutionImpact getResolutionImpact(Element element) {
+    return resolution.getResolutionImpact(element);
+  }
+}
+
 /// Handling of special annotations for tests.
 class Annotations {
   static final Uri PACKAGE_EXPECT =
@@ -2554,6 +2697,11 @@ class JavaScriptImpactTransformer extends ImpactTransformer {
   JavaScriptImpactTransformer(this.backend);
 
   BackendImpacts get impacts => backend.impacts;
+
+  // TODO(johnniwinther): Avoid this dependency.
+  ResolutionEnqueuer get resolutionEnqueuer {
+    return backend.compiler.enqueuer.resolution;
+  }
 
   @override
   WorldImpact transformResolutionImpact(ResolutionImpact worldImpact) {
@@ -2662,7 +2810,12 @@ class JavaScriptImpactTransformer extends ImpactTransformer {
           if (type.isTypedef) {
             backend.compiler.world.allTypedefs.add(type.element);
           }
-          if (type.isTypeVariable) {
+          if (type.isTypeVariable && type is! MethodTypeVariableType) {
+            // GENERIC_METHODS: The `is!` test above filters away method type
+            // variables, because they have the value `dynamic` with the
+            // incomplete support for generic methods offered with
+            // '--generic-method-syntax'. This must be revised in order to
+            // support generic methods fully.
             ClassElement cls = type.element.enclosingClass;
             backend.rti.registerClassUsingTypeVariableExpression(cls);
             registerBackendImpact(transformed, impacts.typeVariableExpression);
@@ -2714,8 +2867,7 @@ class JavaScriptImpactTransformer extends ImpactTransformer {
         registerBackendImpact(transformed, impacts.closure);
         LocalFunctionElement closure = staticUse.element;
         if (closure.type.containsTypeVariables) {
-          backend.compiler.enqueuer.resolution.universe
-              .closuresWithFreeTypeVariables
+          resolutionEnqueuer.universe.closuresWithFreeTypeVariables
               .add(closure);
           registerBackendImpact(transformed, impacts.computeSignature);
         }
@@ -2743,6 +2895,11 @@ class JavaScriptImpactTransformer extends ImpactTransformer {
           assert(invariant(NO_LOCATION_SPANNABLE, false,
               message: "Unexpected constant literal: ${constant.kind}."));
       }
+    }
+
+    for (native.NativeBehavior behavior in worldImpact.nativeData) {
+      resolutionEnqueuer.nativeEnqueuer
+          .registerNativeBehavior(behavior, worldImpact);
     }
 
     return transformed;
@@ -2937,6 +3094,8 @@ class Dependency {
   final Element annotatedElement;
 
   const Dependency(this.constant, this.annotatedElement);
+
+  String toString() => '$annotatedElement:${constant.toStructuredText()}';
 }
 
 class JavaScriptImpactStrategy extends ImpactStrategy {

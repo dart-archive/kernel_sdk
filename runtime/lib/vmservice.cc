@@ -9,6 +9,7 @@
 #include "vm/flags.h"
 #include "vm/growable_array.h"
 #include "vm/message.h"
+#include "vm/message_handler.h"
 #include "vm/native_entry.h"
 #include "vm/object.h"
 #include "vm/port.h"
@@ -37,7 +38,7 @@ class RegisterRunningIsolatesVisitor : public IsolateVisitor {
     const String& library_url = Symbols::DartVMService();
     ASSERT(!library_url.IsNull());
     const Library& library =
-        Library::Handle(Library::LookupLibrary(library_url));
+        Library::Handle(Library::LookupLibrary(thread, library_url));
     ASSERT(!library.IsNull());
     // Get function.
     const String& function_name =
@@ -115,6 +116,15 @@ DEFINE_NATIVE_ENTRY(VMService_SendRootServiceMessage, 1) {
 }
 
 
+DEFINE_NATIVE_ENTRY(VMService_SendObjectRootServiceMessage, 1) {
+  GET_NON_NULL_NATIVE_ARGUMENT(Array, message, arguments->NativeArgAt(0));
+  if (FLAG_support_service) {
+    Service::HandleObjectRootMessage(message);
+  }
+  return Object::null();
+}
+
+
 DEFINE_NATIVE_ENTRY(VMService_OnStart, 0) {
   if (FLAG_trace_service) {
     OS::Print("vm-service: Booting dart:vmservice library.\n");
@@ -139,6 +149,9 @@ DEFINE_NATIVE_ENTRY(VMService_OnStart, 0) {
 DEFINE_NATIVE_ENTRY(VMService_OnExit, 0) {
   if (FLAG_trace_service) {
     OS::Print("vm-service: processed exit message.\n");
+    MessageHandler* message_handler = isolate->message_handler();
+    OS::Print("vm-service: live ports = %" Pd "\n",
+              message_handler->live_ports());
   }
   return Object::null();
 }

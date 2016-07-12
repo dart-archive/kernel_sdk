@@ -140,6 +140,9 @@ class CompileType : public ValueObject {
   // Create non-nullable Int type.
   static CompileType Int();
 
+  // Create non-nullable Smi type.
+  static CompileType Smi();
+
   // Create non-nullable String type.
   static CompileType String();
 
@@ -511,7 +514,7 @@ class EmbeddedArray<T, 0> {
   M(CheckArrayBound)                                                           \
   M(Constraint)                                                                \
   M(StringToCharCode)                                                          \
-  M(StringFromCharCode)                                                        \
+  M(OneByteStringFromCharCode)                                                 \
   M(StringInterpolate)                                                         \
   M(InvokeMathCFunction)                                                       \
   M(MergedMath)                                                                \
@@ -887,6 +890,8 @@ FOR_EACH_ABSTRACT_INSTRUCTION(INSTRUCTION_TYPE_CHECK)
   bool IsDominatedBy(Instruction* dom);
 
   void ClearEnv() { env_ = NULL; }
+
+  void Unsupported(FlowGraphCompiler* compiler);
 
  protected:
   // GetDeoptId and/or CopyDeoptIdFrom.
@@ -2583,7 +2588,7 @@ class ConstraintInstr : public TemplateDefinition<1, NoThrow> {
   virtual void InferRange(RangeAnalysis* analysis, Range* range);
 
   // Constraints for branches have their target block stored in order
-  // to find the the comparsion that generated the constraint:
+  // to find the comparison that generated the constraint:
   // target->predecessor->last_instruction->comparison.
   void set_target(TargetEntryInstr* target) {
     target_ = target;
@@ -2902,20 +2907,25 @@ class PolymorphicInstanceCallInstr : public TemplateDefinition<0, Throws> {
  public:
   PolymorphicInstanceCallInstr(InstanceCallInstr* instance_call,
                                const ICData& ic_data,
-                               bool with_checks)
+                               bool with_checks,
+                               bool complete)
       : TemplateDefinition(instance_call->deopt_id()),
         instance_call_(instance_call),
         ic_data_(ic_data),
-        with_checks_(with_checks) {
+        with_checks_(with_checks),
+        complete_(complete) {
     ASSERT(instance_call_ != NULL);
     ASSERT(ic_data.NumberOfChecks() > 0);
   }
 
   InstanceCallInstr* instance_call() const { return instance_call_; }
   bool with_checks() const { return with_checks_; }
+  bool complete() const { return complete_; }
   virtual TokenPosition token_pos() const {
     return instance_call_->token_pos();
   }
+
+  virtual CompileType ComputeType() const;
 
   virtual intptr_t ArgumentCount() const {
     return instance_call()->ArgumentCount();
@@ -2944,6 +2954,7 @@ class PolymorphicInstanceCallInstr : public TemplateDefinition<0, Throws> {
   InstanceCallInstr* instance_call_;
   const ICData& ic_data_;
   const bool with_checks_;
+  const bool complete_;
 
   DISALLOW_COPY_AND_ASSIGN(PolymorphicInstanceCallInstr);
 };
@@ -3036,7 +3047,8 @@ class TestCidsInstr : public ComparisonInstr {
                 const ZoneGrowableArray<intptr_t>& cid_results,
                 intptr_t deopt_id)
       : ComparisonInstr(token_pos, kind, value, NULL, deopt_id),
-        cid_results_(cid_results) {
+        cid_results_(cid_results),
+        licm_hoisted_(false) {
     ASSERT((kind == Token::kIS) || (kind == Token::kISNOT));
     set_operation_cid(kObjectCid);
   }
@@ -3052,6 +3064,8 @@ class TestCidsInstr : public ComparisonInstr {
   virtual ComparisonInstr* CopyWithNewOperands(Value* left, Value* right);
 
   virtual CompileType ComputeType() const;
+
+  virtual Definition* Canonicalize(FlowGraph* flow_graph);
 
   virtual bool CanDeoptimize() const {
     return GetDeoptId() != Thread::kNoDeoptId;
@@ -3069,10 +3083,13 @@ class TestCidsInstr : public ComparisonInstr {
   virtual Condition EmitComparisonCode(FlowGraphCompiler* compiler,
                                        BranchLabels labels);
 
+  void set_licm_hoisted(bool value) { licm_hoisted_ = value; }
+
   PRINT_OPERANDS_TO_SUPPORT
 
  private:
   const ZoneGrowableArray<intptr_t>& cid_results_;
+  bool licm_hoisted_;
   DISALLOW_COPY_AND_ASSIGN(TestCidsInstr);
 };
 
@@ -3259,6 +3276,25 @@ class StaticCallInstr : public TemplateDefinition<0, Throws> {
         is_native_list_factory_(false),
         identity_(AliasIdentity::Unknown()) {
     ic_data_ = GetICData(ic_data_array);
+    ASSERT(function.IsZoneHandle());
+    ASSERT(argument_names.IsZoneHandle() ||  argument_names.InVMHeap());
+  }
+
+  StaticCallInstr(TokenPosition token_pos,
+                  const Function& function,
+                  const Array& argument_names,
+                  ZoneGrowableArray<PushArgumentInstr*>* arguments,
+                  intptr_t deopt_id)
+      : TemplateDefinition(deopt_id),
+        ic_data_(NULL),
+        token_pos_(token_pos),
+        function_(function),
+        argument_names_(argument_names),
+        arguments_(arguments),
+        result_cid_(kDynamicCid),
+        is_known_list_constructor_(false),
+        is_native_list_factory_(false),
+        identity_(AliasIdentity::Unknown()) {
     ASSERT(function.IsZoneHandle());
     ASSERT(argument_names.IsZoneHandle() ||  argument_names.InVMHeap());
   }
@@ -3558,8 +3594,7 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2, NoThrow> {
         offset_in_bytes_(field.Offset()),
         emit_store_barrier_(emit_store_barrier),
         token_pos_(token_pos),
-        is_potential_unboxed_initialization_(false),
-        is_object_reference_initialization_(false) {
+        is_initialization_(false) {
     SetInputAt(kInstancePos, instance);
     SetInputAt(kValuePos, value);
     CheckField(field);
@@ -3574,20 +3609,14 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2, NoThrow> {
         offset_in_bytes_(offset_in_bytes),
         emit_store_barrier_(emit_store_barrier),
         token_pos_(token_pos),
-        is_potential_unboxed_initialization_(false),
-        is_object_reference_initialization_(false) {
+        is_initialization_(false) {
     SetInputAt(kInstancePos, instance);
     SetInputAt(kValuePos, value);
   }
 
   DECLARE_INSTRUCTION(StoreInstanceField)
 
-  void set_is_potential_unboxed_initialization(bool value) {
-    is_potential_unboxed_initialization_ = value;
-  }
-  void set_is_object_reference_initialization(bool value) {
-    is_object_reference_initialization_ = value;
-  }
+  void set_is_initialization(bool value) { is_initialization_ = value; }
 
   enum {
     kInstancePos = 0,
@@ -3596,12 +3625,8 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2, NoThrow> {
 
   Value* instance() const { return inputs_[kInstancePos]; }
   Value* value() const { return inputs_[kValuePos]; }
-  bool is_potential_unboxed_initialization() const {
-    return is_potential_unboxed_initialization_;
-  }
-  bool is_object_reference_initialization() const {
-    return is_object_reference_initialization_;
-  }
+  bool is_initialization() const { return is_initialization_; }
+
   virtual TokenPosition token_pos() const { return token_pos_; }
 
   const Field& field() const { return field_; }
@@ -3646,11 +3671,8 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2, NoThrow> {
   intptr_t offset_in_bytes_;
   const StoreBarrierType emit_store_barrier_;
   const TokenPosition token_pos_;
-  // This may be the first store to an unboxed field.
-  bool is_potential_unboxed_initialization_;
-  // True if this store initializes an object reference field of an object that
-  // was allocated uninitialized; see AllocateUninitializedContext.
-  bool is_object_reference_initialization_;
+  // Marks initialiing stores. E.g. in the constructor.
+  bool is_initialization_;
 
   DISALLOW_COPY_AND_ASSIGN(StoreInstanceFieldInstr);
 };
@@ -3931,17 +3953,14 @@ class LoadCodeUnitsInstr : public TemplateDefinition<2, NoThrow> {
 };
 
 
-class StringFromCharCodeInstr : public TemplateDefinition<1, NoThrow, Pure> {
+class OneByteStringFromCharCodeInstr
+    : public TemplateDefinition<1, NoThrow, Pure> {
  public:
-  StringFromCharCodeInstr(Value* char_code, intptr_t cid) : cid_(cid) {
-    ASSERT(char_code != NULL);
-    ASSERT(char_code->definition()->IsLoadIndexed());
-    ASSERT(char_code->definition()->AsLoadIndexed()->class_id() ==
-           kOneByteStringCid);
+  explicit OneByteStringFromCharCodeInstr(Value* char_code) {
     SetInputAt(0, char_code);
   }
 
-  DECLARE_INSTRUCTION(StringFromCharCode)
+  DECLARE_INSTRUCTION(OneByteStringFromCharCode)
   virtual CompileType ComputeType() const;
 
   Value* char_code() const { return inputs_[0]; }
@@ -3949,13 +3968,11 @@ class StringFromCharCodeInstr : public TemplateDefinition<1, NoThrow, Pure> {
   virtual bool CanDeoptimize() const { return false; }
 
   virtual bool AttributesEqual(Instruction* other) const {
-    return other->AsStringFromCharCode()->cid_ == cid_;
+    return true;
   }
 
  private:
-  const intptr_t cid_;
-
-  DISALLOW_COPY_AND_ASSIGN(StringFromCharCodeInstr);
+  DISALLOW_COPY_AND_ASSIGN(OneByteStringFromCharCodeInstr);
 };
 
 
@@ -6892,6 +6909,8 @@ class CheckedSmiOpInstr : public TemplateDefinition<2, Throws> {
 
   virtual EffectSet Effects() const { return EffectSet::All(); }
 
+  virtual Definition* Canonicalize(FlowGraph* flow_graph);
+
   PRINT_OPERANDS_TO_SUPPORT
 
   DECLARE_INSTRUCTION(CheckedSmiOp)
@@ -7795,6 +7814,7 @@ class CheckClassInstr : public TemplateInstruction<1, NoThrow> {
   virtual EffectSet Effects() const { return EffectSet::None(); }
   virtual bool AttributesEqual(Instruction* other) const;
 
+  bool licm_hoisted() const { return licm_hoisted_; }
   void set_licm_hoisted(bool value) { licm_hoisted_ = value; }
 
   PRINT_OPERANDS_TO_SUPPORT
@@ -7830,6 +7850,7 @@ class CheckSmiInstr : public TemplateInstruction<1, NoThrow, Pure> {
 
   virtual bool AttributesEqual(Instruction* other) const { return true; }
 
+  bool licm_hoisted() const { return licm_hoisted_; }
   void set_licm_hoisted(bool value) { licm_hoisted_ = value; }
 
  private:
@@ -8194,6 +8215,17 @@ class Environment : public ZoneAllocated {
   // environment's length in order to drop values (e.g., passed arguments)
   // from the copy.
   Environment* DeepCopy(Zone* zone, intptr_t length) const;
+
+#if defined(TARGET_ARCH_DBC)
+  // Return/ReturnTOS instruction drops incoming arguments so
+  // we have to drop outgoing arguments from the innermost environment.
+  // On all other architectures caller drops outgoing arguments itself
+  // hence the difference.
+  // Note: this method can only be used at the code generation stage because
+  // it mutates environment in unsafe way (e.g. does not update def-use
+  // chains).
+  void DropArguments(intptr_t argc);
+#endif
 
  private:
   friend class ShallowIterator;

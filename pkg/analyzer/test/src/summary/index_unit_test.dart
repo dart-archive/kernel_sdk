@@ -699,7 +699,7 @@ main(A a) {
   new A(field: 4);
 }
 ''');
-    FieldElement field = findElement('field');
+    FieldElement field = findElement('field', ElementKind.FIELD);
     PropertyAccessorElement getter = field.getter;
     PropertyAccessorElement setter = field.setter;
     // A()
@@ -729,7 +729,7 @@ class A {
 ''');
     // aaa
     {
-      FieldElement field = findElement('aaa');
+      FieldElement field = findElement('aaa', ElementKind.FIELD);
       PropertyAccessorElement getter = field.getter;
       PropertyAccessorElement setter = field.setter;
       assertThat(field)..isWrittenAt('aaa, ', true);
@@ -738,7 +738,7 @@ class A {
     }
     // bbb
     {
-      FieldElement field = findElement('bbb');
+      FieldElement field = findElement('bbb', ElementKind.FIELD);
       PropertyAccessorElement getter = field.getter;
       PropertyAccessorElement setter = field.setter;
       assertThat(field)..isWrittenAt('bbb) {}', true);
@@ -817,6 +817,26 @@ main() {
     assertThat(element)
       ..isReferencedAt('foo);', false)
       ..isInvokedAt('foo());', false);
+  }
+
+  void test_isReferencedBy_FunctionElement_with_LibraryElement() {
+    addSource(
+        '/foo.dart',
+        r'''
+bar() {}
+''');
+    _indexTestUnit('''
+import "foo.dart";
+main() {
+  bar();
+}
+''');
+    LibraryElement fooLibrary = testLibraryElement.imports[0].importedLibrary;
+    assertThat(fooLibrary)..isReferencedAt('"foo.dart";', true, length: 10);
+    {
+      FunctionElement bar = fooLibrary.definingCompilationUnit.functions[0];
+      assertThat(bar)..isInvokedAt('bar();', false);
+    }
   }
 
   void test_isReferencedBy_FunctionTypeAliasElement() {
@@ -944,7 +964,7 @@ class A {
   A.bar() : field = 5;
 }
 ''');
-    FieldElement element = findElement('field');
+    FieldElement element = findElement('field', ElementKind.FIELD);
     assertThat(element)
       ..isWrittenAt('field})', true)
       ..isWrittenAt('field = 5', true);

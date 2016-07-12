@@ -11,9 +11,9 @@ import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:analyzer/source/error_processor.dart';
+import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/type.dart';
 import 'package:analyzer/src/dart/scanner/scanner.dart' show ScannerErrorCode;
-import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/generated/shared_messages.dart'
     as shared_messages;
 import 'package:analyzer/src/generated/java_core.dart';
@@ -51,7 +51,7 @@ class AnalysisError {
 
   /**
    * A [Comparator] that sorts error codes first by their severity (errors
-   * first, warnings second), and then by the the error code type.
+   * first, warnings second), and then by the error code type.
    */
   static Comparator<AnalysisError> ERROR_CODE_COMPARATOR =
       (AnalysisError o1, AnalysisError o2) {
@@ -123,6 +123,12 @@ class AnalysisError {
   }
 
   /**
+   * Initialize a newly created analysis error with given values.
+   */
+  AnalysisError.forValues(this.source, this.offset, this.length, this.errorCode,
+      this._message, this._correction);
+
+  /**
    * Return the template used to create the correction to be displayed for this
    * error, or `null` if there is no correction information for this error. The
    * correction should indicate how the user can fix the error.
@@ -144,34 +150,33 @@ class AnalysisError {
   String get message => _message;
 
   @override
-  bool operator ==(Object obj) {
-    if (identical(obj, this)) {
+  bool operator ==(Object other) {
+    if (identical(other, this)) {
       return true;
     }
     // prepare other AnalysisError
-    if (obj is! AnalysisError) {
-      return false;
+    if (other is AnalysisError) {
+      // Quick checks.
+      if (!identical(errorCode, other.errorCode)) {
+        return false;
+      }
+      if (offset != other.offset || length != other.length) {
+        return false;
+      }
+      if (isStaticOnly != other.isStaticOnly) {
+        return false;
+      }
+      // Deep checks.
+      if (_message != other._message) {
+        return false;
+      }
+      if (source != other.source) {
+        return false;
+      }
+      // OK
+      return true;
     }
-    AnalysisError other = obj as AnalysisError;
-    // Quick checks.
-    if (!identical(errorCode, other.errorCode)) {
-      return false;
-    }
-    if (offset != other.offset || length != other.length) {
-      return false;
-    }
-    if (isStaticOnly != other.isStaticOnly) {
-      return false;
-    }
-    // Deep checks.
-    if (_message != other._message) {
-      return false;
-    }
-    if (source != other.source) {
-      return false;
-    }
-    // OK
-    return true;
+    return false;
   }
 
   /**
@@ -895,7 +900,7 @@ class CompileTimeErrorCode extends ErrorCode {
    * 1: the number of type parameters that were declared
    * 2: the number of type arguments provided
    *
-   * See [CompileTimeErrorCode.NEW_WITH_INVALID_TYPE_PARAMETERS], and
+   * See [StaticWarningCode.NEW_WITH_INVALID_TYPE_PARAMETERS], and
    * [StaticTypeWarningCode.WRONG_NUMBER_OF_TYPE_ARGUMENTS].
    */
   static const CompileTimeErrorCode CONST_WITH_INVALID_TYPE_PARAMETERS =
@@ -2677,6 +2682,9 @@ abstract class ErrorCode {
     HintCode.DEPRECATED_MEMBER_USE,
     HintCode.DUPLICATE_IMPORT,
     HintCode.DIVISION_OPTIMIZATION,
+    HintCode.INVALID_FACTORY_ANNOTATION,
+    HintCode.INVALID_FACTORY_METHOD_DECL,
+    HintCode.INVALID_FACTORY_METHOD_IMPL,
     HintCode.IS_DOUBLE,
     HintCode.IS_INT,
     HintCode.IS_NOT_DOUBLE,
@@ -2684,7 +2692,9 @@ abstract class ErrorCode {
     HintCode.IMPORT_DEFERRED_LIBRARY_WITH_LOAD_FUNCTION,
     HintCode.INVALID_ASSIGNMENT,
     HintCode.INVALID_USE_OF_PROTECTED_MEMBER,
+    HintCode.MISSING_JS_LIB_ANNOTATION,
     HintCode.MISSING_REQUIRED_PARAM,
+    HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS,
     HintCode.MISSING_RETURN,
     HintCode.NULL_AWARE_IN_CONDITION,
     HintCode.OVERRIDE_ON_NON_OVERRIDING_GETTER,
@@ -2694,9 +2704,11 @@ abstract class ErrorCode {
     HintCode.TYPE_CHECK_IS_NOT_NULL,
     HintCode.TYPE_CHECK_IS_NULL,
     HintCode.UNDEFINED_GETTER,
+    HintCode.UNDEFINED_HIDDEN_NAME,
     HintCode.UNDEFINED_METHOD,
     HintCode.UNDEFINED_OPERATOR,
     HintCode.UNDEFINED_SETTER,
+    HintCode.UNDEFINED_SHOWN_NAME,
     HintCode.UNNECESSARY_CAST,
     HintCode.UNNECESSARY_NO_SUCH_METHOD,
     HintCode.UNNECESSARY_TYPE_CHECK_FALSE,
@@ -2707,6 +2719,7 @@ abstract class ErrorCode {
     HintCode.UNUSED_CATCH_CLAUSE,
     HintCode.UNUSED_CATCH_STACK,
     HintCode.UNUSED_LOCAL_VARIABLE,
+    HintCode.UNUSED_SHOWN_NAME,
     HintCode.USE_OF_VOID_RESULT,
     HintCode.FILE_IMPORT_INSIDE_LIB_REFERENCES_FILE_OUTSIDE,
     HintCode.FILE_IMPORT_OUTSIDE_LIB_REFERENCES_FILE_INSIDE,
@@ -2841,6 +2854,34 @@ abstract class ErrorCode {
     StaticWarningCode.UNDEFINED_SUPER_SETTER,
     StaticWarningCode.VOID_RETURN_FOR_GETTER,
     StaticWarningCode.MISSING_ENUM_CONSTANT_IN_SWITCH,
+    StrongModeCode.ASSIGNMENT_CAST,
+    StrongModeCode.DOWN_CAST_COMPOSITE,
+    StrongModeCode.DOWN_CAST_IMPLICIT,
+    StrongModeCode.DYNAMIC_CAST,
+    StrongModeCode.DYNAMIC_INVOKE,
+    StrongModeCode.IMPLICIT_DYNAMIC_FIELD,
+    StrongModeCode.IMPLICIT_DYNAMIC_FUNCTION,
+    StrongModeCode.IMPLICIT_DYNAMIC_INVOKE,
+    StrongModeCode.IMPLICIT_DYNAMIC_LIST_LITERAL,
+    StrongModeCode.IMPLICIT_DYNAMIC_MAP_LITERAL,
+    StrongModeCode.IMPLICIT_DYNAMIC_METHOD,
+    StrongModeCode.IMPLICIT_DYNAMIC_PARAMETER,
+    StrongModeCode.IMPLICIT_DYNAMIC_RETURN,
+    StrongModeCode.IMPLICIT_DYNAMIC_TYPE,
+    StrongModeCode.IMPLICIT_DYNAMIC_VARIABLE,
+    StrongModeCode.INFERRED_TYPE,
+    StrongModeCode.INFERRED_TYPE_ALLOCATION,
+    StrongModeCode.INFERRED_TYPE_CLOSURE,
+    StrongModeCode.INFERRED_TYPE_LITERAL,
+    StrongModeCode.INVALID_FIELD_OVERRIDE,
+    StrongModeCode.INVALID_METHOD_OVERRIDE,
+    StrongModeCode.INVALID_METHOD_OVERRIDE_FROM_BASE,
+    StrongModeCode.INVALID_METHOD_OVERRIDE_FROM_MIXIN,
+    StrongModeCode.INVALID_PARAMETER_DECLARATION,
+    StrongModeCode.INVALID_SUPER_INVOCATION,
+    StrongModeCode.NON_GROUND_TYPE_CHECK_INFO,
+    StrongModeCode.STATIC_TYPE_ERROR,
+
     TodoCode.TODO,
 
     //
@@ -3019,6 +3060,11 @@ abstract class ErrorCode {
   ];
 
   /**
+   * The lazy initialized map from [uniqueName] to the [ErrorCode] instance.
+   */
+  static HashMap<String, ErrorCode> _uniqueNameToCodeMap;
+
+  /**
    * An empty list of error codes.
    */
   static const List<ErrorCode> EMPTY_LIST = const <ErrorCode>[];
@@ -3066,6 +3112,20 @@ abstract class ErrorCode {
 
   @override
   String toString() => uniqueName;
+
+  /**
+   * Return the [ErrorCode] with the given [uniqueName], or `null` if not
+   * found.
+   */
+  static ErrorCode byUniqueName(String uniqueName) {
+    if (_uniqueNameToCodeMap == null) {
+      _uniqueNameToCodeMap = new HashMap<String, ErrorCode>();
+      for (ErrorCode errorCode in values) {
+        _uniqueNameToCodeMap[errorCode.uniqueName] = errorCode;
+      }
+    }
+    return _uniqueNameToCodeMap[uniqueName];
+  }
 }
 
 /**
@@ -3144,7 +3204,7 @@ class ErrorReporter {
    * Setting the source to `null` will cause the default source to be used.
    */
   void set source(Source source) {
-    this._source = source == null ? _defaultSource : source;
+    this._source = source ?? _defaultSource;
   }
 
   /**
@@ -3263,12 +3323,12 @@ class ErrorReporter {
       for (int i = 0; i < count; i++) {
         Object argument = arguments[i];
         if (argument is DartType) {
-          DartType type = argument;
-          Element element = type.element;
+          Element element = argument.element;
           if (element == null) {
-            arguments[i] = displayName(type);
+            arguments[i] = displayName(argument);
           } else {
-            arguments[i] = element.getExtendedDisplayName(displayName(type));
+            arguments[i] =
+                element.getExtendedDisplayName(displayName(argument));
           }
         }
       }
@@ -3291,8 +3351,8 @@ class ErrorReporter {
     int count = arguments.length;
     HashSet<String> typeNames = new HashSet<String>();
     for (int i = 0; i < count; i++) {
-      if (arguments[i] is DartType &&
-          !typeNames.add((arguments[i] as DartType).displayName)) {
+      Object argument = arguments[i];
+      if (argument is DartType && !typeNames.add(argument.displayName)) {
         return true;
       }
     }
@@ -3562,6 +3622,34 @@ class HintCode extends ErrorCode {
       "A value of type '{0}' cannot be assigned to a variable of type '{1}'");
 
   /**
+   * This hint is generated anywhere a @factory annotation is associated with
+   * anything other than a method.
+   */
+  static const HintCode INVALID_FACTORY_ANNOTATION = const HintCode(
+      'INVALID_FACTORY_ANNOTATION',
+      "Only methods can be annotated as factories.");
+
+  /**
+   * This hint is generated anywhere a @factory annotation is associated with
+   * a method that does not declare a return type.
+   */
+  static const HintCode INVALID_FACTORY_METHOD_DECL = const HintCode(
+      'INVALID_FACTORY_METHOD_DECL',
+      "Factory method '{0}' must have a return type.");
+
+  /**
+   * This hint is generated anywhere a @factory annotation is associated with
+   * a non-abstract method that can return anything other than a newly allocated
+   * object.
+   *
+   * Parameters:
+   * 0: the name of the method
+   */
+  static const HintCode INVALID_FACTORY_METHOD_IMPL = const HintCode(
+      'INVALID_FACTORY_METHOD_IMPL',
+      "Factory method '{0}' does not return a newly allocated object.");
+
+  /**
    * This hint is generated anywhere where a member annotated with `@protected`
    * is used outside an instance member of a subclass.
    *
@@ -3579,10 +3667,29 @@ class HintCode extends ErrorCode {
    *
    * Parameters:
    * 0: the name of the parameter
-   * 1: an optional reason
    */
   static const HintCode MISSING_REQUIRED_PARAM = const HintCode(
-      'MISSING_REQUIRED_PARAM', "The parameter '{0}' is required. {1}");
+      'MISSING_REQUIRED_PARAM', "The parameter '{0}' is required.");
+
+  /**
+   * Generate a hint for a constructor, function or method invocation where a
+   * required parameter is missing.
+   *
+   * Parameters:
+   * 0: the name of the parameter
+   * 1: message details
+   */
+  static const HintCode MISSING_REQUIRED_PARAM_WITH_DETAILS = const HintCode(
+      'MISSING_REQUIRED_PARAM_WITH_DETAILS',
+      "The parameter '{0}' is required. {1}");
+
+  /**
+   * Generate a hint for an element that is annotated with `@JS(...)` whose
+   * library declaration is not similarly annotated.
+   */
+  static const HintCode MISSING_JS_LIB_ANNOTATION = const HintCode(
+      'MISSING_JS_LIB_ANNOTATION',
+      "The @JS() annotation can only be used if it is also declared on the library directive.");
 
   /**
    * Generate a hint for methods or functions that have a return type, but do
@@ -3677,6 +3784,13 @@ class HintCode extends ErrorCode {
       shared_messages.UNDEFINED_GETTER_HINT;
 
   /**
+   * An undefined name hidden in an import or export directive.
+   */
+  static const HintCode UNDEFINED_HIDDEN_NAME = const HintCode(
+      'UNDEFINED_HIDDEN_NAME',
+      "The library '{0}' doesn't export a member with the hidden name '{1}'");
+
+  /**
    * This hint is generated anywhere where the
    * [StaticTypeWarningCode.UNDEFINED_METHOD] would have been generated, if we
    * used propagated information for the warnings.
@@ -3712,6 +3826,13 @@ class HintCode extends ErrorCode {
    */
   static const HintCode UNDEFINED_SETTER =
       shared_messages.UNDEFINED_SETTER_HINT;
+
+  /**
+   * An undefined name shown in an import or export directive.
+   */
+  static const HintCode UNDEFINED_SHOWN_NAME = const HintCode(
+      'UNDEFINED_SHOWN_NAME',
+      "The library '{0}' doesn't export a member with the shown name '{1}'");
 
   /**
    * Unnecessary cast.
@@ -3777,6 +3898,12 @@ class HintCode extends ErrorCode {
   static const HintCode UNUSED_LOCAL_VARIABLE = const HintCode(
       'UNUSED_LOCAL_VARIABLE',
       "The value of the local variable '{0}' is not used");
+
+  /**
+   * Unused shown names are names shown on imports which are never used.
+   */
+  static const HintCode UNUSED_SHOWN_NAME = const HintCode(
+      'UNUSED_SHOWN_NAME', "The name {0} is shown, but not used.");
 
   /**
    * Hint for cases where the source expects a method or function to return a
@@ -4799,7 +4926,7 @@ class StaticWarningCode extends ErrorCode {
    */
   static const StaticWarningCode FINAL_NOT_INITIALIZED =
       const StaticWarningCode('FINAL_NOT_INITIALIZED',
-          "The final variable '{0}' must be initialized");
+          "The final variable '{0}' must be initialized", null, false);
 
   /**
    * 7.6.1 Generative Constructors: Each final instance variable <i>f</i>
@@ -4815,7 +4942,7 @@ class StaticWarningCode extends ErrorCode {
    */
   static const StaticWarningCode FINAL_NOT_INITIALIZED_CONSTRUCTOR_1 =
       const StaticWarningCode('FINAL_NOT_INITIALIZED_CONSTRUCTOR_1',
-          "The final variable '{0}' must be initialized");
+          "The final variable '{0}' must be initialized", null, false);
 
   /**
    * 7.6.1 Generative Constructors: Each final instance variable <i>f</i>
@@ -4831,8 +4958,11 @@ class StaticWarningCode extends ErrorCode {
    * 1: the name of the uninitialized final variable
    */
   static const StaticWarningCode FINAL_NOT_INITIALIZED_CONSTRUCTOR_2 =
-      const StaticWarningCode('FINAL_NOT_INITIALIZED_CONSTRUCTOR_2',
-          "The final variables '{0}' and '{1}' must be initialized");
+      const StaticWarningCode(
+          'FINAL_NOT_INITIALIZED_CONSTRUCTOR_2',
+          "The final variables '{0}' and '{1}' must be initialized",
+          null,
+          false);
 
   /**
    * 7.6.1 Generative Constructors: Each final instance variable <i>f</i>
@@ -4849,8 +4979,11 @@ class StaticWarningCode extends ErrorCode {
    * 2: the number of additional not initialized variables that aren't listed
    */
   static const StaticWarningCode FINAL_NOT_INITIALIZED_CONSTRUCTOR_3_PLUS =
-      const StaticWarningCode('FINAL_NOT_INITIALIZED_CONSTRUCTOR_3',
-          "The final variables '{0}', '{1}' and '{2}' more must be initialized");
+      const StaticWarningCode(
+          'FINAL_NOT_INITIALIZED_CONSTRUCTOR_3',
+          "The final variables '{0}', '{1}' and '{2}' more must be initialized",
+          null,
+          false);
 
   /**
    * 15.5 Function Types: It is a static warning if a concrete class implements
@@ -5171,8 +5304,11 @@ class StaticWarningCode extends ErrorCode {
    * <i>S</i>, and <i>T</i> may not be assigned to <i>S</i>.
    */
   static const StaticWarningCode MISMATCHED_GETTER_AND_SETTER_TYPES =
-      const StaticWarningCode('MISMATCHED_GETTER_AND_SETTER_TYPES',
-          "The parameter type for setter '{0}' is '{1}' which is not assignable to its getter (of type '{2}')");
+      const StaticWarningCode(
+          'MISMATCHED_GETTER_AND_SETTER_TYPES',
+          "The parameter type for setter '{0}' is '{1}' which is not assignable to its getter (of type '{2}')",
+          null,
+          false);
 
   /**
    * 7.3 Setters: It is a static warning if a class has a setter named <i>v=</i>
@@ -5183,7 +5319,9 @@ class StaticWarningCode extends ErrorCode {
       MISMATCHED_GETTER_AND_SETTER_TYPES_FROM_SUPERTYPE =
       const StaticWarningCode(
           'MISMATCHED_GETTER_AND_SETTER_TYPES_FROM_SUPERTYPE',
-          "The parameter type for setter '{0}' is '{1}' which is not assignable to its getter (of type '{2}'), from superclass '{3}'");
+          "The parameter type for setter '{0}' is '{1}' which is not assignable to its getter (of type '{2}'), from superclass '{3}'",
+          null,
+          false);
 
   /**
    * 13.12 Return: It is a static warning if a function contains both one or
@@ -5192,7 +5330,9 @@ class StaticWarningCode extends ErrorCode {
    */
   static const StaticWarningCode MIXED_RETURN_TYPES = const StaticWarningCode(
       'MIXED_RETURN_TYPES',
-      "Methods and functions cannot use return both with and without values");
+      "Methods and functions cannot use return both with and without values",
+      null,
+      false);
 
   /**
    * 12.11.1 New: It is a static warning if <i>q</i> is a constructor of an
@@ -5404,7 +5544,7 @@ class StaticWarningCode extends ErrorCode {
    */
   static const StaticWarningCode NON_VOID_RETURN_FOR_OPERATOR =
       const StaticWarningCode('NON_VOID_RETURN_FOR_OPERATOR',
-          "The return type of the operator []= must be 'void'");
+          "The return type of the operator []= must be 'void'", null, false);
 
   /**
    * 7.3 Setters: It is a static warning if a setter declares a return type
@@ -5412,7 +5552,7 @@ class StaticWarningCode extends ErrorCode {
    */
   static const StaticWarningCode NON_VOID_RETURN_FOR_SETTER =
       const StaticWarningCode('NON_VOID_RETURN_FOR_SETTER',
-          "The return type of the setter must be 'void'");
+          "The return type of the setter must be 'void'", null, false);
 
   /**
    * 15.1 Static Types: A type <i>T</i> is malformed iff:
@@ -5511,7 +5651,10 @@ class StaticWarningCode extends ErrorCode {
    * * The return type of <i>f</i> may not be assigned to void.
    */
   static const StaticWarningCode RETURN_WITHOUT_VALUE = const StaticWarningCode(
-      'RETURN_WITHOUT_VALUE', "Missing return value after 'return'");
+      'RETURN_WITHOUT_VALUE',
+      "Missing return value after 'return'",
+      null,
+      false);
 
   /**
    * 12.16.3 Static Invocation: It is a static warning if <i>C</i> does not
@@ -5694,7 +5837,7 @@ class StaticWarningCode extends ErrorCode {
    */
   static const StaticWarningCode VOID_RETURN_FOR_GETTER =
       const StaticWarningCode('VOID_RETURN_FOR_GETTER',
-          "The return type of the getter must not be 'void'");
+          "The return type of the getter must not be 'void'", null, false);
 
   /**
    * 17.9 Switch: It is a static warning if all of the following conditions
@@ -5713,7 +5856,8 @@ class StaticWarningCode extends ErrorCode {
       const StaticWarningCode(
           'MISSING_ENUM_CONSTANT_IN_SWITCH',
           "Missing case clause for '{0}'",
-          "Add a case clause for the missing constant or add a default clause.");
+          "Add a case clause for the missing constant or add a default clause.",
+          false);
 
   /**
    * A flag indicating whether this warning is an error when running with strong
@@ -5728,7 +5872,7 @@ class StaticWarningCode extends ErrorCode {
    * given [correction] template.
    */
   const StaticWarningCode(String name, String message,
-      [String correction, this.isStrongModeError = false])
+      [String correction, this.isStrongModeError = true])
       : super(name, message, correction);
 
   @override
@@ -5736,6 +5880,184 @@ class StaticWarningCode extends ErrorCode {
 
   @override
   ErrorType get type => ErrorType.STATIC_WARNING;
+}
+
+/**
+ * This class has Strong Mode specific error codes.
+ *
+ * These error codes tend to use the same message across different severity
+ * levels, so they are grouped for clarity.
+ *
+ * All of these error codes also use the "STRONG_MODE_" prefix in their name.
+ */
+class StrongModeCode extends ErrorCode {
+  static const String _implicitCastMessage =
+      'Unsound implicit cast from {0} to {1}';
+
+  static const String _typeCheckMessage =
+      'Type check failed: {0} is not of type {1}';
+
+  static const String _invalidOverrideMessage =
+      'The type of {0}.{1} ({2}) is not a '
+      'subtype of {3}.{1} ({4}).';
+
+  /**
+   * This is appended to the end of an error message about implicit dynamic.
+   *
+   * The idea is to make sure the user is aware that this error message is the
+   * result of turning on a particular option, and they are free to turn it
+   * back off.
+   */
+  static const String _implicitDynamicTip =
+      ". Either add an explicit type like 'dynamic'"
+      ", or enable implicit-dynamic in your Analyzer options.";
+
+  static const String _inferredTypeMessage = '{0} has inferred type {1}';
+
+  static const StrongModeCode DOWN_CAST_COMPOSITE = const StrongModeCode(
+      ErrorType.STATIC_WARNING, 'DOWN_CAST_COMPOSITE', _implicitCastMessage);
+
+  static const StrongModeCode DOWN_CAST_IMPLICIT = const StrongModeCode(
+      ErrorType.HINT, 'DOWN_CAST_IMPLICIT', _implicitCastMessage);
+
+  static const StrongModeCode DYNAMIC_CAST = const StrongModeCode(
+      ErrorType.HINT, 'DYNAMIC_CAST', _implicitCastMessage);
+
+  static const StrongModeCode ASSIGNMENT_CAST = const StrongModeCode(
+      ErrorType.HINT, 'ASSIGNMENT_CAST', _implicitCastMessage);
+
+  static const StrongModeCode INVALID_PARAMETER_DECLARATION =
+      const StrongModeCode(ErrorType.COMPILE_TIME_ERROR,
+          'INVALID_PARAMETER_DECLARATION', _typeCheckMessage);
+
+  static const StrongModeCode INFERRED_TYPE = const StrongModeCode(
+      ErrorType.HINT, 'INFERRED_TYPE', _inferredTypeMessage);
+
+  static const StrongModeCode INFERRED_TYPE_LITERAL = const StrongModeCode(
+      ErrorType.HINT, 'INFERRED_TYPE_LITERAL', _inferredTypeMessage);
+
+  static const StrongModeCode INFERRED_TYPE_ALLOCATION = const StrongModeCode(
+      ErrorType.HINT, 'INFERRED_TYPE_ALLOCATION', _inferredTypeMessage);
+
+  static const StrongModeCode INFERRED_TYPE_CLOSURE = const StrongModeCode(
+      ErrorType.HINT, 'INFERRED_TYPE_CLOSURE', _inferredTypeMessage);
+
+  static const StrongModeCode STATIC_TYPE_ERROR = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'STATIC_TYPE_ERROR',
+      'Type check failed: {0} ({1}) is not of type {2}');
+
+  static const StrongModeCode INVALID_SUPER_INVOCATION = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'INVALID_SUPER_INVOCATION',
+      "super call must be last in an initializer "
+      "list (see https://goo.gl/EY6hDP): {0}");
+
+  static const StrongModeCode NON_GROUND_TYPE_CHECK_INFO = const StrongModeCode(
+      ErrorType.HINT,
+      'NON_GROUND_TYPE_CHECK_INFO',
+      "Runtime check on non-ground type {0} may throw StrongModeError");
+
+  static const StrongModeCode DYNAMIC_INVOKE = const StrongModeCode(
+      ErrorType.HINT, 'DYNAMIC_INVOKE', '{0} requires a dynamic invoke');
+
+  static const StrongModeCode INVALID_METHOD_OVERRIDE = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'INVALID_METHOD_OVERRIDE',
+      'Invalid override. $_invalidOverrideMessage');
+
+  static const StrongModeCode INVALID_METHOD_OVERRIDE_FROM_BASE =
+      const StrongModeCode(
+          ErrorType.COMPILE_TIME_ERROR,
+          'INVALID_METHOD_OVERRIDE_FROM_BASE',
+          'Base class introduces an invalid override. '
+          '$_invalidOverrideMessage');
+
+  static const StrongModeCode INVALID_METHOD_OVERRIDE_FROM_MIXIN =
+      const StrongModeCode(
+          ErrorType.COMPILE_TIME_ERROR,
+          'INVALID_METHOD_OVERRIDE_FROM_MIXIN',
+          'Mixin introduces an invalid override. $_invalidOverrideMessage');
+
+  static const StrongModeCode INVALID_FIELD_OVERRIDE = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'INVALID_FIELD_OVERRIDE',
+      'Field declaration {3}.{1} cannot be '
+      'overridden in {0}.');
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_PARAMETER = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'IMPLICIT_DYNAMIC_PARAMETER',
+      "Missing parameter type for '{0}'$_implicitDynamicTip");
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_RETURN = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'IMPLICIT_DYNAMIC_RETURN',
+      "Missing return type for '{0}'$_implicitDynamicTip");
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_VARIABLE = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'IMPLICIT_DYNAMIC_VARIABLE',
+      "Missing variable type for '{0}'$_implicitDynamicTip");
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_FIELD = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'IMPLICIT_DYNAMIC_FIELD',
+      "Missing field type for '{0}'$_implicitDynamicTip");
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_TYPE = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'IMPLICIT_DYNAMIC_TYPE',
+      "Missing type arguments for generic type '{0}'"
+      "$_implicitDynamicTip");
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_LIST_LITERAL =
+      const StrongModeCode(
+          ErrorType.COMPILE_TIME_ERROR,
+          'IMPLICIT_DYNAMIC_LIST_LITERAL',
+          "Missing type argument for list literal$_implicitDynamicTip");
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_MAP_LITERAL =
+      const StrongModeCode(
+          ErrorType.COMPILE_TIME_ERROR,
+          'IMPLICIT_DYNAMIC_MAP_LITERAL',
+          'Missing type arguments for map literal$_implicitDynamicTip');
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_FUNCTION = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'IMPLICIT_DYNAMIC_FUNCTION',
+      "Missing type arguments for generic function '{0}<{1}>'"
+      "$_implicitDynamicTip");
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_METHOD = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'IMPLICIT_DYNAMIC_METHOD',
+      "Missing type arguments for generic method '{0}<{1}>'"
+      "$_implicitDynamicTip");
+
+  static const StrongModeCode IMPLICIT_DYNAMIC_INVOKE = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'IMPLICIT_DYNAMIC_INVOKE',
+      "Missing type arguments for calling generic function type '{0}'"
+      "$_implicitDynamicTip");
+
+  @override
+  final ErrorType type;
+
+  /**
+   * Initialize a newly created error code to have the given [type] and [name].
+   *
+   * The message associated with the error will be created from the given
+   * [message] template. The correction associated with the error will be
+   * created from the optional [correction] template.
+   */
+  const StrongModeCode(ErrorType type, String name, String message,
+      [String correction])
+      : type = type,
+        super('STRONG_MODE_$name', message, correction);
+
+  @override
+  ErrorSeverity get errorSeverity => type.severity;
 }
 
 /**

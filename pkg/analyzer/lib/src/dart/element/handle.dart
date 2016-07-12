@@ -62,6 +62,9 @@ class ClassElementHandle extends ElementHandle implements ClassElement {
   bool get isEnum => actualElement.isEnum;
 
   @override
+  bool get isJS => actualElement.isJS;
+
+  @override
   bool get isMixinApplication => actualElement.isMixinApplication;
 
   @override
@@ -150,8 +153,9 @@ class ClassElementHandle extends ElementHandle implements ClassElement {
 
   @override
   MethodElement lookUpInheritedMethod(
-          String methodName, LibraryElement library) =>
-      actualElement.lookUpInheritedMethod(methodName, library);
+      String methodName, LibraryElement library) {
+    return actualElement.lookUpInheritedMethod(methodName, library);
+  }
 
   @override
   MethodElement lookUpMethod(String methodName, LibraryElement library) =>
@@ -353,6 +357,12 @@ abstract class ElementHandle implements Element {
   bool get isDeprecated => actualElement.isDeprecated;
 
   @override
+  bool get isFactory => actualElement.isFactory;
+
+  @override
+  bool get isJS => actualElement.isJS;
+
+  @override
   bool get isOverride => actualElement.isOverride;
 
   @override
@@ -373,6 +383,9 @@ abstract class ElementHandle implements Element {
   @override
   LibraryElement get library =>
       getAncestor((element) => element is LibraryElement);
+
+  @override
+  Source get librarySource => actualElement.librarySource;
 
   @override
   ElementLocation get location => _location;
@@ -409,7 +422,8 @@ abstract class ElementHandle implements Element {
   AstNode computeNode() => actualElement.computeNode();
 
   @override
-  Element getAncestor(Predicate<Element> predicate) =>
+  Element/*=E*/ getAncestor/*<E extends Element >*/(
+          Predicate<Element> predicate) =>
       actualElement.getAncestor(predicate);
 
   @override
@@ -419,6 +433,9 @@ abstract class ElementHandle implements Element {
   @override
   bool isAccessibleIn(LibraryElement library) =>
       actualElement.isAccessibleIn(library);
+
+  @override
+  String toString() => actualElement.toString();
 
   @override
   void visitChildren(ElementVisitor visitor) {
@@ -963,10 +980,10 @@ class PropertyAccessorElementHandle extends ExecutableElementHandle
       actualElement.correspondingSetter;
 
   @override
-  bool get isGetter => actualElement.isGetter;
+  bool get isGetter => !isSetter;
 
   @override
-  bool get isSetter => actualElement.isSetter;
+  bool get isSetter => location.components.last.endsWith('=');
 
   @override
   ElementKind get kind {
@@ -1105,4 +1122,7 @@ abstract class VariableElementHandle extends ElementHandle
 
   @override
   DartType get type => actualElement.type;
+
+  @override
+  DartObject computeConstantValue() => actualElement.computeConstantValue();
 }

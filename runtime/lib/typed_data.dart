@@ -735,6 +735,14 @@ class _IntListMixin {
   }
 
   Iterator<int> get iterator => new _TypedListIterator<int>(this);
+
+  List<int> toList({bool growable: true}) {
+    return new List<int>.from(this, growable: growable);
+  }
+
+  Set<int> toSet() {
+    return new Set<int>.from(this);
+  }
 }
 
 
@@ -762,6 +770,14 @@ class _DoubleListMixin {
   }
 
   Iterator<double> get iterator => new _TypedListIterator<double>(this);
+
+  List<double> toList({bool growable: true}) {
+    return new List<double>.from(this, growable: growable);
+  }
+
+  Set<double> toSet() {
+    return new Set<double>.from(this);
+  }
 }
 
 
@@ -790,6 +806,14 @@ class _Float32x4ListMixin {
   }
 
   Iterator<Float32x4> get iterator => new _TypedListIterator<Float32x4>(this);
+
+  List<Float32x4> toList({bool growable: true}) {
+    return new List<Float32x4>.from(this, growable: growable);
+  }
+
+  Set<Float32x4> toSet() {
+    return new Set<Float32x4>.from(this);
+  }
 }
 
 
@@ -817,6 +841,14 @@ class _Int32x4ListMixin {
   }
 
   Iterator<Int32x4> get iterator => new _TypedListIterator<Int32x4>(this);
+
+  List<Int32x4> toList({bool growable: true}) {
+    return new List<Int32x4>.from(this, growable: growable);
+  }
+
+  Set<Int32x4> toSet() {
+    return new Set<Int32x4>.from(this);
+  }
 }
 
 
@@ -845,6 +877,14 @@ class _Float64x2ListMixin {
   }
 
   Iterator<Float64x2> get iterator => new _TypedListIterator<Float64x2>(this);
+
+  List<Float64x2> toList({bool growable: true}) {
+    return new List<Float64x2>.from(this, growable: growable);
+  }
+
+  Set<Float64x2> toSet() {
+    return new Set<Float64x2>.from(this);
+  }
 }
 
 
@@ -1145,7 +1185,6 @@ class Uint8List extends _TypedList with _IntListMixin implements List<int>, Type
   int get elementSizeInBytes {
     return Uint8List.BYTES_PER_ELEMENT;
   }
-
 
   // Internal utility methods.
 
@@ -2847,12 +2886,10 @@ class Int32x4 {
   Int32x4 withFlagY(bool y) native "Int32x4_setFlagY";
   Int32x4 withFlagZ(bool z) native "Int32x4_setFlagZ";
   Int32x4 withFlagW(bool w) native "Int32x4_setFlagW";
-  Float32x4 select(Float32x4 trueValue,
-                          Float32x4 falseValue) {
+  Float32x4 select(Float32x4 trueValue, Float32x4 falseValue) {
     return _select(trueValue, falseValue);
   }
-  Float32x4 _select(Float32x4 trueValue,
-                           Float32x4 falseValue)
+  Float32x4 _select(Float32x4 trueValue, Float32x4 falseValue)
       native "Int32x4_select";
 
   /// Mask passed to [shuffle] or [shuffleMix].

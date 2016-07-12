@@ -47,7 +47,7 @@ patch class String {
  * [_StringBase] contains common methods used by concrete String
  * implementations, e.g., _OneByteString.
  */
-class _StringBase {
+abstract class _StringBase {
   // Constants used by replaceAll encoding of string slices between matches.
   // A string slice (start+length) is encoded in a single Smi to save memory
   // overhead in the common case.
@@ -230,7 +230,7 @@ class _StringBase {
 
   String operator [](int index) native "String_charAt";
 
-  int codeUnitAt(int index) native "String_codeUnitAt";
+  int codeUnitAt(int index);  // Implemented in the subclasses.
 
   int get length native "String_getLength";
 
@@ -937,6 +937,8 @@ class _OneByteString extends _StringBase implements String {
 
   int get hashCode native "String_getHashCode";
 
+  int codeUnitAt(int index) native "String_codeUnitAt";
+
   bool _isWhitespace(int codeUnit) {
     return _StringBase._isOneByteWhitespace(codeUnit);
   }
@@ -1240,6 +1242,8 @@ class _TwoByteString extends _StringBase implements String {
     return _StringBase._isTwoByteWhitespace(codeUnit);
   }
 
+  int codeUnitAt(int index) native "String_codeUnitAt";
+
   bool operator ==(Object other) {
     return super == other;
   }
@@ -1255,6 +1259,8 @@ class _ExternalOneByteString extends _StringBase implements String {
   bool _isWhitespace(int codeUnit) {
     return _StringBase._isOneByteWhitespace(codeUnit);
   }
+
+  int codeUnitAt(int index) native "String_codeUnitAt";
 
   bool operator ==(Object other) {
     return super == other;
@@ -1273,6 +1279,8 @@ class _ExternalTwoByteString extends _StringBase implements String {
   bool _isWhitespace(int codeUnit) {
     return _StringBase._isTwoByteWhitespace(codeUnit);
   }
+
+  int codeUnitAt(int index) native "String_codeUnitAt";
 
   bool operator ==(Object other) {
     return super == other;

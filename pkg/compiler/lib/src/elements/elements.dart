@@ -329,6 +329,12 @@ abstract class Element implements Entity {
 
   bool get impliesType;
 
+  /// The character offset of the declaration of this element within its
+  /// compilation unit, if available.
+  ///
+  /// This is used to sort the elements.
+  int get sourceOffset;
+
   // TODO(johnniwinther): Remove this.
   Token get position;
 
@@ -480,7 +486,12 @@ class Elements {
     return true;
   }
 
-  static bool hasAccessToTypeVariables(Element element) {
+  static bool hasAccessToTypeVariable(
+      Element element, TypeVariableElement typeVariable) {
+    GenericElement declaration = typeVariable.typeDeclaration;
+    if (declaration is FunctionElement || declaration is ParameterElement) {
+      return true;
+    }
     Element outer = element.outermostEnclosingMemberOrTopLevel;
     return (outer != null && outer.isFactoryConstructor) ||
         !isInStaticContext(element);
@@ -683,10 +694,8 @@ class Elements {
     if (r != 0) return r;
     r = a.compilationUnit.compareTo(b.compilationUnit);
     if (r != 0) return r;
-    Token positionA = a.position;
-    Token positionB = b.position;
-    int offsetA = positionA == null ? -1 : positionA.charOffset;
-    int offsetB = positionB == null ? -1 : positionB.charOffset;
+    int offsetA = a.sourceOffset ?? -1;
+    int offsetB = b.sourceOffset ?? -1;
     r = offsetA.compareTo(offsetB);
     if (r != 0) return r;
     r = a.name.compareTo(b.name);
@@ -932,6 +941,9 @@ abstract class PrefixElement extends Element {
 
   /// Import that declared this deferred prefix.
   ImportElement get deferredImport;
+
+  /// The `loadLibrary` getter implicitly defined on deferred prefixes.
+  GetterElement get loadLibrary;
 }
 
 /// A type alias definition.
@@ -996,8 +1008,13 @@ abstract class VariableElement extends ExecutableElement {
 
   Expression get initializer;
 
-  /// The constant expression defining the value of the variable if `const`,
-  /// `null` otherwise.
+  bool get hasConstant;
+
+  /// The constant expression defining the (initial) value of the variable.
+  ///
+  /// If the variable is `const` the value is always non-null, possibly an
+  /// [ErroneousConstantExpression], otherwise, the value is null when the
+  /// initializer isn't a constant expression.
   ConstantExpression get constant;
 }
 
@@ -1053,7 +1070,7 @@ abstract class FormalElement extends Element
 ///
 /// Normal parameter that introduce a local variable are modeled by
 /// [LocalParameterElement] whereas initializing formals, that is parameter of
-/// the form `this.x`, are modeled by [InitializingFormalParameter].
+/// the form `this.x`, are modeled by [InitializingFormalElement].
 abstract class ParameterElement extends Element
     implements VariableElement, FormalElement, LocalElement {
   /// Use [functionDeclaration] instead.
@@ -1078,7 +1095,7 @@ abstract class LocalParameterElement extends ParameterElement
 /// A formal parameter in a constructor that directly initializes a field.
 ///
 /// For example: `A(this.field)`.
-abstract class InitializingFormalElement extends ParameterElement {
+abstract class InitializingFormalElement extends LocalParameterElement {
   /// The field initialized by this initializing formal.
   FieldElement get fieldElement;
 
@@ -1100,13 +1117,13 @@ abstract class AbstractFieldElement extends Element {
 
 abstract class FunctionSignature {
   FunctionType get type;
+  List<DartType> get typeVariables;
   List<FormalElement> get requiredParameters;
   List<FormalElement> get optionalParameters;
 
   int get requiredParameterCount;
   int get optionalParameterCount;
   bool get optionalParametersAreNamed;
-  FormalElement get firstOptionalParameter;
   bool get hasOptionalParameters;
 
   int get parameterCount;
@@ -1128,7 +1145,8 @@ abstract class FunctionElement extends Element
         AstElement,
         TypedElement,
         FunctionTypedElement,
-        ExecutableElement {
+        ExecutableElement,
+        GenericElement {
   FunctionExpression get node;
 
   FunctionElement get patch;
@@ -1136,7 +1154,7 @@ abstract class FunctionElement extends Element
 
   bool get hasFunctionSignature;
 
-  /// The parameters of this functions.
+  /// The parameters of this function.
   List<ParameterElement> get parameters;
 
   /// The type of this function.
@@ -1196,6 +1214,21 @@ class AsyncMarker {
   String toString() {
     return '${isAsync ? 'async' : 'sync'}${isYielding ? '*' : ''}';
   }
+
+  /// Canonical list of marker values.
+  ///
+  /// Added to make [AsyncMarker] enum-like.
+  static const List<AsyncMarker> values = const <AsyncMarker>[
+    SYNC,
+    SYNC_STAR,
+    ASYNC,
+    ASYNC_STAR
+  ];
+
+  /// Index to this marker within [values].
+  ///
+  /// Added to make [AsyncMarker] enum-like.
+  int get index => values.indexOf(this);
 }
 
 /// A top level, static or instance function.
@@ -1208,10 +1241,14 @@ abstract class LocalFunctionElement extends FunctionElement
 /// A constructor.
 abstract class ConstructorElement extends FunctionElement
     implements MemberElement {
+  /// Returns `true` if [effectiveTarget] has been computed for this
+  /// constructor.
+  bool get hasEffectiveTarget;
+
   /// The effective target of this constructor, that is the non-redirecting
   /// constructor that is called on invocation of this constructor.
   ///
-  /// Consider for instance this hierachy:
+  /// Consider for instance this hierarchy:
   ///
   ///     class C { factory C.c() = D.d; }
   ///     class D { factory D.d() = E.e2; }
@@ -1224,7 +1261,7 @@ abstract class ConstructorElement extends FunctionElement
 
   /// The immediate redirection target of a redirecting factory constructor.
   ///
-  /// Consider for instance this hierachy:
+  /// Consider for instance this hierarchy:
   ///
   ///     class C { factory C() = D; }
   ///     class D { factory D() = E; }
@@ -1290,6 +1327,15 @@ abstract class ConstructorElement extends FunctionElement
   /// `int.fromEnvironment`, or `String.fromEnvironment`.
   bool get isFromEnvironmentConstructor;
 
+  /// `true` if this constructor is `int.fromEnvironment`.
+  bool get isIntFromEnvironmentConstructor;
+
+  /// `true` if this constructor is `bool.fromEnvironment`.
+  bool get isBoolFromEnvironmentConstructor;
+
+  /// `true` if this constructor is `String.fromEnvironment`.
+  bool get isStringFromEnvironmentConstructor;
+
   /// Use [enclosingClass] instead.
   @deprecated
   get enclosingElement;
@@ -1301,9 +1347,20 @@ abstract class ConstructorBodyElement extends MethodElement {
   FunctionElement get constructor;
 }
 
+/// [GenericElement] defines the common interface for generic functions and
+/// [TypeDeclarationElement].
+abstract class GenericElement extends Element implements AstElement {
+  /**
+   * The type variables declared on this declaration. The type variables are not
+   * available until the type of the element has been computed through
+   * [computeType].
+   */
+  List<DartType> get typeVariables;
+}
+
 /// [TypeDeclarationElement] defines the common interface for class/interface
 /// declarations and typedefs.
-abstract class TypeDeclarationElement extends Element implements AstElement {
+abstract class TypeDeclarationElement extends GenericElement {
   /// The name of this type declaration, taking privacy into account.
   Name get memberName;
 
@@ -1344,13 +1401,6 @@ abstract class TypeDeclarationElement extends Element implements AstElement {
    * the input source has used explicit type arguments.
    */
   GenericType get rawType;
-
-  /**
-   * The type variables declared on this declaration. The type variables are not
-   * available until the type of the element has been computed through
-   * [computeType].
-   */
-  List<DartType> get typeVariables;
 
   bool get isResolved;
 
@@ -1452,6 +1502,8 @@ abstract class ClassElement extends TypeDeclarationElement
 
   Element lookupSuperMemberInLibrary(String memberName, LibraryElement library);
 
+  // TODO(johnniwinther): Clean up semantics. Can the default constructor take
+  // optional arguments? Must it be resolved?
   ConstructorElement lookupDefaultConstructor();
   ConstructorElement lookupConstructor(String name);
 
@@ -1488,12 +1540,25 @@ abstract class ClassElement extends TypeDeclarationElement
 abstract class MixinApplicationElement extends ClassElement {
   ClassElement get mixin;
   InterfaceType get mixinType;
+
+  /// If this is an unnamed mixin application [subclass] is the subclass for
+  /// which this mixin application is created.
+  ClassElement get subclass;
 }
 
 /// Enum declaration.
 abstract class EnumClassElement extends ClassElement {
   /// The static fields implied by the enum values.
-  List<FieldElement> get enumValues;
+  List<EnumConstantElement> get enumValues;
+}
+
+/// An enum constant value.
+abstract class EnumConstantElement extends FieldElement {
+  /// The enum that declared this constant.
+  EnumClassElement get enclosingClass;
+
+  /// The index of this constant within the values of the enum.
+  int get index;
 }
 
 /// The label entity defined by a labeled statement.
@@ -1539,8 +1604,9 @@ abstract class TypeVariableElement extends Element
   @deprecated
   get enclosingElement;
 
-  /// The class or typedef on which this type variable is defined.
-  TypeDeclarationElement get typeDeclaration;
+  /// The class, typedef, function, method, or function typed parameter on
+  /// which this type variable is defined.
+  GenericElement get typeDeclaration;
 
   /// The index of this type variable within its type declaration.
   int get index;
@@ -1557,9 +1623,7 @@ abstract class MetadataAnnotation implements Spannable {
   /// The front-end constant of this metadata annotation.
   ConstantExpression get constant;
   Element get annotatedElement;
-  int get resolutionState;
-  Token get beginToken;
-  Token get endToken;
+  SourceSpan get sourcePosition;
 
   bool get hasNode;
   Node get node;
@@ -1582,7 +1646,7 @@ abstract class TypedElement extends Element {
 }
 
 /// An [Element] that can define a function type.
-abstract class FunctionTypedElement extends Element {
+abstract class FunctionTypedElement extends Element implements GenericElement {
   /// The function signature for the function type defined by this element,
   /// if any.
   FunctionSignature get functionSignature;
@@ -1617,14 +1681,101 @@ abstract class AstElement extends AnalyzableElement {
   ResolvedAst get resolvedAst;
 }
 
-class ResolvedAst {
+/// Enum values for different ways of defining semantics for an element.
+enum ResolvedAstKind {
+  /// The semantics of the element is defined in terms of an AST with resolved
+  /// data mapped in [TreeElements].
+  PARSED,
+
+  /// The element is an implicit default constructor. No AST or [TreeElements]
+  /// are provided.
+  DEFAULT_CONSTRUCTOR,
+
+  /// The element is an implicit forwarding constructor on a mixin application.
+  /// No AST or [TreeElements] are provided.
+  FORWARDING_CONSTRUCTOR,
+
+  /// The element is the `loadLibrary` getter implicitly defined on a deferred
+  /// prefix.
+  DEFERRED_LOAD_LIBRARY,
+}
+
+/// [ResolvedAst] contains info that define the semantics of an element.
+abstract class ResolvedAst {
+  /// The element whose semantics is defined.
+  Element get element;
+
+  /// The kind of semantics definition used for this object.
+  ResolvedAstKind get kind;
+
+  /// The root AST node for the declaration of [element]. This only available if
+  /// [kind] is `ResolvedAstKind.PARSED`.
+  Node get node;
+
+  /// The AST node for the 'body' of [element].
+  ///
+  /// For functions and constructors this is the root AST node of the method
+  /// body, and for variables this is the root AST node of the initializer, if
+  /// available.
+  ///
+  /// This only available if [kind] is `ResolvedAstKind.PARSED`.
+  Node get body;
+
+  /// The [TreeElements] containing the resolution data for [node]. This only
+  /// available of [kind] is `ResolvedAstKind.PARSED`.
+  TreeElements get elements;
+
+  /// Returns the uri for the source file defining [node] and [body]. This
+  /// only available if [kind] is `ResolvedAstKind.PARSED`.
+  Uri get sourceUri;
+}
+
+/// [ResolvedAst] implementation used for elements whose semantics is defined in
+/// terms an AST and a [TreeElements].
+class ParsedResolvedAst implements ResolvedAst {
   final Element element;
   final Node node;
+  final Node body;
   final TreeElements elements;
+  final Uri sourceUri;
 
-  ResolvedAst(this.element, this.node, this.elements);
+  ParsedResolvedAst(
+      this.element, this.node, this.body, this.elements, this.sourceUri);
 
-  String toString() => '$element:$node';
+  ResolvedAstKind get kind => ResolvedAstKind.PARSED;
+
+  String toString() => '$kind:$element:$node';
+}
+
+/// [ResolvedAst] implementation used for synthesized elements whose semantics
+/// is not defined in terms an AST and a [TreeElements].
+class SynthesizedResolvedAst implements ResolvedAst {
+  final Element element;
+  final ResolvedAstKind kind;
+
+  SynthesizedResolvedAst(this.element, this.kind);
+
+  @override
+  TreeElements get elements {
+    throw new UnsupportedError('$this does not provide a TreeElements');
+  }
+
+  @override
+  Node get node {
+    throw new UnsupportedError('$this does not have a root AST node');
+  }
+
+  @override
+  Node get body {
+    throw new UnsupportedError('$this does not have a body AST node');
+  }
+
+  @override
+  Uri get sourceUri {
+    throw new UnsupportedError('$this does not have a source URI');
+  }
+
+  String toString() => '$kind:$element';
 }
 
 /// A [MemberSignature] is a member of an interface.

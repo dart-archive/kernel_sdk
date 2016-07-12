@@ -18,12 +18,17 @@ class JavaScriptConstantTask extends ConstantCompilerTask {
   JavaScriptConstantTask(Compiler compiler)
       : this.dartConstantCompiler = new DartConstantCompiler(compiler),
         this.jsConstantCompiler = new JavaScriptConstantCompiler(compiler),
-        super(compiler);
+        super(compiler.measurer);
 
   String get name => 'ConstantHandler';
 
   @override
   ConstantSystem get constantSystem => dartConstantCompiler.constantSystem;
+
+  @override
+  bool hasConstantValue(ConstantExpression expression) {
+    return dartConstantCompiler.hasConstantValue(expression);
+  }
 
   @override
   ConstantValue getConstantValue(ConstantExpression expression) {
@@ -33,11 +38,6 @@ class JavaScriptConstantTask extends ConstantCompilerTask {
   @override
   ConstantValue getConstantValueForVariable(VariableElement element) {
     return dartConstantCompiler.getConstantValueForVariable(element);
-  }
-
-  @override
-  ConstantExpression getConstantForVariable(VariableElement element) {
-    return dartConstantCompiler.getConstantForVariable(element);
   }
 
   @override
@@ -58,9 +58,10 @@ class JavaScriptConstantTask extends ConstantCompilerTask {
     });
   }
 
-  void compileVariable(VariableElement element) {
-    measure(() {
-      jsConstantCompiler.compileVariable(element);
+  @override
+  ConstantExpression compileVariable(VariableElement element) {
+    return measure(() {
+      return jsConstantCompiler.compileVariable(element);
     });
   }
 
@@ -115,6 +116,8 @@ class JavaScriptConstantCompiler extends ConstantCompilerBase
       new Map<Node, ConstantExpression>();
 
   // Constants computed for metadata.
+  // TODO(johnniwinther): Remove this when no longer used by
+  // poi/forget_element_test.
   final Map<MetadataAnnotation, ConstantExpression> metadataConstantMap =
       new Map<MetadataAnnotation, ConstantExpression>();
 
@@ -131,28 +134,18 @@ class JavaScriptConstantCompiler extends ConstantCompilerBase
         element, definitions,
         isConst: isConst, checkType: checkType);
     if (!isConst && value == null) {
-      lazyStatics.add(element);
+      registerLazyStatic(element);
     }
     return value;
   }
 
-  void addCompileTimeConstantForEmission(ConstantValue constant) {
-    compiledConstants.add(constant);
+  @override
+  void registerLazyStatic(FieldElement element) {
+    lazyStatics.add(element);
   }
 
-  /**
-   * Returns an [Iterable] of static non final fields that need to be
-   * initialized. The fields list must be evaluated in order since they might
-   * depend on each other.
-   */
-  Iterable<VariableElement> getStaticNonFinalFieldsForEmission() {
-    return initialVariableValues.keys.where((element) {
-      return element.kind == ElementKind.FIELD &&
-          !element.isInstanceMember &&
-          !element.modifiers.isFinal &&
-          // The const fields are all either emitted elsewhere or inlined.
-          !element.modifiers.isConst;
-    });
+  void addCompileTimeConstantForEmission(ConstantValue constant) {
+    compiledConstants.add(constant);
   }
 
   List<VariableElement> getLazilyInitializedFieldsForEmission() {
@@ -188,15 +181,6 @@ class JavaScriptConstantCompiler extends ConstantCompilerBase
     return result;
   }
 
-  ConstantValue getInitialValueFor(VariableElement element) {
-    ConstantExpression initialValue =
-        initialVariableValues[element.declaration];
-    if (initialValue == null) {
-      reporter.internalError(element, "No initial value for given element.");
-    }
-    return getConstantValue(initialValue);
-  }
-
   ConstantExpression compileNode(Node node, TreeElements elements,
       {bool enforceConst: true}) {
     return compileNodeWithDefinitions(node, elements, isConst: enforceConst);
@@ -230,9 +214,10 @@ class JavaScriptConstantCompiler extends ConstantCompilerBase
   }
 
   ConstantValue getConstantValueForMetadata(MetadataAnnotation metadata) {
-    return getConstantValue(metadataConstantMap[metadata]);
+    return getConstantValue(metadata.constant);
   }
 
+  @override
   ConstantExpression compileMetadata(
       MetadataAnnotation metadata, Node node, TreeElements elements) {
     ConstantExpression constant =

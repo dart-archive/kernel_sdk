@@ -11,7 +11,6 @@ import 'package:analysis_server/src/plugin/server_plugin.dart';
 import 'package:analysis_server/src/services/index/index.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
-import 'package:analyzer/plugin/embedded_resolver_provider.dart';
 import 'package:analyzer/plugin/resolver_provider.dart';
 import 'package:analyzer/source/pub_package_map_provider.dart';
 import 'package:analyzer/src/generated/sdk.dart';
@@ -30,13 +29,14 @@ class SocketServer {
   /**
    * The function used to create a new SDK using the default SDK.
    */
-  final SdkCreator defaultSdkCreator;
+  final DartSdkManager sdkManager;
 
   final DirectoryBasedDartSdk defaultSdk;
   final InstrumentationService instrumentationService;
   final ServerPlugin serverPlugin;
-  final EmbeddedResolverProvider embeddedResolverProvider;
+  final ResolverProvider fileResolverProvider;
   final ResolverProvider packageResolverProvider;
+  final bool useSingleContextManager;
 
   /**
    * The analysis server that was created when a client established a
@@ -51,12 +51,13 @@ class SocketServer {
 
   SocketServer(
       this.analysisServerOptions,
-      this.defaultSdkCreator,
+      this.sdkManager,
       this.defaultSdk,
       this.instrumentationService,
       this.serverPlugin,
+      this.fileResolverProvider,
       this.packageResolverProvider,
-      this.embeddedResolverProvider);
+      this.useSingleContextManager);
 
   /**
    * Create an analysis server which will communicate with the client using the
@@ -96,10 +97,11 @@ class SocketServer {
         index,
         serverPlugin,
         analysisServerOptions,
-        defaultSdkCreator,
+        sdkManager,
         instrumentationService,
+        fileResolverProvider: fileResolverProvider,
         packageResolverProvider: packageResolverProvider,
-        embeddedResolverProvider: embeddedResolverProvider,
+        useSingleContextManager: useSingleContextManager,
         rethrowExceptions: false);
     analysisServer.userDefinedPlugins = userDefinedPlugins;
   }

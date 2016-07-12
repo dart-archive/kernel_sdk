@@ -527,6 +527,7 @@ void ConstantPropagator::VisitTestSmi(TestSmiInstr* instr) {
 
 
 void ConstantPropagator::VisitTestCids(TestCidsInstr* instr) {
+  // TODO(sra): Constant fold test.
   SetValue(instr, non_constant_);
 }
 
@@ -603,8 +604,8 @@ void ConstantPropagator::VisitDebugStepCheck(DebugStepCheckInstr* instr) {
 }
 
 
-void ConstantPropagator::VisitStringFromCharCode(
-    StringFromCharCodeInstr* instr) {
+void ConstantPropagator::VisitOneByteStringFromCharCode(
+    OneByteStringFromCharCodeInstr* instr) {
   const Object& o = instr->char_code()->definition()->constant_value();
   if (o.IsNull() || IsNonConstant(o)) {
     SetValue(instr, non_constant_);
@@ -1513,8 +1514,9 @@ void ConstantPropagator::EliminateRedundantBranches() {
 
           changed = true;
 
-          if (FLAG_trace_constant_propagation) {
-            OS::Print("Eliminated branch in B%" Pd " common target B%" Pd "\n",
+          if (FLAG_trace_constant_propagation &&
+              FlowGraphPrinter::ShouldPrint(graph_->function())) {
+            THR_Print("Eliminated branch in B%" Pd " common target B%" Pd "\n",
                       block->block_id(), join->block_id());
           }
         }
@@ -1532,7 +1534,8 @@ void ConstantPropagator::EliminateRedundantBranches() {
 
 
 void ConstantPropagator::Transform() {
-  if (FLAG_trace_constant_propagation) {
+  if (FLAG_trace_constant_propagation &&
+      FlowGraphPrinter::ShouldPrint(graph_->function())) {
     FlowGraphPrinter::PrintGraph("Before CP", graph_);
   }
 
@@ -1545,8 +1548,9 @@ void ConstantPropagator::Transform() {
        b.Advance()) {
     BlockEntryInstr* block = b.Current();
     if (!reachable_->Contains(block->preorder_number())) {
-      if (FLAG_trace_constant_propagation) {
-        OS::Print("Unreachable B%" Pd "\n", block->block_id());
+      if (FLAG_trace_constant_propagation &&
+          FlowGraphPrinter::ShouldPrint(graph_->function())) {
+        THR_Print("Unreachable B%" Pd "\n", block->block_id());
       }
       // Remove all uses in unreachable blocks.
       block->ClearAllInstructions();
@@ -1617,8 +1621,9 @@ void ConstantPropagator::Transform() {
           !defn->IsStoreIndexed() &&
           !defn->IsStoreInstanceField() &&
           !defn->IsStoreStaticField()) {
-        if (FLAG_trace_constant_propagation) {
-          OS::Print("Constant v%" Pd " = %s\n",
+        if (FLAG_trace_constant_propagation &&
+            FlowGraphPrinter::ShouldPrint(graph_->function())) {
+          THR_Print("Constant v%" Pd " = %s\n",
                     defn->ssa_temp_index(),
                     defn->constant_value().ToCString());
         }
@@ -1680,7 +1685,8 @@ void ConstantPropagator::Transform() {
   GrowableArray<BitVector*> dominance_frontier;
   graph_->ComputeDominators(&dominance_frontier);
 
-  if (FLAG_trace_constant_propagation) {
+  if (FLAG_trace_constant_propagation &&
+      FlowGraphPrinter::ShouldPrint(graph_->function())) {
     FlowGraphPrinter::PrintGraph("After CP", graph_);
   }
 }

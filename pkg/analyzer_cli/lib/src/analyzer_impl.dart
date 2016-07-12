@@ -13,18 +13,17 @@ import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/java_io.dart';
-import 'package:analyzer/src/generated/sdk_io.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
 import 'package:analyzer/src/generated/utilities_general.dart';
 import 'package:analyzer_cli/src/driver.dart';
 import 'package:analyzer_cli/src/error_formatter.dart';
+import 'package:analyzer_cli/src/incremental_analyzer.dart';
 import 'package:analyzer_cli/src/options.dart';
+import 'package:path/path.dart' as pathos;
 
 /// The maximum number of sources for which AST structures should be kept in the cache.
 const int _maxCacheSize = 512;
-
-DirectoryBasedDartSdk sdk;
 
 int currentTimeMillis() => new DateTime.now().millisecondsSinceEpoch;
 
@@ -39,6 +38,8 @@ class AnalyzerImpl {
   final int startTime;
 
   final AnalysisContext context;
+
+  final IncrementalAnalysisSession incrementalSession;
 
   /// Accumulated analysis statistics.
   final AnalysisStats stats;
@@ -62,8 +63,8 @@ class AnalyzerImpl {
   /// specified the "--package-warnings" option.
   String _selfPackageName;
 
-  AnalyzerImpl(this.context, this.librarySource, this.options, this.stats,
-      this.startTime);
+  AnalyzerImpl(this.context, this.incrementalSession, this.librarySource,
+      this.options, this.stats, this.startTime);
 
   /// Returns the maximal [ErrorSeverity] of the recorded errors.
   ErrorSeverity get maxErrorSeverity {
@@ -137,6 +138,7 @@ class AnalyzerImpl {
     var units = new Set<CompilationUnitElement>();
     var libraries = new Set<LibraryElement>();
     addLibrarySources(library, libraries, units);
+    incrementalSession?.setAnalyzedSources(sources);
   }
 
   /// Setup local fields such as the analysis context for analysis.
@@ -179,11 +181,15 @@ class AnalyzerImpl {
 
   /// Returns true if we want to report diagnostics for this library.
   bool _isAnalyzedLibrary(LibraryElement library) {
-    switch (library.source.uriKind) {
+    Source source = library.source;
+    switch (source.uriKind) {
       case UriKind.DART_URI:
         return options.showSdkWarnings;
       case UriKind.PACKAGE_URI:
-        return _isAnalyzedPackage(library.source.uri);
+        if (_isPathInPubCache(source.fullName)) {
+          return false;
+        }
+        return _isAnalyzedPackage(source.uri);
       default:
         return true;
     }
@@ -194,7 +200,6 @@ class AnalyzerImpl {
     if (uri.scheme != 'package' || uri.pathSegments.isEmpty) {
       return false;
     }
-
     String packageName = uri.pathSegments.first;
     if (packageName == _selfPackageName) {
       return true;
@@ -254,14 +259,12 @@ class AnalyzerImpl {
   static ErrorSeverity computeSeverity(
       AnalysisError error, CommandLineOptions options,
       [AnalysisContext context]) {
-    bool isStrongMode = false;
     if (context != null) {
       ErrorProcessor processor = ErrorProcessor.getProcessor(context, error);
       // If there is a processor for this error, defer to it.
       if (processor != null) {
         return processor.severity;
       }
-      isStrongMode = context.analysisOptions.strongMode;
     }
 
     if (!options.enableTypeChecks &&
@@ -270,10 +273,6 @@ class AnalyzerImpl {
     } else if (options.hintsAreFatal && error.errorCode is HintCode) {
       return ErrorSeverity.ERROR;
     } else if (options.lintsAreFatal && error.errorCode is LintCode) {
-      return ErrorSeverity.ERROR;
-    } else if (isStrongMode &&
-        error is StaticWarningCode &&
-        (error as StaticWarningCode).isStrongModeError) {
       return ErrorSeverity.ERROR;
     }
     return error.errorCode.errorSeverity;
@@ -303,6 +302,13 @@ class AnalyzerImpl {
     ErrorSeverity severity = computeSeverity(error, options, context);
     bool isOverridden = false;
 
+    // Skip TODOs categorically (unless escalated to ERROR or HINT.)
+    // https://github.com/dart-lang/sdk/issues/26215
+    if (error.errorCode.type == ErrorType.TODO &&
+        severity == ErrorSeverity.INFO) {
+      return null;
+    }
+
     // First check for a filter.
     if (severity == null) {
       // Null severity means the error has been explicitly ignored.
@@ -317,14 +323,23 @@ class AnalyzerImpl {
       if (severity == ErrorSeverity.INFO && options.disableHints) {
         return null;
       }
-
-      // Skip TODOs.
-      if (severity == ErrorType.TODO) {
-        return null;
-      }
     }
 
     return new ProcessedSeverity(severity, isOverridden);
+  }
+
+  /// Return `true` if the given [path] is in the Pub cache.
+  static bool _isPathInPubCache(String path) {
+    List<String> parts = pathos.split(path);
+    if (parts.contains('.pub-cache')) {
+      return true;
+    }
+    for (int i = 0; i < parts.length - 2; i++) {
+      if (parts[i] == 'Pub' && parts[i + 1] == 'Cache') {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

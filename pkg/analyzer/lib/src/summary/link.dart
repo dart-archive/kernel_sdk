@@ -64,6 +64,8 @@ import 'package:analyzer/dart/element/type.dart';
 import 'package:analyzer/src/dart/constant/value.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/type.dart';
+import 'package:analyzer/src/dart/resolver/inheritance_manager.dart';
+import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
 import 'package:analyzer/src/summary/format.dart';
@@ -158,18 +160,14 @@ Map<String, LinkedLibraryBuilder> setupForLink(
 EntityRefBuilder _createLinkedType(
     DartType type,
     CompilationUnitElementInBuildUnit compilationUnit,
-    TypeParameterizedElementForLink typeParameterContext,
+    TypeParameterizedElementMixin typeParameterContext,
     {int slot}) {
   EntityRefBuilder result = new EntityRefBuilder(slot: slot);
   if (type is InterfaceType) {
     ClassElementForLink element = type.element;
     result.reference = compilationUnit.addReference(element);
-    if (type.typeArguments.isNotEmpty) {
-      result.typeArguments = type.typeArguments
-          .map((DartType t) =>
-              _createLinkedType(t, compilationUnit, typeParameterContext))
-          .toList();
-    }
+    _storeTypeArguments(
+        type.typeArguments, result, compilationUnit, typeParameterContext);
     return result;
   } else if (type is DynamicTypeImpl) {
     result.reference = compilationUnit.addRawReference('dynamic');
@@ -181,32 +179,60 @@ EntityRefBuilder _createLinkedType(
     result.reference = compilationUnit.addRawReference('*bottom*');
     return result;
   } else if (type is TypeParameterType) {
-    TypeParameterElementForLink element = type.element;
-    result.paramReference =
-        typeParameterContext.typeParameterNestingLevel - element.nestingLevel;
+    TypeParameterElementImpl element = type.element;
+    if (typeParameterContext.isTypeParameterInScope(element)) {
+      result.paramReference =
+          typeParameterContext.typeParameterNestingLevel - element.nestingLevel;
+    } else {
+      // Out-of-scope type parameters only occur in circumstances where they
+      // are irrelevant (i.e. when a type parameter is unused).  So we can
+      // safely convert them to `dynamic`.
+      result.reference = compilationUnit.addRawReference('dynamic');
+    }
     return result;
   } else if (type is FunctionType) {
     Element element = type.element;
     if (element is FunctionElementForLink_FunctionTypedParam) {
       result.reference =
-          compilationUnit.addReference(element.enclosingExecutable);
+          compilationUnit.addReference(element.typeParameterContext);
       result.implicitFunctionTypeIndices = element.implicitFunctionTypeIndices;
-      if (type.typeArguments.isNotEmpty) {
-        result.typeArguments = type.typeArguments
-            .map((DartType t) =>
-                _createLinkedType(t, compilationUnit, typeParameterContext))
-            .toList();
-      }
+      _storeTypeArguments(
+          type.typeArguments, result, compilationUnit, typeParameterContext);
+      return result;
+    }
+    if (element is TopLevelFunctionElementForLink) {
+      result.reference = compilationUnit.addReference(element);
+      _storeTypeArguments(
+          type.typeArguments, result, compilationUnit, typeParameterContext);
       return result;
     }
     if (element is MethodElementForLink) {
       result.reference = compilationUnit.addReference(element);
-      if (type.typeArguments.isNotEmpty) {
-        result.typeArguments = type.typeArguments
-            .map((DartType t) =>
-                _createLinkedType(t, compilationUnit, typeParameterContext))
-            .toList();
-      }
+      _storeTypeArguments(
+          type.typeArguments, result, compilationUnit, typeParameterContext);
+      return result;
+    }
+    if (element is FunctionTypeAliasElementForLink) {
+      result.reference = compilationUnit.addReference(element);
+      _storeTypeArguments(
+          type.typeArguments, result, compilationUnit, typeParameterContext);
+      return result;
+    }
+    if (element is FunctionElement && element.enclosingElement == null) {
+      // Element is a synthetic function element that was generated on the fly
+      // to represent a type that has no associated source code location.
+      result.syntheticReturnType = _createLinkedType(
+          element.returnType, compilationUnit, typeParameterContext);
+      result.syntheticParams = element.parameters
+          .map((ParameterElement param) => _serializeSyntheticParam(
+              param, compilationUnit, typeParameterContext))
+          .toList();
+      return result;
+    }
+    if (element is FunctionElement) {
+      // Element is a local function inside another executable.
+      result.reference = compilationUnit.addReference(element);
+      // TODO(paulberry): do I need to store type arguments?
       return result;
     }
     // TODO(paulberry): implement other cases.
@@ -214,6 +240,72 @@ EntityRefBuilder _createLinkedType(
   }
   // TODO(paulberry): implement other cases.
   throw new UnimplementedError('${type.runtimeType}');
+}
+
+DartType _dynamicIfNull(DartType type) {
+  if (type == null || type.isBottom || type.isVoid) {
+    return DynamicTypeImpl.instance;
+  }
+  return type;
+}
+
+/**
+ * Create an [UnlinkedParam] representing the given [parameter], which should be
+ * a parameter of a synthetic function type (e.g. one produced during type
+ * inference as a result of computing the least upper bound of two function
+ * types).
+ */
+UnlinkedParamBuilder _serializeSyntheticParam(
+    ParameterElement parameter,
+    CompilationUnitElementInBuildUnit compilationUnit,
+    TypeParameterizedElementMixin typeParameterContext) {
+  UnlinkedParamBuilder b = new UnlinkedParamBuilder();
+  b.name = parameter.name;
+  switch (parameter.parameterKind) {
+    case ParameterKind.REQUIRED:
+      b.kind = UnlinkedParamKind.required;
+      break;
+    case ParameterKind.POSITIONAL:
+      b.kind = UnlinkedParamKind.positional;
+      break;
+    case ParameterKind.NAMED:
+      b.kind = UnlinkedParamKind.named;
+      break;
+  }
+  DartType type = parameter.type;
+  if (!parameter.hasImplicitType) {
+    if (type is FunctionType && type.element.isSynthetic) {
+      b.isFunctionTyped = true;
+      b.type = _createLinkedType(
+          type.returnType, compilationUnit, typeParameterContext);
+      b.parameters = type.parameters
+          .map((parameter) => _serializeSyntheticParam(
+              parameter, compilationUnit, typeParameterContext))
+          .toList();
+    } else {
+      b.type = _createLinkedType(type, compilationUnit, typeParameterContext);
+    }
+  }
+  return b;
+}
+
+/**
+ * Store the given [typeArguments] in [encodedType], using [compilationUnit] and
+ * [typeParameterContext] to serialize them.
+ */
+void _storeTypeArguments(
+    List<DartType> typeArguments,
+    EntityRefBuilder encodedType,
+    CompilationUnitElementInBuildUnit compilationUnit,
+    TypeParameterizedElementMixin typeParameterContext) {
+  int count = typeArguments.length;
+  List<EntityRefBuilder> encodedTypeArguments =
+      new List<EntityRefBuilder>(count);
+  for (int i = 0; i < count; i++) {
+    encodedTypeArguments[i] = _createLinkedType(
+        typeArguments[i], compilationUnit, typeParameterContext);
+  }
+  encodedType.typeArguments = encodedTypeArguments;
 }
 
 /**
@@ -229,11 +321,27 @@ typedef LinkedLibrary GetDependencyCallback(String absoluteUri);
 typedef UnlinkedUnit GetUnitCallback(String absoluteUri);
 
 /**
+ * Stub implementation of [AnalysisOptions] used during linking.
+ */
+class AnalysisOptionsForLink implements AnalysisOptions {
+  final Linker _linker;
+
+  AnalysisOptionsForLink(this._linker);
+
+  @override
+  bool get strongMode => _linker.strongMode;
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/**
  * Element representing a class or enum resynthesized from a summary
  * during linking.
  */
-abstract class ClassElementForLink
-    implements ClassElementImpl, ReferenceableElementForLink {
+abstract class ClassElementForLink extends Object
+    with ReferenceableElementForLink
+    implements AbstractClassElementImpl {
   Map<String, ReferenceableElementForLink> _containedNames;
 
   @override
@@ -247,25 +355,20 @@ abstract class ClassElementForLink
         hasBeenInferred = !enclosingElement.isInBuildUnit;
 
   @override
-  ConstructorElementForLink get asConstructor => unnamedConstructor;
+  List<PropertyAccessorElementForLink> get accessors;
 
   @override
-  ConstVariableNode get asConstVariable {
-    // When a class name is used as a constant variable, it doesn't depend on
-    // anything, so it is not necessary to include it in the constant
-    // dependency graph.
-    return null;
-  }
+  ConstructorElementForLink get asConstructor => unnamedConstructor;
 
   @override
   DartType get asStaticType =>
       enclosingElement.enclosingElement._linker.typeProvider.typeType;
 
   @override
-  TypeInferenceNode get asTypeInferenceNode => null;
+  List<ConstructorElementForLink> get constructors;
 
   @override
-  List<ConstructorElementForLink> get constructors;
+  CompilationUnitElementForLink get enclosingUnit => enclosingElement;
 
   @override
   List<FieldElementForLink> get fields;
@@ -277,6 +380,9 @@ abstract class ClassElementForLink
 
   @override
   LibraryElementForLink get library => enclosingElement.library;
+
+  @override
+  List<MethodElementForLink> get methods;
 
   @override
   String get name;
@@ -292,14 +398,12 @@ abstract class ClassElementForLink
       for (ConstructorElementForLink constructor in constructors) {
         _containedNames[constructor.name] = constructor;
       }
-      for (FieldElementForLink field in fields) {
-        // TODO(paulberry): do we need to handle nonstatic fields for
-        // consistent behavior with erroneous code?
-        if (field.isStatic) {
-          _containedNames[field.name] = field;
-        }
+      for (PropertyAccessorElementForLink accessor in accessors) {
+        _containedNames[accessor.name] = accessor;
       }
-      // TODO(paulberry): add methods.
+      for (MethodElementForLink method in methods) {
+        _containedNames[method.name] = method;
+      }
     }
     return _containedNames.putIfAbsent(
         name, () => UndefinedElementForLink.instance);
@@ -320,7 +424,8 @@ abstract class ClassElementForLink
  * linking.
  */
 class ClassElementForLink_Class extends ClassElementForLink
-    with TypeParameterizedElementForLink {
+    with TypeParameterizedElementMixin
+    implements ClassElementImpl {
   /**
    * The unlinked representation of the class in the summary.
    */
@@ -358,8 +463,8 @@ class ClassElementForLink_Class extends ClassElementForLink
           }
           SyntheticVariableElementForLink syntheticVariable = syntheticVariables
               .putIfAbsent(name, () => new SyntheticVariableElementForLink());
-          PropertyAccessorElementForLink accessor =
-              new PropertyAccessorElementForLink(
+          PropertyAccessorElementForLink_Executable accessor =
+              new PropertyAccessorElementForLink_Executable(enclosingElement,
                   this, unlinkedExecutable, syntheticVariable);
           _accessors.add(accessor);
           if (unlinkedExecutable.kind == UnlinkedExecutableKind.getter) {
@@ -367,6 +472,12 @@ class ClassElementForLink_Class extends ClassElementForLink
           } else {
             syntheticVariable._setter = accessor;
           }
+        }
+      }
+      for (FieldElementForLink_ClassField field in fields) {
+        _accessors.add(field.getter);
+        if (!field.isConst && !field.isFinal) {
+          _accessors.add(field.setter);
         }
       }
     }
@@ -384,15 +495,23 @@ class ClassElementForLink_Class extends ClassElementForLink
               .add(new ConstructorElementForLink(this, unlinkedExecutable));
         }
       }
+      if (_constructors.isEmpty) {
+        _unnamedConstructorComputed = true;
+        _unnamedConstructor = new ConstructorElementForLink_Synthetic(this);
+        _constructors.add(_unnamedConstructor);
+      }
     }
     return _constructors;
   }
 
   @override
+  ContextForLink get context => enclosingUnit.context;
+
+  @override
   String get displayName => _unlinkedClass.name;
 
   @override
-  TypeParameterizedElementForLink get enclosingTypeParameterContext => null;
+  TypeParameterizedElementMixin get enclosingTypeParameterContext => null;
 
   @override
   List<FieldElementForLink_ClassField> get fields {
@@ -406,8 +525,14 @@ class ClassElementForLink_Class extends ClassElementForLink
   }
 
   @override
+  String get identifier => name;
+
+  @override
   List<InterfaceType> get interfaces => _interfaces ??=
       _unlinkedClass.interfaces.map(_computeInterfaceType).toList();
+
+  @override
+  bool get isMixinApplication => _unlinkedClass.isMixinApplication;
 
   @override
   bool get isObject => _unlinkedClass.hasNoSupertype;
@@ -450,6 +575,10 @@ class ClassElementForLink_Class extends ClassElementForLink
       _type ??= buildType((int i) => typeParameterTypes[i], null);
 
   @override
+  List<UnlinkedTypeParam> get unlinkedTypeParams =>
+      _unlinkedClass.typeParameters;
+
+  @override
   ConstructorElementForLink get unnamedConstructor {
     if (!_unnamedConstructorComputed) {
       for (ConstructorElementForLink constructor in constructors) {
@@ -464,20 +593,18 @@ class ClassElementForLink_Class extends ClassElementForLink
   }
 
   @override
-  List<UnlinkedTypeParam> get _unlinkedTypeParams =>
-      _unlinkedClass.typeParameters;
-
-  @override
   DartType buildType(
       DartType getTypeArgument(int i), List<int> implicitFunctionTypeIndices) {
     int numTypeParameters = _unlinkedClass.typeParameters.length;
     if (numTypeParameters != 0) {
-      List<DartType> typeArguments = new List<DartType>(numTypeParameters);
-      for (int i = 0; i < numTypeParameters; i++) {
-        typeArguments[i] = getTypeArgument(i);
-      }
-      return new InterfaceTypeImpl.elementWithNameAndArgs(
-          this, name, typeArguments);
+      return new InterfaceTypeImpl.elementWithNameAndArgs(this, name, () {
+        List<DartType> typeArguments = new List<DartType>(numTypeParameters);
+        for (int i = 0; i < numTypeParameters; i++) {
+          typeArguments[i] =
+              getTypeArgument(i) ?? computeDefaultTypeArgument(i);
+        }
+        return typeArguments;
+      });
     } else {
       return _type ??= new InterfaceTypeImpl(this);
     }
@@ -522,12 +649,15 @@ class ClassElementForLink_Class extends ClassElementForLink
     }
   }
 
+  @override
+  String toString() => '$enclosingElement.$name';
+
   /**
    * Convert [typeRef] into an [InterfaceType].
    */
   InterfaceType _computeInterfaceType(EntityRef typeRef) {
     if (typeRef != null) {
-      DartType type = enclosingElement._resolveTypeRef(typeRef, this);
+      DartType type = enclosingElement.resolveTypeRef(typeRef, this);
       if (type is InterfaceType) {
         return type;
       }
@@ -543,7 +673,8 @@ class ClassElementForLink_Class extends ClassElementForLink
  * Element representing an enum resynthesized from a summary during
  * linking.
  */
-class ClassElementForLink_Enum extends ClassElementForLink {
+class ClassElementForLink_Enum extends ClassElementForLink
+    implements EnumElementImpl {
   /**
    * The unlinked representation of the enum in the summary.
    */
@@ -551,15 +682,22 @@ class ClassElementForLink_Enum extends ClassElementForLink {
 
   InterfaceType _type;
   List<FieldElementForLink_EnumField> _fields;
+  List<PropertyAccessorElementForLink> _accessors;
+  DartType _valuesType;
 
   ClassElementForLink_Enum(
       CompilationUnitElementForLink enclosingElement, this._unlinkedEnum)
       : super(enclosingElement);
 
   @override
-  List<PropertyAccessorElement> get accessors {
-    // TODO(paulberry): do we need to include synthetic accessors?
-    return const [];
+  List<PropertyAccessorElementForLink> get accessors {
+    if (_accessors == null) {
+      _accessors = <PropertyAccessorElementForLink>[];
+      for (FieldElementForLink_EnumField field in fields) {
+        _accessors.add(field.getter);
+      }
+    }
+    return _accessors;
   }
 
   @override
@@ -587,7 +725,7 @@ class ClassElementForLink_Enum extends ClassElementForLink {
   bool get isObject => false;
 
   @override
-  List<MethodElement> get methods => const [];
+  List<MethodElementForLink> get methods => const [];
 
   @override
   List<InterfaceType> get mixins => const [];
@@ -607,6 +745,12 @@ class ClassElementForLink_Enum extends ClassElementForLink {
   @override
   ConstructorElementForLink get unnamedConstructor => null;
 
+  /**
+   * Get the type of the enum's static member `values`.
+   */
+  DartType get valuesType =>
+      _valuesType ??= library._linker.typeProvider.listType.instantiate([type]);
+
   @override
   DartType buildType(DartType getTypeArgument(int i),
           List<int> implicitFunctionTypeIndices) =>
@@ -614,13 +758,17 @@ class ClassElementForLink_Enum extends ClassElementForLink {
 
   @override
   void link(CompilationUnitElementInBuildUnit compilationUnit) {}
+
+  @override
+  String toString() => '$enclosingElement.$name';
 }
 
 /**
  * Element representing a compilation unit resynthesized from a
  * summary during linking.
  */
-abstract class CompilationUnitElementForLink implements CompilationUnitElement {
+abstract class CompilationUnitElementForLink
+    implements CompilationUnitElementImpl, ResynthesizerContext {
   /**
    * The unlinked representation of the compilation unit in the
    * summary.
@@ -633,21 +781,68 @@ abstract class CompilationUnitElementForLink implements CompilationUnitElement {
    */
   final List<ReferenceableElementForLink> _references;
 
-  List<ClassElementForLink_Class> _types;
+  /**
+   * The absolute URI of this compilation unit.
+   */
+  final String _absoluteUri;
 
+  List<ClassElementForLink_Class> _types;
   Map<String, ReferenceableElementForLink> _containedNames;
   List<TopLevelVariableElementForLink> _topLevelVariables;
   List<ClassElementForLink_Enum> _enums;
+  List<TopLevelFunctionElementForLink> _functions;
+  List<PropertyAccessorElementForLink> _accessors;
+  List<FunctionTypeAliasElementForLink> _functionTypeAliases;
 
   /**
    * Index of this unit in the list of units in the enclosing library.
    */
   final int unitNum;
 
-  CompilationUnitElementForLink(UnlinkedUnit unlinkedUnit, this.unitNum)
-      : _references = new List<ReferenceableElementForLink>(
-            unlinkedUnit.references.length),
+  CompilationUnitElementForLink(UnlinkedUnit unlinkedUnit, this.unitNum,
+      int numReferences, this._absoluteUri)
+      : _references = new List<ReferenceableElementForLink>(numReferences),
         _unlinkedUnit = unlinkedUnit;
+
+  @override
+  List<PropertyAccessorElementForLink> get accessors {
+    if (_accessors == null) {
+      _accessors = <PropertyAccessorElementForLink>[];
+      Map<String, SyntheticVariableElementForLink> syntheticVariables =
+          <String, SyntheticVariableElementForLink>{};
+      for (UnlinkedExecutable unlinkedExecutable in _unlinkedUnit.executables) {
+        if (unlinkedExecutable.kind == UnlinkedExecutableKind.getter ||
+            unlinkedExecutable.kind == UnlinkedExecutableKind.setter) {
+          String name = unlinkedExecutable.name;
+          if (unlinkedExecutable.kind == UnlinkedExecutableKind.setter) {
+            assert(name.endsWith('='));
+            name = name.substring(0, name.length - 1);
+          }
+          SyntheticVariableElementForLink syntheticVariable = syntheticVariables
+              .putIfAbsent(name, () => new SyntheticVariableElementForLink());
+          PropertyAccessorElementForLink_Executable accessor =
+              new PropertyAccessorElementForLink_Executable(
+                  this, null, unlinkedExecutable, syntheticVariable);
+          _accessors.add(accessor);
+          if (unlinkedExecutable.kind == UnlinkedExecutableKind.getter) {
+            syntheticVariable._getter = accessor;
+          } else {
+            syntheticVariable._setter = accessor;
+          }
+        }
+      }
+      for (TopLevelVariableElementForLink variable in topLevelVariables) {
+        _accessors.add(variable.getter);
+        if (!variable.isConst && !variable.isFinal) {
+          _accessors.add(variable.setter);
+        }
+      }
+    }
+    return _accessors;
+  }
+
+  @override
+  ContextForLink get context => library.context;
 
   @override
   LibraryElementForLink get enclosingElement;
@@ -663,14 +858,52 @@ abstract class CompilationUnitElementForLink implements CompilationUnitElement {
     return _enums;
   }
 
+  @override
+  List<TopLevelFunctionElementForLink> get functions {
+    if (_functions == null) {
+      _functions = <TopLevelFunctionElementForLink>[];
+      for (UnlinkedExecutable executable in _unlinkedUnit.executables) {
+        if (executable.kind == UnlinkedExecutableKind.functionOrMethod) {
+          _functions.add(new TopLevelFunctionElementForLink(this, executable));
+        }
+      }
+    }
+    return _functions;
+  }
+
+  @override
+  List<FunctionTypeAliasElementForLink> get functionTypeAliases =>
+      _functionTypeAliases ??= _unlinkedUnit.typedefs
+          .map((UnlinkedTypedef t) =>
+              new FunctionTypeAliasElementForLink(this, t))
+          .toList();
+
+  @override
+  String get identifier => _absoluteUri;
+
   /**
    * Indicates whether this compilation element is part of the build unit
    * currently being linked.
    */
   bool get isInBuildUnit;
 
+  /**
+   * Determine whether type inference is complete in this compilation unit.
+   */
+  bool get isTypeInferenceComplete {
+    LibraryCycleForLink libraryCycleForLink = library.libraryCycleForLink;
+    if (libraryCycleForLink == null) {
+      return true;
+    } else {
+      return libraryCycleForLink._node.isEvaluated;
+    }
+  }
+
   @override
   LibraryElementForLink get library => enclosingElement;
+
+  @override
+  ResynthesizerContext get resynthesizerContext => this;
 
   @override
   List<TopLevelVariableElementForLink> get topLevelVariables {
@@ -715,8 +948,15 @@ abstract class CompilationUnitElementForLink implements CompilationUnitElement {
       for (ClassElementForLink_Enum enm in enums) {
         _containedNames[enm.name] = enm;
       }
-      for (TopLevelVariableElementForLink variable in topLevelVariables) {
-        _containedNames[variable.name] = variable;
+      for (TopLevelFunctionElementForLink function in functions) {
+        _containedNames[function.name] = function;
+      }
+      for (PropertyAccessorElementForLink accessor in accessors) {
+        _containedNames[accessor.name] = accessor;
+      }
+      for (FunctionTypeAliasElementForLink functionTypeAlias
+          in functionTypeAliases) {
+        _containedNames[functionTypeAlias.name] = functionTypeAlias;
       }
       // TODO(paulberry): fill in other top level entities (typedefs
       // and executables).
@@ -724,6 +964,14 @@ abstract class CompilationUnitElementForLink implements CompilationUnitElement {
     return _containedNames.putIfAbsent(
         name, () => UndefinedElementForLink.instance);
   }
+
+  /**
+   * Compute the type referred to by the given linked type [slot] (interpreted
+   * relative to [typeParameterContext]).  If there is no inferred type in the
+   * given slot, `dynamic` is returned.
+   */
+  DartType getLinkedType(
+      int slot, TypeParameterizedElementMixin typeParameterContext);
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -733,19 +981,41 @@ abstract class CompilationUnitElementForLink implements CompilationUnitElement {
    * [UnlinkedUnit.references].  If the reference is unresolved,
    * return [UndefinedElementForLink.instance].
    */
-  ReferenceableElementForLink _resolveRef(int index) {
+  ReferenceableElementForLink resolveRef(int index) {
     if (_references[index] == null) {
-      UnlinkedReference unlinkedReference = _unlinkedUnit.references[index];
+      UnlinkedReference unlinkedReference =
+          index < _unlinkedUnit.references.length
+              ? _unlinkedUnit.references[index]
+              : null;
       LinkedReference linkedReference = _linkedUnit.references[index];
-      String name = unlinkedReference.name;
-      int containingReference = unlinkedReference.prefixReference;
+      String name = unlinkedReference == null
+          ? linkedReference.name
+          : unlinkedReference.name;
+      int containingReference = unlinkedReference == null
+          ? linkedReference.containingReference
+          : unlinkedReference.prefixReference;
       if (containingReference != 0 &&
           _linkedUnit.references[containingReference].kind !=
               ReferenceKind.prefix) {
-        _references[index] =
-            _resolveRef(containingReference).getContainedName(name);
+        if (linkedReference.kind == ReferenceKind.function) {
+          // Local function
+          _references[index] = resolveRef(containingReference)
+                  .getLocalFunction(linkedReference.localIndex) ??
+              UndefinedElementForLink.instance;
+        } else {
+          _references[index] =
+              resolveRef(containingReference).getContainedName(name);
+        }
       } else if (linkedReference.dependency == 0) {
-        _references[index] = enclosingElement.getContainedName(name);
+        if (name == 'void') {
+          _references[index] = enclosingElement._linker.voidElement;
+        } else if (name == '*bottom*') {
+          _references[index] = enclosingElement._linker.bottomElement;
+        } else if (name == 'dynamic') {
+          _references[index] = enclosingElement._linker.dynamicElement;
+        } else {
+          _references[index] = enclosingElement.getContainedName(name);
+        }
       } else {
         LibraryElementForLink dependency =
             enclosingElement._getDependency(linkedReference.dependency);
@@ -755,16 +1025,10 @@ abstract class CompilationUnitElementForLink implements CompilationUnitElement {
     return _references[index];
   }
 
-  /**
-   * Resolve an [EntityRef] into a type.  If the reference is
-   * unresolved, return [DynamicTypeImpl.instance].
-   *
-   * TODO(paulberry): or should we have a class representing an
-   * unresolved type, for consistency with the full element model?
-   */
-  DartType _resolveTypeRef(
-      EntityRef type, TypeParameterizedElementForLink typeParameterContext,
-      {bool defaultVoid: false}) {
+  @override
+  DartType resolveTypeRef(
+      EntityRef type, TypeParameterizedElementMixin typeParameterContext,
+      {bool defaultVoid: false, bool instantiateToBoundsAllowed: true}) {
     if (type == null) {
       if (defaultVoid) {
         return VoidTypeImpl.instance;
@@ -783,16 +1047,22 @@ abstract class CompilationUnitElementForLink implements CompilationUnitElement {
     } else {
       DartType getTypeArgument(int i) {
         if (i < type.typeArguments.length) {
-          return _resolveTypeRef(type.typeArguments[i], typeParameterContext);
-        } else {
+          return resolveTypeRef(type.typeArguments[i], typeParameterContext);
+        } else if (!instantiateToBoundsAllowed) {
+          // Do not allow buildType to instantiate the bounds; force dynamic.
           return DynamicTypeImpl.instance;
+        } else {
+          return null;
         }
       }
-      ReferenceableElementForLink element = _resolveRef(type.reference);
+      ReferenceableElementForLink element = resolveRef(type.reference);
       return element.buildType(
           getTypeArgument, type.implicitFunctionTypeIndices);
     }
   }
+
+  @override
+  String toString() => enclosingElement.toString();
 }
 
 /**
@@ -806,9 +1076,14 @@ class CompilationUnitElementInBuildUnit extends CompilationUnitElementForLink {
   @override
   final LibraryElementInBuildUnit enclosingElement;
 
-  CompilationUnitElementInBuildUnit(this.enclosingElement,
-      UnlinkedUnit unlinkedUnit, this._linkedUnit, int unitNum)
-      : super(unlinkedUnit, unitNum);
+  CompilationUnitElementInBuildUnit(
+      this.enclosingElement,
+      UnlinkedUnit unlinkedUnit,
+      this._linkedUnit,
+      int unitNum,
+      String absoluteUri)
+      : super(
+            unlinkedUnit, unitNum, unlinkedUnit.references.length, absoluteUri);
 
   @override
   bool get isInBuildUnit => true;
@@ -827,11 +1102,22 @@ class CompilationUnitElementInBuildUnit extends CompilationUnitElementForLink {
       int numTypeParameters: 0,
       int unitNum: 0,
       int containingReference: 0,
+      int localIndex: 0,
       ReferenceKind kind: ReferenceKind.classOrEnum}) {
     List<LinkedReferenceBuilder> linkedReferences = _linkedUnit.references;
     List<UnlinkedReference> unlinkedReferences = _unlinkedUnit.references;
     for (int i = 0; i < linkedReferences.length; i++) {
       LinkedReferenceBuilder linkedReference = linkedReferences[i];
+      int candidateContainingReference = i < unlinkedReferences.length
+          ? unlinkedReferences[i].prefixReference
+          : linkedReference.containingReference;
+      if (candidateContainingReference != 0 &&
+          linkedReferences[candidateContainingReference].kind ==
+              ReferenceKind.prefix) {
+        // We don't need to match containing references when they are prefixes,
+        // since the relevant information is in linkedReference.dependency.
+        candidateContainingReference = 0;
+      }
       if (linkedReference.dependency == dependency &&
           (i < unlinkedReferences.length
                   ? unlinkedReferences[i].name
@@ -839,11 +1125,9 @@ class CompilationUnitElementInBuildUnit extends CompilationUnitElementForLink {
               name &&
           linkedReference.numTypeParameters == numTypeParameters &&
           linkedReference.unit == unitNum &&
-          (i < unlinkedReferences.length
-                  ? unlinkedReferences[i].prefixReference
-                  : linkedReference.containingReference) ==
-              containingReference &&
-          linkedReference.kind == kind) {
+          candidateContainingReference == containingReference &&
+          linkedReference.kind == kind &&
+          linkedReference.localIndex == localIndex) {
         return i;
       }
     }
@@ -854,7 +1138,8 @@ class CompilationUnitElementInBuildUnit extends CompilationUnitElementForLink {
         numTypeParameters: numTypeParameters,
         unit: unitNum,
         containingReference: containingReference,
-        kind: kind));
+        kind: kind,
+        localIndex: localIndex));
     return result;
   }
 
@@ -869,14 +1154,33 @@ class CompilationUnitElementInBuildUnit extends CompilationUnitElementForLink {
           dependency: library.addDependency(element.library),
           numTypeParameters: element.typeParameters.length,
           unitNum: element.enclosingElement.unitNum);
-    } else if (element is ExecutableElementForLink) {
-      // TODO(paulberry): will this code ever be executed for an executable
-      // element that's not inside a class?
-      assert(element.enclosingElement is ClassElementForLink_Class);
+    } else if (element is FunctionTypeAliasElementForLink) {
+      return addRawReference(element.name,
+          dependency: library.addDependency(element.library),
+          numTypeParameters: element.typeParameters.length,
+          unitNum: element.enclosingElement.unitNum,
+          kind: ReferenceKind.typedef);
+    } else if (element is FunctionElementForLink_Initializer) {
+      return addRawReference('',
+          containingReference: addReference(element.enclosingElement),
+          kind: ReferenceKind.function,
+          localIndex: 0);
+    } else if (element is FunctionElementForLink_Local_NonSynthetic) {
+      ExecutableElementForLink parent = element.enclosingElement;
+      int localIndex = parent.functions.indexOf(element);
+      assert(localIndex != -1);
+      return addRawReference(element.name,
+          containingReference: addReference(parent),
+          kind: ReferenceKind.function,
+          localIndex: localIndex);
+    } else if (element is ExecutableElementForLink_NonLocal) {
+      ClassElementForLink_Class enclosingClass = element.enclosingClass;
       ReferenceKind kind;
       switch (element._unlinkedExecutable.kind) {
         case UnlinkedExecutableKind.functionOrMethod:
-          kind = ReferenceKind.method;
+          kind = enclosingClass != null
+              ? ReferenceKind.method
+              : ReferenceKind.topLevelFunction;
           break;
         case UnlinkedExecutableKind.setter:
           kind = ReferenceKind.propertyAccessor;
@@ -887,11 +1191,42 @@ class CompilationUnitElementInBuildUnit extends CompilationUnitElementForLink {
       }
       return addRawReference(element.name,
           numTypeParameters: element.typeParameters.length,
-          containingReference: addReference(element.enclosingElement),
+          containingReference:
+              enclosingClass != null ? addReference(enclosingClass) : null,
+          dependency: enclosingClass != null
+              ? null
+              : library.addDependency(element.library),
           kind: kind);
+    } else if (element is FunctionElementForLink_Initializer) {
+      return addRawReference('',
+          containingReference: addReference(element.enclosingElement),
+          kind: ReferenceKind.function);
+    } else if (element is TopLevelVariableElementForLink) {
+      return addRawReference(element.name,
+          dependency: library.addDependency(element.library),
+          kind: ReferenceKind.topLevelPropertyAccessor);
+    } else if (element is FieldElementForLink_ClassField) {
+      ClassElementForLink_Class enclosingClass = element.enclosingElement;
+      // Note: even if the class has type parameters, we don't need to set
+      // numTypeParameters because numTypeParameters does not count type
+      // parameters of parent elements (see
+      // [LinkedReference.numTypeParameters]).
+      return addRawReference(element.name,
+          containingReference: addReference(enclosingClass),
+          kind: ReferenceKind.propertyAccessor);
     }
     // TODO(paulberry): implement other cases
     throw new UnimplementedError('${element.runtimeType}');
+  }
+
+  @override
+  DartType getLinkedType(
+      int slot, TypeParameterizedElementMixin typeParameterContext) {
+    // This method should only be called on compilation units that come from
+    // dependencies, never on compilation units that are part of the current
+    // build unit.
+    throw new StateError(
+        'Linker tried to access linked type from current build unit');
   }
 
   /**
@@ -935,7 +1270,7 @@ class CompilationUnitElementInBuildUnit extends CompilationUnitElementForLink {
    * unit's linked type list.
    */
   void _storeLinkedType(int slot, DartType linkedType,
-      TypeParameterizedElementForLink typeParameterContext) {
+      TypeParameterizedElementMixin typeParameterContext) {
     if (slot != 0) {
       if (linkedType != null && !linkedType.isDynamic) {
         _linkedUnit.types.add(_createLinkedType(
@@ -957,15 +1292,48 @@ class CompilationUnitElementInDependency extends CompilationUnitElementForLink {
   @override
   final LinkedUnit _linkedUnit;
 
+  List<EntityRef> _linkedTypeRefs;
+
   @override
   final LibraryElementInDependency enclosingElement;
 
-  CompilationUnitElementInDependency(this.enclosingElement,
-      UnlinkedUnit unlinkedUnit, this._linkedUnit, int unitNum)
-      : super(unlinkedUnit, unitNum);
+  CompilationUnitElementInDependency(
+      this.enclosingElement,
+      UnlinkedUnit unlinkedUnit,
+      LinkedUnit linkedUnit,
+      int unitNum,
+      String absoluteUri)
+      : _linkedUnit = linkedUnit,
+        super(
+            unlinkedUnit, unitNum, linkedUnit.references.length, absoluteUri) {
+    // Make one pass through the linked types to determine the lengths for
+    // _linkedTypeRefs and _linkedTypes.  TODO(paulberry): add an int to the
+    // summary to make this unnecessary.
+    int maxLinkedTypeSlot = 0;
+    for (EntityRef ref in _linkedUnit.types) {
+      if (ref.slot > maxLinkedTypeSlot) {
+        maxLinkedTypeSlot = ref.slot;
+      }
+    }
+    // Initialize _linkedTypeRefs.
+    _linkedTypeRefs = new List<EntityRef>(maxLinkedTypeSlot + 1);
+    for (EntityRef ref in _linkedUnit.types) {
+      _linkedTypeRefs[ref.slot] = ref;
+    }
+  }
 
   @override
   bool get isInBuildUnit => false;
+
+  @override
+  DartType getLinkedType(
+      int slot, TypeParameterizedElementMixin typeParameterContext) {
+    if (slot < _linkedTypeRefs.length) {
+      return resolveTypeRef(_linkedTypeRefs[slot], typeParameterContext);
+    } else {
+      return DynamicTypeImpl.instance;
+    }
+  }
 }
 
 /**
@@ -1029,7 +1397,7 @@ class ConstConstructorNode extends ConstNode {
             UnlinkedConstructorInitializerKind.thisInvocation) {
           defaultSuperInvocationNeeded = false;
           ConstructorElementForLink constructor = constructorElement
-              .enclosingElement
+              .enclosingClass
               .getContainedName(constructorInitializer.name)
               .asConstructor;
           safeAddDependency(constructor?._constNode);
@@ -1056,7 +1424,7 @@ class ConstConstructorNode extends ConstNode {
         // Note: non-static const isn't allowed but we handle it anyway so
         // that we won't be confused by incorrect code.
         if ((field.isFinal || field.isConst) && !field.isStatic) {
-          safeAddDependency(field.asConstVariable);
+          safeAddDependency(field.getter.asConstVariable);
         }
       }
       for (ParameterElementForLink parameterElement
@@ -1075,8 +1443,8 @@ class ConstConstructorNode extends ConstNode {
     EntityRef redirectedConstructor =
         constructorElement._unlinkedExecutable.redirectedConstructor;
     if (redirectedConstructor != null) {
-      return constructorElement.enclosingElement.enclosingElement
-          ._resolveRef(redirectedConstructor.reference)
+      return constructorElement.compilationUnit
+          .resolveRef(redirectedConstructor.reference)
           .asConstructor;
     } else {
       return null;
@@ -1129,35 +1497,80 @@ abstract class ConstNode extends Node<ConstNode> {
       return;
     }
     int refPtr = 0;
+    int intPtr = 0;
     for (UnlinkedConstOperation operation in unlinkedConst.operations) {
       switch (operation) {
+        case UnlinkedConstOperation.pushInt:
+          intPtr++;
+          break;
+        case UnlinkedConstOperation.pushLongInt:
+          int numInts = unlinkedConst.ints[intPtr++];
+          intPtr += numInts;
+          break;
+        case UnlinkedConstOperation.concatenate:
+          intPtr++;
+          break;
         case UnlinkedConstOperation.pushReference:
           EntityRef ref = unlinkedConst.references[refPtr++];
           ConstVariableNode variable =
-              compilationUnit._resolveRef(ref.reference).asConstVariable;
+              compilationUnit.resolveRef(ref.reference).asConstVariable;
           if (variable != null) {
             dependencies.add(variable);
           }
           break;
+        case UnlinkedConstOperation.makeUntypedList:
+        case UnlinkedConstOperation.makeUntypedMap:
+          intPtr++;
+          break;
+        case UnlinkedConstOperation.assignToRef:
+          refPtr++;
+          break;
+        case UnlinkedConstOperation.invokeMethodRef:
+          EntityRef ref = unlinkedConst.references[refPtr++];
+          ConstVariableNode variable =
+              compilationUnit.resolveRef(ref.reference).asConstVariable;
+          if (variable != null) {
+            dependencies.add(variable);
+          }
+          intPtr += 2;
+          int numTypeArguments = unlinkedConst.ints[intPtr++];
+          refPtr += numTypeArguments;
+          break;
+        case UnlinkedConstOperation.invokeMethod:
+          intPtr += 2;
+          int numTypeArguments = unlinkedConst.ints[intPtr++];
+          refPtr += numTypeArguments;
+          break;
         case UnlinkedConstOperation.makeTypedList:
           refPtr++;
+          intPtr++;
           break;
         case UnlinkedConstOperation.makeTypedMap:
           refPtr += 2;
+          intPtr++;
           break;
         case UnlinkedConstOperation.invokeConstructor:
           EntityRef ref = unlinkedConst.references[refPtr++];
           ConstructorElementForLink element =
-              compilationUnit._resolveRef(ref.reference).asConstructor;
+              compilationUnit.resolveRef(ref.reference).asConstructor;
           if (element?._constNode != null) {
             dependencies.add(element._constNode);
           }
+          intPtr += 2;
+          break;
+        case UnlinkedConstOperation.typeCast:
+        case UnlinkedConstOperation.typeCheck:
+          refPtr++;
+          break;
+        case UnlinkedConstOperation.pushLocalFunctionReference:
+          intPtr += 2;
           break;
         default:
           break;
       }
     }
     assert(refPtr == unlinkedConst.references.length);
+    assert(intPtr == unlinkedConst.ints.length);
   }
 }
 
@@ -1178,7 +1591,7 @@ class ConstParameterNode extends ConstNode {
     List<ConstNode> dependencies = <ConstNode>[];
     collectDependencies(
         dependencies,
-        parameterElement._unlinkedParam.defaultValue,
+        parameterElement._unlinkedParam.initializer?.bodyExpr,
         parameterElement.compilationUnit);
     return dependencies;
   }
@@ -1188,8 +1601,9 @@ class ConstParameterNode extends ConstNode {
  * Element representing a constructor resynthesized from a summary
  * during linking.
  */
-class ConstructorElementForLink extends ExecutableElementForLink
-    implements ConstructorElementImpl, ReferenceableElementForLink {
+class ConstructorElementForLink extends ExecutableElementForLink_NonLocal
+    with ReferenceableElementForLink
+    implements ConstructorElementImpl {
   /**
    * If this is a `const` constructor and the enclosing library is
    * part of the build unit being linked, the constructor's node in
@@ -1197,10 +1611,12 @@ class ConstructorElementForLink extends ExecutableElementForLink
    */
   ConstConstructorNode _constNode;
 
-  ConstructorElementForLink(ClassElementForLink_Class enclosingElement,
+  ConstructorElementForLink(ClassElementForLink_Class enclosingClass,
       UnlinkedExecutable unlinkedExecutable)
-      : super(enclosingElement, unlinkedExecutable) {
-    if (enclosingElement.enclosingElement.isInBuildUnit &&
+      : super(enclosingClass.enclosingElement, enclosingClass,
+            unlinkedExecutable) {
+    if (enclosingClass.enclosingElement.isInBuildUnit &&
+        _unlinkedExecutable != null &&
         _unlinkedExecutable.constCycleSlot != 0) {
       _constNode = new ConstConstructorNode(this);
     }
@@ -1210,34 +1626,12 @@ class ConstructorElementForLink extends ExecutableElementForLink
   ConstructorElementForLink get asConstructor => this;
 
   @override
-  ConstVariableNode get asConstVariable => null;
-
-  @override
-  DartType get asStaticType {
-    // Referring to a constructor directly is an error, so just use
-    // `dynamic`.
-    return DynamicTypeImpl.instance;
-  }
-
-  @override
-  TypeInferenceNode get asTypeInferenceNode => null;
-
-  @override
   bool get isCycleFree {
     if (!_constNode.isEvaluated) {
       new ConstDependencyWalker().walk(_constNode);
     }
     return _constNode.isCycleFree;
   }
-
-  @override
-  DartType buildType(DartType getTypeArgument(int i),
-          List<int> implicitFunctionTypeIndices) =>
-      DynamicTypeImpl.instance;
-
-  @override
-  ReferenceableElementForLink getContainedName(String name) =>
-      UndefinedElementForLink.instance;
 
   /**
    * Perform const cycle detection on this constructor.
@@ -1251,6 +1645,21 @@ class ConstructorElementForLink extends ExecutableElementForLink
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/**
+ * A synthetic constructor.
+ */
+class ConstructorElementForLink_Synthetic extends ConstructorElementForLink {
+  ConstructorElementForLink_Synthetic(
+      ClassElementForLink_Class enclosingElement)
+      : super(enclosingElement, null);
+
+  @override
+  String get name => '';
+
+  @override
+  List<ParameterElement> get parameters => const <ParameterElement>[];
 }
 
 /**
@@ -1271,10 +1680,29 @@ class ConstVariableNode extends ConstNode {
     List<ConstNode> dependencies = <ConstNode>[];
     collectDependencies(
         dependencies,
-        variableElement.unlinkedVariable.constExpr,
+        variableElement.unlinkedVariable.initializer?.bodyExpr,
         variableElement.compilationUnit);
     return dependencies;
   }
+}
+
+/**
+ * Stub implementation of [AnalysisContext] which provides just those methods
+ * needed during linking.
+ */
+class ContextForLink implements AnalysisContext {
+  final Linker _linker;
+
+  ContextForLink(this._linker);
+
+  @override
+  AnalysisOptionsForLink get analysisOptions => _linker.analysisOptions;
+
+  @override
+  TypeSystem get typeSystem => _linker.typeSystem;
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /**
@@ -1408,7 +1836,7 @@ abstract class DependencyWalker<NodeType extends Node<NodeType>> {
  * linking.
  */
 abstract class ExecutableElementForLink extends Object
-    with TypeParameterizedElementForLink
+    with TypeParameterizedElementMixin, ParameterParentElementForLink
     implements ExecutableElementImpl {
   /**
    * The unlinked representation of the method in the summary.
@@ -1418,23 +1846,78 @@ abstract class ExecutableElementForLink extends Object
   DartType _declaredReturnType;
   DartType _inferredReturnType;
   FunctionTypeImpl _type;
-  List<TypeParameterElementForLink> _typeParameters;
-  List<ParameterElementForLink> _parameters;
+  String _name;
+  String _displayName;
+
+  @override
+  final CompilationUnitElementForLink compilationUnit;
+
+  ExecutableElementForLink(this.compilationUnit, this._unlinkedExecutable);
+
+  @override
+  ContextForLink get context => compilationUnit.context;
 
   /**
-   * TODO(paulberry): this won't always be a class element.
+   * If the executable element had an explicitly declared return type, return
+   * it.  Otherwise return `null`.
    */
-  @override
-  final ClassElementForLink_Class enclosingElement;
+  DartType get declaredReturnType {
+    if (_unlinkedExecutable.returnType == null) {
+      return null;
+    } else {
+      return _declaredReturnType ??=
+          compilationUnit.resolveTypeRef(_unlinkedExecutable.returnType, this);
+    }
+  }
 
-  ExecutableElementForLink(this.enclosingElement, this._unlinkedExecutable);
+  @override
+  String get displayName {
+    if (_displayName == null) {
+      _displayName = _unlinkedExecutable.name;
+      if (_unlinkedExecutable.kind == UnlinkedExecutableKind.setter) {
+        _displayName = _displayName.substring(0, _displayName.length - 1);
+      }
+    }
+    return _displayName;
+  }
 
   @override
-  TypeParameterizedElementForLink get enclosingTypeParameterContext =>
-      enclosingElement;
+  CompilationUnitElementImpl get enclosingUnit => compilationUnit;
 
   @override
   bool get hasImplicitReturnType => _unlinkedExecutable.returnType == null;
+
+  @override
+  List<int> get implicitFunctionTypeIndices => const <int>[];
+
+  /**
+   * Return the inferred return type of the executable element.  Should only be
+   * called if no return type was explicitly declared.
+   */
+  DartType get inferredReturnType {
+    // We should only try to infer a return type when none is explicitly
+    // declared.
+    assert(_unlinkedExecutable.returnType == null);
+    if (Linker._initializerTypeInferenceCycle != null &&
+        Linker._initializerTypeInferenceCycle ==
+            compilationUnit.library.libraryCycleForLink) {
+      // We are currently computing the type of an initializer expression in the
+      // current library cycle, so type inference results should be ignored.
+      return _computeDefaultReturnType();
+    }
+    if (_inferredReturnType == null) {
+      if (_unlinkedExecutable.kind == UnlinkedExecutableKind.constructor) {
+        // TODO(paulberry): implement.
+        throw new UnimplementedError();
+      } else if (compilationUnit.isInBuildUnit) {
+        _inferredReturnType = _computeDefaultReturnType();
+      } else {
+        _inferredReturnType = compilationUnit.getLinkedType(
+            _unlinkedExecutable.inferredReturnTypeSlot, this);
+      }
+    }
+    return _inferredReturnType;
+  }
 
   @override
   bool get isStatic => _unlinkedExecutable.isStatic;
@@ -1446,46 +1929,18 @@ abstract class ExecutableElementForLink extends Object
   LibraryElementForLink get library => enclosingElement.library;
 
   @override
-  String get name => _unlinkedExecutable.name;
-
-  @override
-  List<ParameterElementForLink> get parameters {
-    if (_parameters == null) {
-      int numParameters = _unlinkedExecutable.parameters.length;
-      _parameters = new List<ParameterElementForLink>(numParameters);
-      for (int i = 0; i < numParameters; i++) {
-        UnlinkedParam unlinkedParam = _unlinkedExecutable.parameters[i];
-        _parameters[i] = new ParameterElementForLink(
-            this, unlinkedParam, this, enclosingElement.enclosingElement, i);
+  String get name {
+    if (_name == null) {
+      _name = _unlinkedExecutable.name;
+      if (_name == '-' && _unlinkedExecutable.parameters.isEmpty) {
+        _name = 'unary-';
       }
     }
-    return _parameters;
+    return _name;
   }
 
   @override
-  DartType get returnType {
-    if (_inferredReturnType != null) {
-      return _inferredReturnType;
-    } else if (_declaredReturnType == null) {
-      if (_unlinkedExecutable.returnType == null) {
-        if (_unlinkedExecutable.kind == UnlinkedExecutableKind.constructor) {
-          // TODO(paulberry): implement.
-          throw new UnimplementedError();
-        } else if (_unlinkedExecutable.kind == UnlinkedExecutableKind.setter &&
-            library._linker.strongMode) {
-          // In strong mode, setters without an explicit return type are
-          // considered to return `void`.
-          _declaredReturnType = VoidTypeImpl.instance;
-        } else {
-          _declaredReturnType = DynamicTypeImpl.instance;
-        }
-      } else {
-        _declaredReturnType = enclosingElement.enclosingElement
-            ._resolveTypeRef(_unlinkedExecutable.returnType, this);
-      }
-    }
-    return _declaredReturnType;
-  }
+  DartType get returnType => declaredReturnType ?? inferredReturnType;
 
   @override
   void set returnType(DartType inferredType) {
@@ -1497,7 +1952,13 @@ abstract class ExecutableElementForLink extends Object
   FunctionTypeImpl get type => _type ??= new FunctionTypeImpl(this);
 
   @override
-  List<UnlinkedTypeParam> get _unlinkedTypeParams =>
+  TypeParameterizedElementMixin get typeParameterContext => this;
+
+  @override
+  List<UnlinkedParam> get unlinkedParameters => _unlinkedExecutable.parameters;
+
+  @override
+  List<UnlinkedTypeParam> get unlinkedTypeParams =>
       _unlinkedExecutable.typeParameters;
 
   @override
@@ -1505,14 +1966,741 @@ abstract class ExecutableElementForLink extends Object
       !Identifier.isPrivateName(name) || identical(this.library, library);
 
   /**
+   * Compute the default return type for this type of executable element (if no
+   * return type is declared and strong mode type inference cannot infer a
+   * better return type).
+   */
+  DartType _computeDefaultReturnType() {
+    if (_unlinkedExecutable.kind == UnlinkedExecutableKind.setter &&
+        library._linker.strongMode) {
+      // In strong mode, setters without an explicit return type are
+      // considered to return `void`.
+      return VoidTypeImpl.instance;
+    } else {
+      return DynamicTypeImpl.instance;
+    }
+  }
+}
+
+/**
+ * Base class for executable elements that are resynthesized from a summary
+ * during linking and are not local functions.
+ */
+abstract class ExecutableElementForLink_NonLocal
+    extends ExecutableElementForLink {
+  /**
+   * Return the class in which this executable appears, maybe `null` for a
+   * top-level function.
+   */
+  final ClassElementForLink_Class enclosingClass;
+
+  ExecutableElementForLink_NonLocal(
+      CompilationUnitElementForLink compilationUnit,
+      this.enclosingClass,
+      UnlinkedExecutable unlinkedExecutable)
+      : super(compilationUnit, unlinkedExecutable);
+
+  @override
+  Element get enclosingElement => enclosingClass ?? compilationUnit;
+
+  @override
+  TypeParameterizedElementMixin get enclosingTypeParameterContext =>
+      enclosingClass;
+
+  /**
    * Store the results of type inference for this method in [compilationUnit].
    */
   void link(CompilationUnitElementInBuildUnit compilationUnit) {
-    compilationUnit._storeLinkedType(
-        _unlinkedExecutable.inferredReturnTypeSlot, returnType, this);
+    if (_unlinkedExecutable.returnType == null) {
+      compilationUnit._storeLinkedType(
+          _unlinkedExecutable.inferredReturnTypeSlot, inferredReturnType, this);
+    }
     for (ParameterElementForLink parameterElement in parameters) {
       parameterElement.link(compilationUnit);
     }
+  }
+}
+
+class ExprTypeComputer {
+  final FunctionElementForLink_Local function;
+  final CompilationUnitElementForLink unit;
+  final LibraryElementForLink library;
+  final Linker linker;
+  final TypeProvider typeProvider;
+  final UnlinkedConst unlinkedConst;
+
+  final List<DartType> stack = <DartType>[];
+  int intPtr = 0;
+  int refPtr = 0;
+  int strPtr = 0;
+  int assignmentOperatorPtr = 0;
+
+  factory ExprTypeComputer(FunctionElementForLink_Local functionElement) {
+    CompilationUnitElementForLink unit = functionElement.compilationUnit;
+    LibraryElementForLink library = unit.enclosingElement;
+    Linker linker = library._linker;
+    TypeProvider typeProvider = linker.typeProvider;
+    UnlinkedConst unlinkedConst = functionElement._unlinkedExecutable.bodyExpr;
+    return new ExprTypeComputer._(
+        functionElement, unit, library, linker, typeProvider, unlinkedConst);
+  }
+
+  ExprTypeComputer._(this.function, this.unit, this.library, this.linker,
+      this.typeProvider, this.unlinkedConst);
+
+  DartType compute() {
+    if (unlinkedConst == null) {
+      // No function body was stored for this function, so we can't infer its
+      // return type.  Assume `dynamic`.
+      return DynamicTypeImpl.instance;
+    }
+    // Perform RPN evaluation of the constant, using a stack of inferred types.
+    for (UnlinkedConstOperation operation in unlinkedConst.operations) {
+      switch (operation) {
+        case UnlinkedConstOperation.pushInt:
+          intPtr++;
+          stack.add(typeProvider.intType);
+          break;
+        case UnlinkedConstOperation.pushLongInt:
+          int numInts = _getNextInt();
+          intPtr += numInts;
+          stack.add(typeProvider.intType);
+          break;
+        case UnlinkedConstOperation.pushDouble:
+          stack.add(typeProvider.doubleType);
+          break;
+        case UnlinkedConstOperation.pushTrue:
+        case UnlinkedConstOperation.pushFalse:
+          stack.add(typeProvider.boolType);
+          break;
+        case UnlinkedConstOperation.pushString:
+          strPtr++;
+          stack.add(typeProvider.stringType);
+          break;
+        case UnlinkedConstOperation.concatenate:
+          stack.length -= _getNextInt();
+          stack.add(typeProvider.stringType);
+          break;
+        case UnlinkedConstOperation.makeSymbol:
+          strPtr++;
+          stack.add(typeProvider.symbolType);
+          break;
+        case UnlinkedConstOperation.pushNull:
+          stack.add(BottomTypeImpl.instance);
+          break;
+        case UnlinkedConstOperation.pushReference:
+          _doPushReference();
+          break;
+        case UnlinkedConstOperation.extractProperty:
+          _doExtractProperty();
+          break;
+        case UnlinkedConstOperation.invokeConstructor:
+          _doInvokeConstructor();
+          break;
+        case UnlinkedConstOperation.makeUntypedList:
+          _doMakeUntypedList();
+          break;
+        case UnlinkedConstOperation.makeUntypedMap:
+          _doMakeUntypedMap();
+          break;
+        case UnlinkedConstOperation.makeTypedList:
+          _doMakeTypedList();
+          break;
+        case UnlinkedConstOperation.makeTypedMap:
+          _doMakeTypeMap();
+          break;
+        case UnlinkedConstOperation.not:
+          stack.length -= 1;
+          stack.add(typeProvider.boolType);
+          break;
+        case UnlinkedConstOperation.complement:
+          _computePrefixExpressionType('~');
+          break;
+        case UnlinkedConstOperation.negate:
+          _computePrefixExpressionType('unary-');
+          break;
+        case UnlinkedConstOperation.and:
+        case UnlinkedConstOperation.or:
+        case UnlinkedConstOperation.equal:
+        case UnlinkedConstOperation.notEqual:
+          stack.length -= 2;
+          stack.add(typeProvider.boolType);
+          break;
+        case UnlinkedConstOperation.bitXor:
+          _computeBinaryExpressionType(TokenType.CARET);
+          break;
+        case UnlinkedConstOperation.bitAnd:
+          _computeBinaryExpressionType(TokenType.AMPERSAND);
+          break;
+        case UnlinkedConstOperation.bitOr:
+          _computeBinaryExpressionType(TokenType.BAR);
+          break;
+        case UnlinkedConstOperation.bitShiftRight:
+          _computeBinaryExpressionType(TokenType.GT_GT);
+          break;
+        case UnlinkedConstOperation.bitShiftLeft:
+          _computeBinaryExpressionType(TokenType.LT_LT);
+          break;
+        case UnlinkedConstOperation.add:
+          _computeBinaryExpressionType(TokenType.PLUS);
+          break;
+        case UnlinkedConstOperation.subtract:
+          _computeBinaryExpressionType(TokenType.MINUS);
+          break;
+        case UnlinkedConstOperation.multiply:
+          _computeBinaryExpressionType(TokenType.STAR);
+          break;
+        case UnlinkedConstOperation.divide:
+          _computeBinaryExpressionType(TokenType.SLASH);
+          break;
+        case UnlinkedConstOperation.floorDivide:
+          _computeBinaryExpressionType(TokenType.TILDE_SLASH);
+          break;
+        case UnlinkedConstOperation.greater:
+          _computeBinaryExpressionType(TokenType.GT);
+          break;
+        case UnlinkedConstOperation.less:
+          _computeBinaryExpressionType(TokenType.LT);
+          break;
+        case UnlinkedConstOperation.greaterEqual:
+          _computeBinaryExpressionType(TokenType.GT_EQ);
+          break;
+        case UnlinkedConstOperation.lessEqual:
+          _computeBinaryExpressionType(TokenType.LT_EQ);
+          break;
+        case UnlinkedConstOperation.modulo:
+          _computeBinaryExpressionType(TokenType.PERCENT);
+          break;
+        case UnlinkedConstOperation.conditional:
+          _doConditional();
+          break;
+        case UnlinkedConstOperation.assignToRef:
+          _doAssignToRef();
+          break;
+        case UnlinkedConstOperation.assignToProperty:
+          _doAssignToProperty();
+          break;
+        case UnlinkedConstOperation.assignToIndex:
+          _doAssignToIndex();
+          break;
+        case UnlinkedConstOperation.extractIndex:
+          _doExtractIndex();
+          break;
+        case UnlinkedConstOperation.invokeMethodRef:
+          _doInvokeMethodRef();
+          break;
+        case UnlinkedConstOperation.invokeMethod:
+          _doInvokeMethod();
+          break;
+        case UnlinkedConstOperation.cascadeSectionBegin:
+          stack.add(stack.last);
+          break;
+        case UnlinkedConstOperation.cascadeSectionEnd:
+          stack.removeLast();
+          break;
+        case UnlinkedConstOperation.typeCast:
+          stack.removeLast();
+          DartType type = _getNextTypeRef();
+          stack.add(type);
+          break;
+        case UnlinkedConstOperation.typeCheck:
+          stack.removeLast();
+          refPtr++;
+          stack.add(typeProvider.boolType);
+          break;
+        case UnlinkedConstOperation.throwException:
+          stack.removeLast();
+          stack.add(BottomTypeImpl.instance);
+          break;
+        case UnlinkedConstOperation.pushLocalFunctionReference:
+          int popCount = _getNextInt();
+          assert(popCount == 0); // TODO(paulberry): handle the nonzero case.
+          stack.add(function.functions[_getNextInt()].type);
+          break;
+        case UnlinkedConstOperation.pushParameter:
+          stack.add(_findParameterType(_getNextString()));
+          break;
+        default:
+          // TODO(paulberry): implement.
+          throw new UnimplementedError('$operation');
+      }
+    }
+    assert(intPtr == unlinkedConst.ints.length);
+    assert(refPtr == unlinkedConst.references.length);
+    assert(strPtr == unlinkedConst.strings.length);
+    assert(assignmentOperatorPtr == unlinkedConst.assignmentOperators.length);
+    assert(stack.length == 1);
+    return stack[0];
+  }
+
+  void _computeBinaryExpressionType(TokenType operator) {
+    DartType right = stack.removeLast();
+    DartType left = stack.removeLast();
+    _pushBinaryOperatorType(left, operator, right);
+  }
+
+  void _computePrefixExpressionType(String operatorName) {
+    DartType operand = stack.removeLast();
+    if (operand is InterfaceType) {
+      MethodElement method =
+          operand.lookUpInheritedMethod(operatorName, library: library);
+      if (method != null) {
+        DartType type = method.returnType;
+        stack.add(type);
+        return;
+      }
+    }
+    stack.add(DynamicTypeImpl.instance);
+  }
+
+  void _doAssignToIndex() {
+    stack.removeLast();
+    stack.removeLast();
+    UnlinkedExprAssignOperator operator =
+        unlinkedConst.assignmentOperators[assignmentOperatorPtr++];
+    if (operator == UnlinkedExprAssignOperator.assign) {
+      // The type of the assignment is the type of the value,
+      // which is already in the stack.
+    } else if (isIncrementOrDecrement(operator)) {
+      // TODO(scheglov) implement
+      stack.add(DynamicTypeImpl.instance);
+    } else {
+      stack.removeLast();
+      // TODO(scheglov) implement
+      stack.add(DynamicTypeImpl.instance);
+    }
+  }
+
+  void _doAssignToProperty() {
+    DartType targetType = stack.removeLast();
+    String propertyName = _getNextString();
+    UnlinkedExprAssignOperator assignOperator =
+        unlinkedConst.assignmentOperators[assignmentOperatorPtr++];
+    if (assignOperator == UnlinkedExprAssignOperator.assign) {
+      // The type of the assignment is the type of the value,
+      // which is already in the stack.
+    } else if (assignOperator == UnlinkedExprAssignOperator.postfixDecrement ||
+        assignOperator == UnlinkedExprAssignOperator.postfixIncrement) {
+      DartType propertyType = _getPropertyType(targetType, propertyName);
+      stack.add(propertyType);
+    } else if (assignOperator == UnlinkedExprAssignOperator.prefixDecrement) {
+      _pushPropertyBinaryExpression(
+          targetType, propertyName, TokenType.MINUS, typeProvider.intType);
+    } else if (assignOperator == UnlinkedExprAssignOperator.prefixIncrement) {
+      _pushPropertyBinaryExpression(
+          targetType, propertyName, TokenType.PLUS, typeProvider.intType);
+    } else {
+      TokenType binaryOperator =
+          _convertAssignOperatorToTokenType(assignOperator);
+      DartType operandType = stack.removeLast();
+      _pushPropertyBinaryExpression(
+          targetType, propertyName, binaryOperator, operandType);
+    }
+  }
+
+  void _doAssignToRef() {
+    refPtr++;
+    UnlinkedExprAssignOperator operator =
+        unlinkedConst.assignmentOperators[assignmentOperatorPtr++];
+    if (operator == UnlinkedExprAssignOperator.assign) {
+      // The type of the assignment is the type of the value,
+      // which is already in the stack.
+    } else if (isIncrementOrDecrement(operator)) {
+      // TODO(scheglov) implement
+      stack.add(DynamicTypeImpl.instance);
+    } else {
+      stack.removeLast();
+      // TODO(scheglov) implement
+      stack.add(DynamicTypeImpl.instance);
+    }
+  }
+
+  void _doConditional() {
+    DartType elseType = stack.removeLast();
+    DartType thenType = stack.removeLast();
+    stack.removeLast();
+    DartType type = _leastUpperBound(thenType, elseType);
+    type = _dynamicIfNull(type);
+    stack.add(type);
+  }
+
+  void _doExtractIndex() {
+    stack.removeLast(); // index
+    DartType target = stack.removeLast();
+    stack.add(() {
+      if (target is InterfaceType) {
+        MethodElement method =
+            target.lookUpInheritedMethod('[]', library: library);
+        if (method != null) {
+          return method.returnType;
+        }
+      }
+      return DynamicTypeImpl.instance;
+    }());
+  }
+
+  void _doExtractProperty() {
+    DartType target = stack.removeLast();
+    String propertyName = _getNextString();
+    stack.add(() {
+      if (target is InterfaceType) {
+        ExecutableElement element = target
+            .lookUpInheritedGetterOrMethod(propertyName, library: library);
+        if (element != null) {
+          if (element is PropertyAccessorElement) {
+            return element.returnType;
+          } else {
+            // Method tear-off
+            return element.type;
+          }
+        }
+      }
+      return DynamicTypeImpl.instance;
+    }());
+  }
+
+  void _doInvokeConstructor() {
+    int numNamed = _getNextInt();
+    int numPositional = _getNextInt();
+    // TODO(paulberry): don't just pop the args; use their types
+    // to infer the type of type arguments.
+    stack.length -= numNamed + numPositional;
+    strPtr += numNamed;
+    EntityRef ref = _getNextRef();
+    ConstructorElementForLink element =
+        unit.resolveRef(ref.reference).asConstructor;
+    if (element != null) {
+      ClassElementForLink_Class enclosingClass = element.enclosingClass;
+      stack.add(enclosingClass.buildType((int i) {
+        // Type argument explicitly specified.
+        if (i < ref.typeArguments.length) {
+          return unit.resolveTypeRef(
+              ref.typeArguments[i], function.typeParameterContext);
+        } else {
+          return null;
+        }
+      }, const []));
+    } else {
+      stack.add(DynamicTypeImpl.instance);
+    }
+  }
+
+  void _doInvokeMethod() {
+    int numNamed = unlinkedConst.ints[intPtr++];
+    int numPositional = unlinkedConst.ints[intPtr++];
+    List<String> namedArgNames = _getNextStrings(numNamed);
+    List<DartType> namedArgTypeList = _popList(numNamed);
+    List<DartType> positionalArgTypes = _popList(numPositional);
+    // TODO(scheglov) if we pushed target and method name first, we might be
+    // able to move work with arguments in _inferExecutableType()
+    String methodName = _getNextString();
+    List<DartType> typeArguments = _getTypeArguments();
+    DartType target = stack.removeLast();
+    stack.add(() {
+      if (target is InterfaceType) {
+        MethodElement method =
+            target.lookUpInheritedMethod(methodName, library: library);
+        FunctionType rawType = method?.type;
+        FunctionType inferredType = _inferExecutableType(
+            rawType,
+            numNamed,
+            numPositional,
+            namedArgNames,
+            namedArgTypeList,
+            positionalArgTypes,
+            typeArguments);
+        if (inferredType != null) {
+          return inferredType.returnType;
+        }
+      }
+      return DynamicTypeImpl.instance;
+    }());
+  }
+
+  void _doInvokeMethodRef() {
+    int numNamed = _getNextInt();
+    int numPositional = _getNextInt();
+    List<String> namedArgNames = _getNextStrings(numNamed);
+    List<DartType> namedArgTypeList = _popList(numNamed);
+    List<DartType> positionalArgTypes = _popList(numPositional);
+    EntityRef ref = _getNextRef();
+    ReferenceableElementForLink element = unit.resolveRef(ref.reference);
+    List<DartType> typeArguments = _getTypeArguments();
+    stack.add(() {
+      DartType rawType = element.asStaticType;
+      if (rawType is FunctionType) {
+        FunctionType inferredType = _inferExecutableType(
+            rawType,
+            numNamed,
+            numPositional,
+            namedArgNames,
+            namedArgTypeList,
+            positionalArgTypes,
+            typeArguments);
+        if (inferredType != null) {
+          return inferredType.returnType;
+        }
+      }
+      return DynamicTypeImpl.instance;
+    }());
+  }
+
+  void _doMakeTypedList() {
+    DartType itemType = _getNextTypeRef();
+    stack.length -= _getNextInt();
+    stack.add(typeProvider.listType.instantiate(<DartType>[itemType]));
+  }
+
+  void _doMakeTypeMap() {
+    DartType keyType = _getNextTypeRef();
+    DartType valueType = _getNextTypeRef();
+    stack.length -= 2 * _getNextInt();
+    stack.add(typeProvider.mapType.instantiate(<DartType>[keyType, valueType]));
+  }
+
+  void _doMakeUntypedList() {
+    int numItems = _getNextInt();
+    DartType itemType = numItems == 0
+        ? DynamicTypeImpl.instance
+        : _popList(numItems).reduce(_leastUpperBound);
+    itemType = _dynamicIfNull(itemType);
+    stack.add(typeProvider.listType.instantiate(<DartType>[itemType]));
+  }
+
+  void _doMakeUntypedMap() {
+    int numEntries = _getNextInt();
+    List<DartType> keysValues = _popList(2 * numEntries);
+    DartType keyType = null;
+    DartType valueType = null;
+    for (int i = 0; i < 2 * numEntries; i++) {
+      DartType type = keysValues[i];
+      if (i.isEven) {
+        keyType = keyType == null ? type : _leastUpperBound(keyType, type);
+      } else {
+        valueType =
+            valueType == null ? type : _leastUpperBound(valueType, type);
+      }
+    }
+    keyType = _dynamicIfNull(keyType);
+    valueType = _dynamicIfNull(valueType);
+    stack.add(typeProvider.mapType.instantiate(<DartType>[keyType, valueType]));
+  }
+
+  void _doPushReference() {
+    EntityRef ref = _getNextRef();
+    if (ref.paramReference != 0) {
+      stack.add(typeProvider.typeType);
+    } else {
+      // Synthetic function types can't be directly referred
+      // to by expressions.
+      assert(ref.syntheticReturnType == null);
+      // Nor can implicit function types derived from
+      // function-typed parameters.
+      assert(ref.implicitFunctionTypeIndices.isEmpty);
+      ReferenceableElementForLink element = unit.resolveRef(ref.reference);
+      stack.add(element.asStaticType);
+    }
+  }
+
+  /**
+   * Find the parameter in scope called [parameterName] and return its type.
+   */
+  DartType _findParameterType(String parameterName) {
+    FunctionElementForLink_Local f = this.function;
+    while (true) {
+      for (ParameterElement parameter in f.parameters) {
+        if (parameter.name == parameterName) {
+          return parameter.type;
+        }
+      }
+      Element parent = f.enclosingElement;
+      if (parent is FunctionElementForLink_Local) {
+        f = parent;
+      } else {
+        // Parameter not found.  This should never happen in a well-formed
+        // summary.
+        assert(false);
+        return DynamicTypeImpl.instance;
+      }
+    }
+  }
+
+  int _getNextInt() {
+    return unlinkedConst.ints[intPtr++];
+  }
+
+  EntityRef _getNextRef() => unlinkedConst.references[refPtr++];
+
+  String _getNextString() {
+    return unlinkedConst.strings[strPtr++];
+  }
+
+  List<String> _getNextStrings(int n) {
+    List<String> result = new List<String>(n);
+    for (int i = 0; i < n; i++) {
+      result[i] = _getNextString();
+    }
+    return result;
+  }
+
+  DartType _getNextTypeRef() {
+    EntityRef ref = _getNextRef();
+    return unit.resolveTypeRef(ref, function.typeParameterContext);
+  }
+
+  /**
+   * Return the type of the property with the given [propertyName] in the
+   * given [targetType]. May return `dynamic` if the property cannot be
+   * resolved.
+   */
+  DartType _getPropertyType(DartType targetType, String propertyName) {
+    return targetType is InterfaceType
+        ? targetType
+            .lookUpInheritedGetter(propertyName, library: library)
+            ?.returnType
+        : DynamicTypeImpl.instance;
+  }
+
+  List<DartType> _getTypeArguments() {
+    int numTypeArguments = _getNextInt();
+    List<DartType> typeArguments = new List<DartType>(numTypeArguments);
+    for (int i = 0; i < numTypeArguments; i++) {
+      typeArguments[i] = _getNextTypeRef();
+    }
+    return typeArguments;
+  }
+
+  FunctionType _inferExecutableType(
+      FunctionType rawMethodType,
+      int numNamed,
+      int numPositional,
+      List<String> namedArgNames,
+      List<DartType> namedArgTypeList,
+      List<DartType> positionalArgTypes,
+      List<DartType> typeArguments) {
+    TypeSystem ts = linker.typeSystem;
+    if (rawMethodType != null) {
+      if (rawMethodType.typeFormals.isNotEmpty && typeArguments.isNotEmpty) {
+        Element methodElement = rawMethodType.element;
+        if (methodElement is TypeParameterizedElement &&
+            methodElement.typeParameters.length == typeArguments.length) {
+          return rawMethodType.instantiate(typeArguments);
+        }
+      } else if (rawMethodType.typeFormals.isNotEmpty &&
+          ts is StrongTypeSystemImpl) {
+        List<DartType> paramTypes = <DartType>[];
+        List<DartType> argTypes = <DartType>[];
+        // Add positional parameter and argument types.
+        for (int i = 0; i < numPositional; i++) {
+          ParameterElement parameter = rawMethodType.parameters[i];
+          if (parameter != null) {
+            paramTypes.add(parameter.type);
+            argTypes.add(positionalArgTypes[i]);
+          }
+        }
+        // Prepare named argument types map.
+        Map<String, DartType> namedArgTypes = <String, DartType>{};
+        for (int i = 0; i < numNamed; i++) {
+          String name = namedArgNames[i];
+          DartType type = namedArgTypeList[i];
+          namedArgTypes[name] = type;
+        }
+        // Add named parameter and argument types.
+        Map<String, DartType> namedParameterTypes =
+            rawMethodType.namedParameterTypes;
+        namedArgTypes.forEach((String name, DartType argType) {
+          DartType parameterType = namedParameterTypes[name];
+          if (parameterType != null) {
+            paramTypes.add(parameterType);
+            argTypes.add(argType);
+          }
+        });
+        // Perform inference.
+        FunctionType inferred = ts.inferGenericFunctionCall(
+            typeProvider, rawMethodType, paramTypes, argTypes, null);
+        return inferred;
+      }
+    }
+    // Not a generic function type, use the raw type.
+    return rawMethodType;
+  }
+
+  DartType _leastUpperBound(DartType s, DartType t) {
+    return linker.typeSystem.getLeastUpperBound(typeProvider, s, t);
+  }
+
+  List<DartType> _popList(int n) {
+    List<DartType> result = stack.sublist(stack.length - n, stack.length);
+    stack.length -= n;
+    return result;
+  }
+
+  void _pushBinaryOperatorType(
+      DartType left, TokenType operator, DartType right) {
+    if (left is InterfaceType) {
+      MethodElement method =
+          left.lookUpInheritedMethod(operator.lexeme, library: library);
+      if (method != null) {
+        DartType type = method.returnType;
+        type = linker.typeSystem.refineBinaryExpressionType(
+            typeProvider, left, operator, right, type);
+        stack.add(type);
+        return;
+      }
+    }
+    stack.add(DynamicTypeImpl.instance);
+  }
+
+  /**
+   * Extract the property with the given [propertyName], apply the operator
+   * with the given [operandType], push the type of applying operand of the
+   * given [operandType].
+   */
+  void _pushPropertyBinaryExpression(DartType targetType, String propertyName,
+      TokenType operator, DartType operandType) {
+    DartType propertyType = _getPropertyType(targetType, propertyName);
+    _pushBinaryOperatorType(propertyType, operator, operandType);
+  }
+
+  static TokenType _convertAssignOperatorToTokenType(
+      UnlinkedExprAssignOperator o) {
+    switch (o) {
+      case UnlinkedExprAssignOperator.assign:
+        return null;
+      case UnlinkedExprAssignOperator.ifNull:
+        return TokenType.QUESTION_QUESTION;
+      case UnlinkedExprAssignOperator.multiply:
+        return TokenType.STAR;
+      case UnlinkedExprAssignOperator.divide:
+        return TokenType.SLASH;
+      case UnlinkedExprAssignOperator.floorDivide:
+        return TokenType.TILDE_SLASH;
+      case UnlinkedExprAssignOperator.modulo:
+        return TokenType.PERCENT;
+      case UnlinkedExprAssignOperator.plus:
+        return TokenType.PLUS;
+      case UnlinkedExprAssignOperator.minus:
+        return TokenType.MINUS;
+      case UnlinkedExprAssignOperator.shiftLeft:
+        return TokenType.LT_LT;
+      case UnlinkedExprAssignOperator.shiftRight:
+        return TokenType.GT_GT;
+      case UnlinkedExprAssignOperator.bitAnd:
+        return TokenType.AMPERSAND;
+      case UnlinkedExprAssignOperator.bitXor:
+        return TokenType.CARET;
+      case UnlinkedExprAssignOperator.bitOr:
+        return TokenType.BAR;
+      case UnlinkedExprAssignOperator.prefixIncrement:
+        return TokenType.PLUS_PLUS;
+      case UnlinkedExprAssignOperator.prefixDecrement:
+        return TokenType.MINUS_MINUS;
+      case UnlinkedExprAssignOperator.postfixIncrement:
+        return TokenType.PLUS_PLUS;
+      case UnlinkedExprAssignOperator.postfixDecrement:
+        return TokenType.MINUS_MINUS;
+    }
+    return null;
   }
 }
 
@@ -1520,8 +2708,13 @@ abstract class ExecutableElementForLink extends Object
  * Element representing a field resynthesized from a summary during
  * linking.
  */
-abstract class FieldElementForLink
-    implements FieldElement, ReferenceableElementForLink {}
+abstract class FieldElementForLink implements FieldElement {
+  @override
+  PropertyAccessorElementForLink get getter;
+
+  @override
+  PropertyAccessorElementForLink get setter;
+}
 
 /**
  * Specialization of [FieldElementForLink] for class fields.
@@ -1533,11 +2726,9 @@ class FieldElementForLink_ClassField extends VariableElementForLink
 
   /**
    * If this is an instance field, the type that was computed by
-   * [InstanceMemberInferrer].
+   * [InstanceMemberInferrer] (if any).  Otherwise `null`.
    */
   DartType _inferredInstanceType;
-
-  DartType _declaredType;
 
   FieldElementForLink_ClassField(ClassElementForLink_Class enclosingElement,
       UnlinkedVariable unlinkedVariable)
@@ -1548,22 +2739,6 @@ class FieldElementForLink_ClassField extends VariableElementForLink
   bool get isStatic => unlinkedVariable.isStatic;
 
   @override
-  DartType get type {
-    assert(!isStatic);
-    if (_inferredInstanceType != null) {
-      return _inferredInstanceType;
-    } else if (_declaredType == null) {
-      if (unlinkedVariable.type == null) {
-        _declaredType = DynamicTypeImpl.instance;
-      } else {
-        _declaredType = compilationUnit._resolveTypeRef(
-            unlinkedVariable.type, enclosingElement);
-      }
-    }
-    return _declaredType;
-  }
-
-  @override
   void set type(DartType inferredType) {
     assert(!isStatic);
     assert(_inferredInstanceType == null);
@@ -1571,7 +2746,7 @@ class FieldElementForLink_ClassField extends VariableElementForLink
   }
 
   @override
-  TypeParameterizedElementForLink get _typeParameterContext => enclosingElement;
+  TypeParameterizedElementMixin get _typeParameterContext => enclosingElement;
 
   /**
    * Store the results of type inference for this field in
@@ -1579,18 +2754,16 @@ class FieldElementForLink_ClassField extends VariableElementForLink
    */
   void link(CompilationUnitElementInBuildUnit compilationUnit) {
     if (hasImplicitType) {
-      if (isStatic) {
-        TypeInferenceNode typeInferenceNode = this.asTypeInferenceNode;
-        if (typeInferenceNode != null) {
-          compilationUnit._storeLinkedType(unlinkedVariable.inferredTypeSlot,
-              typeInferenceNode.inferredType, enclosingElement);
-        }
-      } else {
-        compilationUnit._storeLinkedType(unlinkedVariable.inferredTypeSlot,
-            _inferredInstanceType, enclosingElement);
-      }
+      compilationUnit._storeLinkedType(
+          unlinkedVariable.inferredTypeSlot,
+          isStatic ? inferredType : _inferredInstanceType,
+          _typeParameterContext);
+      initializer?.link(compilationUnit);
     }
   }
+
+  @override
+  String toString() => '$enclosingElement.$name';
 }
 
 /**
@@ -1604,27 +2777,16 @@ class FieldElementForLink_EnumField extends FieldElementForLink
    */
   final UnlinkedEnumValue unlinkedEnumValue;
 
+  PropertyAccessorElementForLink_EnumField _getter;
+
   @override
   final ClassElementForLink_Enum enclosingElement;
 
   FieldElementForLink_EnumField(this.unlinkedEnumValue, this.enclosingElement);
 
   @override
-  ConstructorElementForLink get asConstructor => null;
-
-  @override
-  ConstVariableNode get asConstVariable {
-    // Even though enum fields are constants, there is no need to include them
-    // in the const dependency graph because they can't participate in a
-    // circularity.
-    return null;
-  }
-
-  @override
-  DartType get asStaticType => enclosingElement.type;
-
-  @override
-  TypeInferenceNode get asTypeInferenceNode => null;
+  PropertyAccessorElementForLink_EnumField get getter =>
+      _getter ??= new PropertyAccessorElementForLink_EnumField(this);
 
   @override
   bool get isStatic => true;
@@ -1637,42 +2799,49 @@ class FieldElementForLink_EnumField extends FieldElementForLink
       unlinkedEnumValue == null ? 'values' : unlinkedEnumValue.name;
 
   @override
-  DartType buildType(DartType getTypeArgument(int i),
-          List<int> implicitFunctionTypeIndices) =>
-      DynamicTypeImpl.instance;
-
-  @override
-  ReferenceableElementForLink getContainedName(String name) =>
-      UndefinedElementForLink.instance;
+  DartType get type => unlinkedEnumValue == null
+      ? enclosingElement.valuesType
+      : enclosingElement.type;
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => '$enclosingElement.$name';
 }
 
 /**
  * Element representing a function-typed parameter resynthesied from a summary
  * during linking.
  */
-class FunctionElementForLink_FunctionTypedParam implements FunctionElement {
+class FunctionElementForLink_FunctionTypedParam extends Object
+    with ParameterParentElementForLink
+    implements FunctionElement {
   @override
   final ParameterElementForLink enclosingElement;
 
-  /**
-   * The executable element containing this function-typed parameter.
-   */
-  final Element enclosingExecutable;
+  @override
+  final TypeParameterizedElementMixin typeParameterContext;
 
-  /**
-   * The appropriate integer list to store in
-   * [EntityRef.implicitFunctionTypeIndices] to refer to this function-typed
-   * parameter.
-   */
-  final List<int> implicitFunctionTypeIndices;
+  @override
+  final List<UnlinkedParam> unlinkedParameters;
 
   DartType _returnType;
+  List<int> _implicitFunctionTypeIndices;
 
   FunctionElementForLink_FunctionTypedParam(this.enclosingElement,
-      this.enclosingExecutable, this.implicitFunctionTypeIndices);
+      this.typeParameterContext, this.unlinkedParameters);
+
+  @override
+  List<int> get implicitFunctionTypeIndices {
+    if (_implicitFunctionTypeIndices == null) {
+      _implicitFunctionTypeIndices = enclosingElement
+          .enclosingElement.implicitFunctionTypeIndices
+          .toList();
+      _implicitFunctionTypeIndices.add(enclosingElement._parameterIndex);
+    }
+    return _implicitFunctionTypeIndices;
+  }
 
   @override
   DartType get returnType {
@@ -1680,9 +2849,8 @@ class FunctionElementForLink_FunctionTypedParam implements FunctionElement {
       if (enclosingElement._unlinkedParam.type == null) {
         _returnType = DynamicTypeImpl.instance;
       } else {
-        _returnType = enclosingElement.compilationUnit._resolveTypeRef(
-            enclosingElement._unlinkedParam.type,
-            enclosingElement._typeParameterContext);
+        _returnType = enclosingElement.compilationUnit.resolveTypeRef(
+            enclosingElement._unlinkedParam.type, typeParameterContext);
       }
     }
     return _returnType;
@@ -1698,20 +2866,57 @@ class FunctionElementForLink_FunctionTypedParam implements FunctionElement {
 /**
  * Element representing the initializer expression of a variable.
  */
-class FunctionElementForLink_Initializer implements FunctionElementImpl {
+class FunctionElementForLink_Initializer extends Object
+    with ReferenceableElementForLink, TypeParameterizedElementMixin
+    implements FunctionElementForLink_Local {
   /**
    * The variable for which this element is the initializer.
    */
   final VariableElementForLink _variable;
 
+  /**
+   * The type inference node for this function, or `null` if it hasn't been
+   * computed yet.
+   */
+  TypeInferenceNode _typeInferenceNode;
+
+  List<FunctionElementForLink_Local_NonSynthetic> _functions;
+  DartType _inferredReturnType;
+
   FunctionElementForLink_Initializer(this._variable);
+
+  @override
+  TypeInferenceNode get asTypeInferenceNode =>
+      _typeInferenceNode ??= new TypeInferenceNode(this);
+
+  @override
+  CompilationUnitElementForLink get compilationUnit =>
+      _variable.compilationUnit;
+
+  @override
+  VariableElementForLink get enclosingElement => _variable;
+
+  TypeParameterizedElementMixin get enclosingTypeParameterContext =>
+      _variable.enclosingElement is ClassElementForLink
+          ? _variable.enclosingElement
+          : null;
+
+  @override
+  CompilationUnitElementForLink get enclosingUnit => _variable.compilationUnit;
+
+  @override
+  List<FunctionElementForLink_Local_NonSynthetic> get functions =>
+      _functions ??= _variable.unlinkedVariable.initializer.localFunctions
+          .map((UnlinkedExecutable ex) =>
+              new FunctionElementForLink_Local_NonSynthetic(
+                  _variable.compilationUnit, this, ex))
+          .toList();
 
   @override
   DartType get returnType {
     // If this is a variable whose type needs inferring, infer it.
-    TypeInferenceNode typeInferenceNode = _variable._typeInferenceNode;
-    if (typeInferenceNode != null) {
-      return typeInferenceNode.inferredType;
+    if (_variable.hasImplicitType) {
+      return _variable.inferredType;
     } else {
       // There's no reason linking should need to access the type of
       // this FunctionElement, since the variable doesn't need its
@@ -1724,11 +2929,236 @@ class FunctionElementForLink_Initializer implements FunctionElementImpl {
 
   @override
   void set returnType(DartType newType) {
-    // TODO(paulberry): store inferred type.
+    // InstanceMemberInferrer stores the new type both here and on the variable
+    // element.  We don't need to record both values, so we ignore it here.
+  }
+
+  @override
+  TypeParameterizedElementMixin get typeParameterContext => this;
+
+  @override
+  List<UnlinkedTypeParam> get unlinkedTypeParams => const [];
+
+  @override
+  bool get _hasTypeBeenInferred => _inferredReturnType != null;
+
+  @override
+  UnlinkedExecutable get _unlinkedExecutable =>
+      _variable.unlinkedVariable.initializer;
+
+  @override
+  FunctionElementForLink_Local getLocalFunction(int index) {
+    List<FunctionElementForLink_Local_NonSynthetic> functions = this.functions;
+    return index < functions.length ? functions[index] : null;
+  }
+
+  /**
+   * Store the results of type inference for this initializer in
+   * [compilationUnit].
+   */
+  void link(CompilationUnitElementInBuildUnit compilationUnit) {
+    compilationUnit._storeLinkedType(_unlinkedExecutable.inferredReturnTypeSlot,
+        _inferredReturnType, typeParameterContext);
+    for (FunctionElementForLink_Local_NonSynthetic function in functions) {
+      function.link(compilationUnit);
+    }
   }
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  void _setInferredType(DartType type) {
+    assert(!_hasTypeBeenInferred);
+    _inferredReturnType = type;
+    _variable._inferredType = _dynamicIfNull(type);
+  }
+}
+
+/**
+ * Element representing a local function (possibly a closure).
+ */
+abstract class FunctionElementForLink_Local
+    implements
+        ExecutableElementForLink,
+        FunctionElementImpl,
+        ReferenceableElementForLink {
+  /**
+   * Indicates whether type inference has completed for this function.
+   */
+  bool get _hasTypeBeenInferred;
+
+  /**
+   * Stores the given [type] as the inferred return type for this function.
+   * Should only be called if [_hasTypeBeenInferred] is `false`.
+   */
+  void _setInferredType(DartType type);
+}
+
+/**
+ * Element representing a local function (possibly a closure) inside another
+ * executable.
+ */
+class FunctionElementForLink_Local_NonSynthetic extends ExecutableElementForLink
+    with ReferenceableElementForLink
+    implements FunctionElementForLink_Local {
+  @override
+  final ExecutableElementForLink enclosingElement;
+
+  List<FunctionElementForLink_Local_NonSynthetic> _functions;
+
+  /**
+   * The type inference node for this function, or `null` if it hasn't been
+   * computed yet.
+   */
+  TypeInferenceNode _typeInferenceNode;
+
+  FunctionElementForLink_Local_NonSynthetic(
+      CompilationUnitElementForLink compilationUnit,
+      this.enclosingElement,
+      UnlinkedExecutable unlinkedExecutable)
+      : super(compilationUnit, unlinkedExecutable);
+
+  @override
+  TypeInferenceNode get asTypeInferenceNode =>
+      _typeInferenceNode ??= new TypeInferenceNode(this);
+
+  @override
+  TypeParameterizedElementMixin get enclosingTypeParameterContext =>
+      enclosingElement;
+
+  @override
+  List<FunctionElementForLink_Local_NonSynthetic> get functions =>
+      _functions ??= _unlinkedExecutable.localFunctions
+          .map((UnlinkedExecutable ex) =>
+              new FunctionElementForLink_Local_NonSynthetic(
+                  compilationUnit, this, ex))
+          .toList();
+
+  @override
+  bool get _hasTypeBeenInferred => _inferredReturnType != null;
+
+  @override
+  DartType buildType(
+      DartType getTypeArgument(int i), List<int> implicitFunctionTypeIndices) {
+    assert(implicitFunctionTypeIndices.isEmpty);
+    return type;
+  }
+
+  @override
+  FunctionElementForLink_Local getLocalFunction(int index) {
+    List<FunctionElementForLink_Local_NonSynthetic> functions = this.functions;
+    return index < functions.length ? functions[index] : null;
+  }
+
+  /**
+   * Store the results of type inference for this function in [compilationUnit].
+   */
+  void link(CompilationUnitElementInBuildUnit compilationUnit) {
+    compilationUnit._storeLinkedType(
+        _unlinkedExecutable.inferredReturnTypeSlot, inferredReturnType, this);
+    for (FunctionElementForLink_Local_NonSynthetic function in functions) {
+      function.link(compilationUnit);
+    }
+  }
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  void _setInferredType(DartType type) {
+    // TODO(paulberry): store the inferred return type in the summary.
+    assert(!_hasTypeBeenInferred);
+    _inferredReturnType = _dynamicIfNull(type);
+  }
+}
+
+/**
+ * Element representing a typedef resynthesized from a summary during linking.
+ */
+class FunctionTypeAliasElementForLink extends Object
+    with
+        TypeParameterizedElementMixin,
+        ParameterParentElementForLink,
+        ReferenceableElementForLink
+    implements FunctionTypeAliasElement, ElementImpl {
+  @override
+  final CompilationUnitElementForLink enclosingElement;
+
+  /**
+   * The unlinked representation of the typedef in the summary.
+   */
+  final UnlinkedTypedef _unlinkedTypedef;
+
+  FunctionTypeImpl _type;
+  DartType _returnType;
+
+  FunctionTypeAliasElementForLink(this.enclosingElement, this._unlinkedTypedef);
+
+  @override
+  DartType get asStaticType {
+    return enclosingElement.enclosingElement._linker.typeProvider.typeType;
+  }
+
+  @override
+  ContextForLink get context => enclosingElement.context;
+
+  @override
+  TypeParameterizedElementMixin get enclosingTypeParameterContext => null;
+
+  @override
+  CompilationUnitElementInBuildUnit get enclosingUnit => enclosingElement;
+
+  @override
+  String get identifier => _unlinkedTypedef.name;
+
+  @override
+  List<int> get implicitFunctionTypeIndices => const <int>[];
+
+  @override
+  bool get isSynthetic => false;
+
+  @override
+  LibraryElementForLink get library => enclosingElement.library;
+
+  @override
+  String get name => _unlinkedTypedef.name;
+
+  @override
+  DartType get returnType => _returnType ??=
+      enclosingElement.resolveTypeRef(_unlinkedTypedef.returnType, this);
+
+  @override
+  TypeParameterizedElementMixin get typeParameterContext => this;
+
+  @override
+  List<UnlinkedParam> get unlinkedParameters => _unlinkedTypedef.parameters;
+
+  @override
+  List<UnlinkedTypeParam> get unlinkedTypeParams =>
+      _unlinkedTypedef.typeParameters;
+
+  @override
+  DartType buildType(
+      DartType getTypeArgument(int i), List<int> implicitFunctionTypeIndices) {
+    int numTypeParameters = _unlinkedTypedef.typeParameters.length;
+    if (numTypeParameters != 0) {
+      List<DartType> typeArguments = new List<DartType>(numTypeParameters);
+      for (int i = 0; i < numTypeParameters; i++) {
+        typeArguments[i] = getTypeArgument(i) ?? computeDefaultTypeArgument(i);
+      }
+      return new FunctionTypeImpl.elementWithNameAndArgs(
+          this, name, typeArguments, true);
+    } else {
+      return _type ??= new FunctionTypeImpl.forTypedef(this);
+    }
+  }
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => '$enclosingElement.$name';
 }
 
 /**
@@ -1854,7 +3284,7 @@ class LibraryDependencyWalker extends DependencyWalker<LibraryNode> {
  */
 abstract class LibraryElementForLink<
         UnitElement extends CompilationUnitElementForLink>
-    implements LibraryElement {
+    implements LibraryElementImpl {
   /**
    * Pointer back to the linker.
    */
@@ -1879,6 +3309,9 @@ abstract class LibraryElementForLink<
     }
   }
 
+  @override
+  ContextForLink get context => _linker.context;
+
   /**
    * Get the [UnlinkedUnit] for the defining compilation unit of this library.
    */
@@ -1893,8 +3326,17 @@ abstract class LibraryElementForLink<
       _linkedLibrary.exportDependencies.map(_getDependency).toList();
 
   @override
+  String get identifier => _absoluteUri.toString();
+
+  @override
   List<LibraryElementForLink> get importedLibraries => _importedLibraries ??=
       _linkedLibrary.importDependencies.map(_getDependency).toList();
+
+  @override
+  bool get isDartAsync => _absoluteUri == 'dart:async';
+
+  @override
+  bool get isDartCore => _absoluteUri == 'dart:core';
 
   /**
    * If this library is part of the build unit being linked, return the library
@@ -1906,17 +3348,20 @@ abstract class LibraryElementForLink<
   List<UnitElement> get units {
     if (_units == null) {
       UnlinkedUnit definingUnit = definingUnlinkedUnit;
-      _units = <UnitElement>[_makeUnitElement(definingUnit, 0)];
+      _units = <UnitElement>[
+        _makeUnitElement(definingUnit, 0, _absoluteUri.toString())
+      ];
       int numParts = definingUnit.parts.length;
       for (int i = 0; i < numParts; i++) {
         // TODO(paulberry): make sure we handle the case where Uri.parse fails.
         // TODO(paulberry): make sure we handle the case where
         // resolveRelativeUri fails.
-        UnlinkedUnit partUnit = _linker.getUnit(resolveRelativeUri(
+        String partAbsoluteUri = resolveRelativeUri(
                 _absoluteUri, Uri.parse(definingUnit.publicNamespace.parts[i]))
-            .toString());
-        _units.add(
-            _makeUnitElement(partUnit ?? new UnlinkedUnitBuilder(), i + 1));
+            .toString();
+        UnlinkedUnit partUnit = _linker.getUnit(partAbsoluteUri);
+        _units.add(_makeUnitElement(
+            partUnit ?? new UnlinkedUnitBuilder(), i + 1, partAbsoluteUri));
       }
     }
     return _units;
@@ -1946,6 +3391,9 @@ abstract class LibraryElementForLink<
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 
+  @override
+  String toString() => _absoluteUri.toString();
+
   /**
    * Return the [LibraryElement] corresponding to the given dependency [index].
    */
@@ -1958,7 +3406,8 @@ abstract class LibraryElementForLink<
    * Create a [UnitElement] for one of the library's compilation
    * units.
    */
-  UnitElement _makeUnitElement(UnlinkedUnit unlinkedUnit, int i);
+  UnitElement _makeUnitElement(
+      UnlinkedUnit unlinkedUnit, int i, String absoluteUri);
 }
 
 /**
@@ -2039,9 +3488,9 @@ class LibraryElementInBuildUnit
 
   @override
   CompilationUnitElementInBuildUnit _makeUnitElement(
-          UnlinkedUnit unlinkedUnit, int i) =>
+          UnlinkedUnit unlinkedUnit, int i, String absoluteUri) =>
       new CompilationUnitElementInBuildUnit(
-          this, unlinkedUnit, _linkedLibrary.units[i], i);
+          this, unlinkedUnit, _linkedLibrary.units[i], i, absoluteUri);
 }
 
 /**
@@ -2062,9 +3511,9 @@ class LibraryElementInDependency
 
   @override
   CompilationUnitElementInDependency _makeUnitElement(
-          UnlinkedUnit unlinkedUnit, int i) =>
+          UnlinkedUnit unlinkedUnit, int i, String absoluteUri) =>
       new CompilationUnitElementInDependency(
-          this, unlinkedUnit, _linkedLibrary.units[i], i);
+          this, unlinkedUnit, _linkedLibrary.units[i], i, absoluteUri);
 }
 
 /**
@@ -2113,6 +3562,17 @@ class LibraryNode extends Node<LibraryNode> {
  */
 class Linker {
   /**
+   * During linking, if type inference is currently being performed on the
+   * initializer of a static or instance variable, the library cycle in
+   * which inference is being performed.  Otherwise, `null`.
+   *
+   * This allows us to suppress instance member type inference results from a
+   * library cycle while doing inference on the right hand sides of static and
+   * instance variables in that same cycle.
+   */
+  static LibraryCycleForLink _initializerTypeInferenceCycle;
+
+  /**
    * Callback to ask the client for a [LinkedLibrary] for a
    * dependency.
    */
@@ -2147,6 +3607,11 @@ class Linker {
   LibraryElementForLink _asyncLibrary;
   TypeProviderForLink _typeProvider;
   TypeSystem _typeSystem;
+  SpecialTypeElementForLink _voidElement;
+  SpecialTypeElementForLink _dynamicElement;
+  SpecialTypeElementForLink _bottomElement;
+  ContextForLink _context;
+  AnalysisOptionsForLink _analysisOptions;
 
   Linker(Map<String, LinkedLibraryBuilder> linkedLibraries, this.getDependency,
       this.getUnit, this.strongMode) {
@@ -2161,16 +3626,40 @@ class Linker {
   }
 
   /**
+   * Get an instance of [AnalysisOptions] for use during linking.
+   */
+  AnalysisOptionsForLink get analysisOptions =>
+      _analysisOptions ??= new AnalysisOptionsForLink(this);
+
+  /**
    * Get the library element for `dart:async`.
    */
   LibraryElementForLink get asyncLibrary =>
       _asyncLibrary ??= getLibrary(Uri.parse('dart:async'));
 
   /**
+   * Get the element representing the "bottom" type.
+   */
+  SpecialTypeElementForLink get bottomElement => _bottomElement ??=
+      new SpecialTypeElementForLink(this, BottomTypeImpl.instance);
+
+  /**
+   * Get a stub implementation of [AnalysisContext] which can be used during
+   * linking.
+   */
+  get context => _context ??= new ContextForLink(this);
+
+  /**
    * Get the library element for `dart:core`.
    */
   LibraryElementForLink get coreLibrary =>
       _coreLibrary ??= getLibrary(Uri.parse('dart:core'));
+
+  /**
+   * Get the element representing `dynamic`.
+   */
+  SpecialTypeElementForLink get dynamicElement => _dynamicElement ??=
+      new SpecialTypeElementForLink(this, DynamicTypeImpl.instance);
 
   /**
    * Get an instance of [TypeProvider] for use during linking.
@@ -2183,6 +3672,12 @@ class Linker {
    */
   TypeSystem get typeSystem => _typeSystem ??=
       strongMode ? new StrongTypeSystemImpl() : new TypeSystemImpl();
+
+  /**
+   * Get the element representing `void`.
+   */
+  SpecialTypeElementForLink get voidElement => _voidElement ??=
+      new SpecialTypeElementForLink(this, VoidTypeImpl.instance);
 
   /**
    * Get the library element for the library having the given [uri].
@@ -2218,17 +3713,34 @@ class Linker {
 /**
  * Element representing a method resynthesized from a summary during linking.
  */
-class MethodElementForLink extends ExecutableElementForLink
+class MethodElementForLink extends ExecutableElementForLink_NonLocal
+    with ReferenceableElementForLink
     implements MethodElementImpl {
-  MethodElementForLink(ClassElementForLink_Class enclosingElement,
+  MethodElementForLink(ClassElementForLink_Class enclosingClass,
       UnlinkedExecutable unlinkedExecutable)
-      : super(enclosingElement, unlinkedExecutable);
+      : super(enclosingClass.enclosingElement, enclosingClass,
+            unlinkedExecutable);
+
+  @override
+  DartType get asStaticType => type;
+
+  @override
+  String get identifier => name;
 
   @override
   ElementKind get kind => ElementKind.METHOD;
 
   @override
+  FunctionElementForLink_Local getLocalFunction(int index) {
+    // TODO(paulberry): implement.
+    return null;
+  }
+
+  @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => '$enclosingElement.$name';
 }
 
 /**
@@ -2271,44 +3783,74 @@ abstract class Node<NodeType> {
 }
 
 /**
- * Element used for references that result from trying to access a nonstatic
+ * Element used for references that result from trying to access a non-static
  * member of an element that is not a container (e.g. accessing the "length"
  * property of a constant).
+ *
+ * Accesses to a chain of non-static members separated by '.' are andled by
+ * creating a [NonstaticMemberElementForLink] that points to another
+ * [NonstaticMemberElementForLink], to whatever nesting level is necessary.
  */
-class NonstaticMemberElementForLink implements ReferenceableElementForLink {
+class NonstaticMemberElementForLink extends Object
+    with ReferenceableElementForLink {
   /**
-   * If the thing from which a member was accessed is a constant, the
-   * associated [ConstNode].  Otherwise `null`.
+   * The [ReferenceableElementForLink] which is the target of the non-static
+   * reference.
    */
-  final ConstVariableNode _constNode;
+  final ReferenceableElementForLink _target;
 
-  NonstaticMemberElementForLink(this._constNode);
+  /**
+   * The name of the non-static members that is being accessed.
+   */
+  final String _name;
+
+  /**
+   * The library in which the access occurs.  This determines whether private
+   * names are accessible.
+   */
+  final LibraryElementForLink _library;
+
+  NonstaticMemberElementForLink(this._library, this._target, this._name);
 
   @override
-  ConstructorElementForLink get asConstructor => null;
-
-  @override
-  ConstVariableNode get asConstVariable => _constNode;
+  ConstVariableNode get asConstVariable => _target.asConstVariable;
 
   @override
   DartType get asStaticType {
-    // TODO(paulberry): implement.
+    if (_library._linker.strongMode) {
+      DartType targetType = _target.asStaticType;
+      if (targetType is InterfaceType) {
+        ExecutableElement element =
+            targetType.lookUpInheritedGetterOrMethod(_name, library: _library);
+        if (element != null) {
+          if (element is PropertyAccessorElement) {
+            return element.returnType;
+          } else {
+            // Method tear-off
+            return element.type;
+          }
+        }
+      }
+      // TODO(paulberry): handle .call on function types and .toString or
+      // .hashCode on all types.
+    }
+    // TODO(paulberry, scheglov): implement for propagated types
     return DynamicTypeImpl.instance;
   }
 
   @override
-  TypeInferenceNode get asTypeInferenceNode {
-    // TODO(paulberry): implement.
-    return null;
+  TypeInferenceNode get asTypeInferenceNode => _target.asTypeInferenceNode;
+
+  @override
+  ReferenceableElementForLink getContainedName(String name) {
+    return new NonstaticMemberElementForLink(_library, this, name);
   }
 
   @override
-  DartType buildType(DartType getTypeArgument(int i),
-          List<int> implicitFunctionTypeIndices) =>
-      DynamicTypeImpl.instance;
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 
   @override
-  ReferenceableElementForLink getContainedName(String name) => this;
+  String toString() => '$_target.(dynamic)$_name';
 }
 
 /**
@@ -2322,9 +3864,9 @@ class ParameterElementForLink implements ParameterElementImpl {
   final UnlinkedParam _unlinkedParam;
 
   /**
-   * The context in which type parameters should be interpreted.
+   * The innermost enclosing element that can declare type parameters.
    */
-  final TypeParameterizedElementForLink _typeParameterContext;
+  final TypeParameterizedElementMixin _typeParameterContext;
 
   /**
    * If this parameter has a default value and the enclosing library
@@ -2344,17 +3886,20 @@ class ParameterElementForLink implements ParameterElementImpl {
   final int _parameterIndex;
 
   @override
-  final ExecutableElementForLink enclosingElement;
+  final ParameterParentElementForLink enclosingElement;
 
   DartType _inferredType;
   DartType _declaredType;
 
   ParameterElementForLink(this.enclosingElement, this._unlinkedParam,
       this._typeParameterContext, this.compilationUnit, this._parameterIndex) {
-    if (_unlinkedParam.defaultValue != null) {
+    if (_unlinkedParam.initializer?.bodyExpr != null) {
       _constNode = new ConstParameterNode(this);
     }
   }
+
+  @override
+  String get displayName => _unlinkedParam.name;
 
   @override
   bool get hasImplicitType =>
@@ -2373,6 +3918,7 @@ class ParameterElementForLink implements ParameterElementImpl {
       case UnlinkedParamKind.named:
         return ParameterKind.NAMED;
     }
+    return null;
   }
 
   @override
@@ -2381,14 +3927,19 @@ class ParameterElementForLink implements ParameterElementImpl {
       return _inferredType;
     } else if (_declaredType == null) {
       if (_unlinkedParam.isFunctionTyped) {
-        // TODO(paulberry): implement.
         _declaredType = new FunctionTypeImpl(
             new FunctionElementForLink_FunctionTypedParam(
-                this, enclosingElement, <int>[_parameterIndex]));
+                this, _typeParameterContext, _unlinkedParam.parameters));
       } else if (_unlinkedParam.type == null) {
-        _declaredType = DynamicTypeImpl.instance;
+        if (!compilationUnit.isInBuildUnit) {
+          _inferredType = compilationUnit.getLinkedType(
+              _unlinkedParam.inferredTypeSlot, _typeParameterContext);
+          return _inferredType;
+        } else {
+          _declaredType = DynamicTypeImpl.instance;
+        }
       } else {
-        _declaredType = compilationUnit._resolveTypeRef(
+        _declaredType = compilationUnit.resolveTypeRef(
             _unlinkedParam.type, _typeParameterContext);
       }
     }
@@ -2415,20 +3966,194 @@ class ParameterElementForLink implements ParameterElementImpl {
 }
 
 /**
+ * Element representing the parameter of a synthetic setter for a variable
+ * resynthesized during linking.
+ */
+class ParameterElementForLink_VariableSetter implements ParameterElementImpl {
+  @override
+  final PropertyAccessorElementForLink_Variable enclosingElement;
+
+  ParameterElementForLink_VariableSetter(this.enclosingElement);
+
+  @override
+  bool get isSynthetic => true;
+
+  @override
+  String get name => 'x';
+
+  @override
+  ParameterKind get parameterKind => ParameterKind.REQUIRED;
+
+  @override
+  DartType get type => enclosingElement.computeVariableType();
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/**
+ * Mixin used by elements that can have parameters.
+ */
+abstract class ParameterParentElementForLink implements Element {
+  List<ParameterElementForLink> _parameters;
+
+  /**
+   * Get the appropriate integer list to store in
+   * [EntityRef.implicitFunctionTypeIndices] to refer to this element.  For an
+   * element representing a function-typed parameter, this should return a
+   * non-empty list.  For an element representing an executable, this should
+   * return the empty list.
+   */
+  List<int> get implicitFunctionTypeIndices;
+
+  /**
+   * Get all the parameters of this element.
+   */
+  List<ParameterElementForLink> get parameters {
+    if (_parameters == null) {
+      List<UnlinkedParam> unlinkedParameters = this.unlinkedParameters;
+      int numParameters = unlinkedParameters.length;
+      _parameters = new List<ParameterElementForLink>(numParameters);
+      for (int i = 0; i < numParameters; i++) {
+        UnlinkedParam unlinkedParam = unlinkedParameters[i];
+        _parameters[i] = new ParameterElementForLink(
+            this,
+            unlinkedParam,
+            typeParameterContext,
+            typeParameterContext.enclosingUnit.resynthesizerContext
+            as CompilationUnitElementForLink,
+            i);
+      }
+    }
+    return _parameters;
+  }
+
+  /**
+   * Get the innermost enclosing element that can declare type parameters (which
+   * may be [this], or may be a parent when there are function-typed
+   * parameters).
+   */
+  TypeParameterizedElementMixin get typeParameterContext;
+
+  /**
+   * Get the list of unlinked parameters of this element.
+   */
+  List<UnlinkedParam> get unlinkedParameters;
+}
+
+/**
  * Element representing a getter or setter resynthesized from a summary during
  * linking.
  */
-class PropertyAccessorElementForLink extends ExecutableElementForLink
-    implements PropertyAccessorElementImpl {
+abstract class PropertyAccessorElementForLink
+    implements PropertyAccessorElementImpl, ReferenceableElementForLink {
+  void link(CompilationUnitElementInBuildUnit compilationUnit);
+}
+
+/**
+ * Specialization of [PropertyAccessorElementForLink] for synthetic accessors
+ * implied by the synthetic fields of an enum declaration.
+ */
+class PropertyAccessorElementForLink_EnumField extends Object
+    with ReferenceableElementForLink
+    implements PropertyAccessorElementForLink {
+  @override
+  final FieldElementForLink_EnumField variable;
+
+  FunctionTypeImpl _type;
+
+  PropertyAccessorElementForLink_EnumField(this.variable);
+
+  @override
+  DartType get asStaticType => returnType;
+
+  @override
+  Element get enclosingElement => variable.enclosingElement;
+
+  @override
+  bool get isGetter => true;
+
+  @override
+  bool get isSetter => false;
+
+  @override
+  bool get isStatic => variable.isStatic;
+
+  @override
+  bool get isSynthetic => true;
+
+  @override
+  ElementKind get kind => ElementKind.GETTER;
+
+  @override
+  LibraryElementForLink get library =>
+      variable.enclosingElement.enclosingElement.enclosingElement;
+
+  @override
+  String get name => variable.name;
+
+  @override
+  List<ParameterElement> get parameters => const [];
+
+  @override
+  DartType get returnType => variable.type;
+
+  @override
+  FunctionTypeImpl get type => _type ??= new FunctionTypeImpl(this);
+
+  @override
+  List<TypeParameterElement> get typeParameters => const [];
+
+  @override
+  ReferenceableElementForLink getContainedName(String name) {
+    return new NonstaticMemberElementForLink(library, this, name);
+  }
+
+  @override
+  FunctionElementForLink_Local getLocalFunction(int index) {
+    // TODO(paulberry): implement (should return the synthetic function element
+    // for the enum field's initializer).
+    return null;
+  }
+
+  @override
+  bool isAccessibleIn(LibraryElement library) =>
+      !Identifier.isPrivateName(name) || identical(this.library, library);
+
+  @override
+  void link(CompilationUnitElementInBuildUnit compilationUnit) {}
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => '$enclosingElement.$name';
+}
+
+/**
+ * Specialization of [PropertyAccessorElementForLink] for non-synthetic
+ * accessors explicitly declared in the source code.
+ */
+class PropertyAccessorElementForLink_Executable
+    extends ExecutableElementForLink_NonLocal
+    with ReferenceableElementForLink
+    implements PropertyAccessorElementForLink {
   @override
   SyntheticVariableElementForLink variable;
 
-  PropertyAccessorElementForLink(ClassElementForLink_Class enclosingElement,
-      UnlinkedExecutable unlinkedExecutable, this.variable)
-      : super(enclosingElement, unlinkedExecutable);
+  PropertyAccessorElementForLink_Executable(
+      CompilationUnitElementForLink enclosingUnit,
+      ClassElementForLink_Class enclosingClass,
+      UnlinkedExecutable unlinkedExecutable,
+      this.variable)
+      : super(enclosingUnit, enclosingClass, unlinkedExecutable);
 
   @override
-  PropertyAccessorElementForLink get correspondingGetter => variable.getter;
+  DartType get asStaticType => returnType;
+
+  @override
+  PropertyAccessorElementForLink_Executable get correspondingGetter =>
+      variable.getter;
 
   @override
   bool get isGetter =>
@@ -2439,51 +4164,197 @@ class PropertyAccessorElementForLink extends ExecutableElementForLink
       _unlinkedExecutable.kind == UnlinkedExecutableKind.setter;
 
   @override
+  bool get isStatic => enclosingClass == null || super.isStatic;
+
+  @override
   ElementKind get kind => _unlinkedExecutable.kind ==
       UnlinkedExecutableKind.getter ? ElementKind.GETTER : ElementKind.SETTER;
 
   @override
+  ReferenceableElementForLink getContainedName(String name) {
+    return new NonstaticMemberElementForLink(library, this, name);
+  }
+
+  @override
+  FunctionElementForLink_Local getLocalFunction(int index) {
+    // TODO(paulberry): implement
+    return null;
+  }
+
+  @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => '$enclosingElement.$name';
 }
 
 /**
- * Abstract base class representing an element which can be the target
- * of a reference.
+ * Specialization of [PropertyAccessorElementForLink] for synthetic accessors
+ * implied by a field or variable declaration.
  */
-abstract class ReferenceableElementForLink {
+class PropertyAccessorElementForLink_Variable extends Object
+    with ReferenceableElementForLink
+    implements PropertyAccessorElementForLink {
+  @override
+  final bool isSetter;
+
+  final VariableElementForLink variable;
+  FunctionTypeImpl _type;
+  List<ParameterElement> _parameters;
+
+  PropertyAccessorElementForLink_Variable(this.variable, this.isSetter);
+
+  @override
+  ConstVariableNode get asConstVariable => variable._constNode;
+
+  @override
+  DartType get asStaticType => returnType;
+
+  @override
+  TypeInferenceNode get asTypeInferenceNode => variable._typeInferenceNode;
+
+  @override
+  Element get enclosingElement => variable.enclosingElement;
+
+  @override
+  bool get isGetter => !isSetter;
+
+  @override
+  bool get isStatic => variable.isStatic;
+
+  @override
+  bool get isSynthetic => true;
+
+  @override
+  ElementKind get kind => isSetter ? ElementKind.SETTER : ElementKind.GETTER;
+
+  @override
+  LibraryElementForLink get library =>
+      variable.compilationUnit.enclosingElement;
+
+  @override
+  String get name => isSetter ? '${variable.name}=' : variable.name;
+
+  @override
+  List<ParameterElement> get parameters {
+    if (_parameters == null) {
+      _parameters = <ParameterElementForLink_VariableSetter>[];
+      if (isSetter) {
+        _parameters.add(new ParameterElementForLink_VariableSetter(this));
+      }
+    }
+    return _parameters;
+  }
+
+  @override
+  DartType get returnType {
+    if (isSetter) {
+      return VoidTypeImpl.instance;
+    } else {
+      return computeVariableType();
+    }
+  }
+
+  @override
+  FunctionTypeImpl get type => _type ??= new FunctionTypeImpl(this);
+
+  @override
+  List<TypeParameterElement> get typeParameters {
+    // TODO(paulberry): is this correct for fields in generic classes?
+    return const [];
+  }
+
+  /**
+   * Compute the type of the corresponding variable, which may depend on the
+   * progress of type inference.
+   */
+  DartType computeVariableType() {
+    if (variable.hasImplicitType &&
+        !isStatic &&
+        !variable.compilationUnit.isTypeInferenceComplete) {
+      // This is an instance field and we are currently inferring types in the
+      // library cycle containing it.  So we shouldn't use the inferred type
+      // (even if we have already computed it), since that would lead to
+      // non-deterministic type inference results.
+      return DynamicTypeImpl.instance;
+    } else {
+      return variable.type;
+    }
+  }
+
+  @override
+  ReferenceableElementForLink getContainedName(String name) {
+    return new NonstaticMemberElementForLink(library, this, name);
+  }
+
+  @override
+  FunctionElementForLink_Local getLocalFunction(int index) {
+    if (index == 0) {
+      return variable.initializer;
+    } else {
+      return null;
+    }
+  }
+
+  @override
+  bool isAccessibleIn(LibraryElement library) =>
+      !Identifier.isPrivateName(name) || identical(this.library, library);
+
+  @override
+  void link(CompilationUnitElementInBuildUnit compilationUnit) {}
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => '$enclosingElement.$name';
+}
+
+/**
+ * Base class representing an element which can be the target of a reference.
+ * When used as a mixin, implements the default behavior shared by most
+ * elements.
+ */
+abstract class ReferenceableElementForLink implements Element {
   /**
    * If this element can be used in a constructor invocation context,
    * return the associated constructor (which may be `this` or some
    * other element).  Otherwise return `null`.
    */
-  ConstructorElementForLink get asConstructor;
+  ConstructorElementForLink get asConstructor => null;
 
   /**
    * If this element can be used in a getter context to refer to a
    * constant variable, return the [ConstVariableNode] for the
    * constant value.  Otherwise return `null`.
    */
-  ConstVariableNode get asConstVariable;
+  ConstVariableNode get asConstVariable => null;
 
   /**
-   * Return the static type of the entity referred to by this element.
+   * Return the static type (possibly inferred) of the entity referred to by
+   * this element.
    */
-  DartType get asStaticType;
+  DartType get asStaticType => DynamicTypeImpl.instance;
 
   /**
    * If this element can be used in a getter context as a type inference
    * dependency, return the [TypeInferenceNode] for the inferred type.
    * Otherwise return `null`.
    */
-  TypeInferenceNode get asTypeInferenceNode;
+  TypeInferenceNode get asTypeInferenceNode => null;
 
   /**
    * Return the type indicated by this element when it is used in a
    * type instantiation context.  If this element can't legally be
    * instantiated as a type, return the dynamic type.
+   *
+   * If the type is parameterized, [getTypeArgument] will be called to retrieve
+   * the type parameters.  It should return `null` for unspecified type
+   * parameters.
    */
-  DartType buildType(
-      DartType getTypeArgument(int i), List<int> implicitFunctionTypeIndices);
+  DartType buildType(DartType getTypeArgument(int i),
+          List<int> implicitFunctionTypeIndices) =>
+      DynamicTypeImpl.instance;
 
   /**
    * If this element contains other named elements, return the
@@ -2492,7 +4363,43 @@ abstract class ReferenceableElementForLink {
    * with the given name, return the singleton of
    * [UndefinedElementForLink].
    */
-  ReferenceableElementForLink getContainedName(String name);
+  ReferenceableElementForLink getContainedName(String name) {
+    // TODO(paulberry): handle references to `call` for function types.
+    return UndefinedElementForLink.instance;
+  }
+
+  /**
+   * If this element contains local functions, return the contained local
+   * function having the given [index].  If this element doesn't contain local
+   * functions, or the index is out of range, return `null`.
+   */
+  FunctionElementForLink_Local getLocalFunction(int index) => null;
+}
+
+/**
+ * Element used for references to special types such as `void`.
+ */
+class SpecialTypeElementForLink extends Object
+    with ReferenceableElementForLink {
+  final Linker linker;
+  final DartType type;
+
+  SpecialTypeElementForLink(this.linker, this.type);
+
+  @override
+  DartType get asStaticType => linker.typeProvider.typeType;
+
+  @override
+  DartType buildType(
+      DartType getTypeArgument(int i), List<int> implicitFunctionTypeIndices) {
+    return type;
+  }
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => type.toString();
 }
 
 /**
@@ -2500,14 +4407,17 @@ abstract class ReferenceableElementForLink {
  * linking.
  */
 class SyntheticVariableElementForLink implements PropertyInducingElementImpl {
-  PropertyAccessorElementForLink _getter;
-  PropertyAccessorElementForLink _setter;
+  PropertyAccessorElementForLink_Executable _getter;
+  PropertyAccessorElementForLink_Executable _setter;
 
   @override
-  PropertyAccessorElementForLink get getter => _getter;
+  PropertyAccessorElementForLink_Executable get getter => _getter;
 
   @override
-  PropertyAccessorElementForLink get setter => _setter;
+  bool get isSynthetic => true;
+
+  @override
+  PropertyAccessorElementForLink_Executable get setter => _setter;
 
   @override
   void set type(DartType inferredType) {}
@@ -2517,20 +4427,63 @@ class SyntheticVariableElementForLink implements PropertyInducingElementImpl {
 }
 
 /**
- * Element representing a top level variable resynthesized from a
- * summary during linking.
+ * Element representing a top-level function.
  */
-class TopLevelVariableElementForLink extends VariableElementForLink
-    implements TopLevelVariableElement {
-  TopLevelVariableElementForLink(CompilationUnitElement enclosingElement,
-      UnlinkedVariable unlinkedVariable)
-      : super(unlinkedVariable, enclosingElement);
+class TopLevelFunctionElementForLink extends ExecutableElementForLink_NonLocal
+    with ReferenceableElementForLink
+    implements FunctionElementImpl {
+  DartType _returnType;
+
+  TopLevelFunctionElementForLink(
+      CompilationUnitElementForLink enclosingUnit, UnlinkedExecutable _buf)
+      : super(enclosingUnit, null, _buf);
+
+  @override
+  DartType get asStaticType => type;
+
+  @override
+  String get identifier => _unlinkedExecutable.name;
 
   @override
   bool get isStatic => true;
 
   @override
-  TypeParameterizedElementForLink get _typeParameterContext => null;
+  ElementKind get kind => ElementKind.FUNCTION;
+
+  @override
+  FunctionElementForLink_Local getLocalFunction(int index) {
+    // TODO(paulberry): implement.
+    return null;
+  }
+
+  @override
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => '$enclosingElement.$name';
+}
+
+/**
+ * Element representing a top level variable resynthesized from a
+ * summary during linking.
+ */
+class TopLevelVariableElementForLink extends VariableElementForLink
+    implements TopLevelVariableElement {
+  TopLevelVariableElementForLink(CompilationUnitElementForLink enclosingElement,
+      UnlinkedVariable unlinkedVariable)
+      : super(unlinkedVariable, enclosingElement);
+
+  @override
+  CompilationUnitElementForLink get enclosingElement => compilationUnit;
+
+  @override
+  bool get isStatic => true;
+
+  @override
+  LibraryElementForLink get library => compilationUnit.library;
+
+  @override
+  TypeParameterizedElementMixin get _typeParameterContext => null;
 
   /**
    * Store the results of type inference for this variable in
@@ -2538,11 +4491,12 @@ class TopLevelVariableElementForLink extends VariableElementForLink
    */
   void link(CompilationUnitElementInBuildUnit compilationUnit) {
     if (hasImplicitType) {
-      TypeInferenceNode typeInferenceNode = this.asTypeInferenceNode;
+      TypeInferenceNode typeInferenceNode = this._typeInferenceNode;
       if (typeInferenceNode != null) {
-        compilationUnit._storeLinkedType(unlinkedVariable.inferredTypeSlot,
-            typeInferenceNode.inferredType, null);
+        compilationUnit._storeLinkedType(
+            unlinkedVariable.inferredTypeSlot, inferredType, null);
       }
+      initializer?.link(compilationUnit);
     }
   }
 }
@@ -2572,65 +4526,68 @@ class TypeInferenceDependencyWalker
  */
 class TypeInferenceNode extends Node<TypeInferenceNode> {
   /**
-   * The [FieldElement] or [TopLevelVariableElement] to which this
-   * node refers.
+   * The [FunctionElementForLink_Local] to which this node refers.
    */
-  final VariableElementForLink variableElement;
+  final FunctionElementForLink_Local functionElement;
 
-  /**
-   * If a type has been inferred for this node, the inferred type (may be
-   * `dynamic`).  Otherwise `null`.
-   */
-  DartType _inferredType;
-
-  TypeInferenceNode(this.variableElement);
-
-  /**
-   * Infer a type for this node if necessary, and return it.
-   */
-  DartType get inferredType {
-    if (_inferredType == null) {
-      new TypeInferenceDependencyWalker().walk(this);
-      assert(_inferredType != null);
-    }
-    return _inferredType;
-  }
+  TypeInferenceNode(this.functionElement);
 
   @override
-  bool get isEvaluated => _inferredType != null;
+  bool get isEvaluated => functionElement._hasTypeBeenInferred;
 
   /**
-   * Collect the type inference dependencies in [unlinkedConst] (which should be
-   * interpreted relative to [compilationUnit]) and store them in
+   * Collect the type inference dependencies in [unlinkedExecutable] (which
+   * should be interpreted relative to [compilationUnit]) and store them in
    * [dependencies].
    */
   void collectDependencies(
       List<TypeInferenceNode> dependencies,
-      UnlinkedConst unlinkedConst,
+      UnlinkedExecutable unlinkedExecutable,
       CompilationUnitElementForLink compilationUnit) {
+    UnlinkedConst unlinkedConst = unlinkedExecutable?.bodyExpr;
     if (unlinkedConst == null) {
       return;
     }
     int refPtr = 0;
+    int intPtr = 0;
 
     for (UnlinkedConstOperation operation in unlinkedConst.operations) {
       switch (operation) {
+        case UnlinkedConstOperation.pushInt:
+          intPtr++;
+          break;
+        case UnlinkedConstOperation.pushLongInt:
+          int numInts = unlinkedConst.ints[intPtr++];
+          intPtr += numInts;
+          break;
+        case UnlinkedConstOperation.concatenate:
+          intPtr++;
+          break;
         case UnlinkedConstOperation.pushReference:
           EntityRef ref = unlinkedConst.references[refPtr++];
           // TODO(paulberry): cache these resolved references for
           // later use by evaluate().
           TypeInferenceNode dependency =
-              compilationUnit._resolveRef(ref.reference).asTypeInferenceNode;
+              compilationUnit.resolveRef(ref.reference).asTypeInferenceNode;
           if (dependency != null) {
             dependencies.add(dependency);
           }
           break;
-        case UnlinkedConstOperation.makeTypedList:
         case UnlinkedConstOperation.invokeConstructor:
           refPtr++;
+          intPtr += 2;
+          break;
+        case UnlinkedConstOperation.makeUntypedList:
+        case UnlinkedConstOperation.makeUntypedMap:
+          intPtr++;
+          break;
+        case UnlinkedConstOperation.makeTypedList:
+          refPtr++;
+          intPtr++;
           break;
         case UnlinkedConstOperation.makeTypedMap:
           refPtr += 2;
+          intPtr++;
           break;
         case UnlinkedConstOperation.assignToRef:
           // TODO(paulberry): if this reference refers to a variable, should it
@@ -2641,542 +4598,53 @@ class TypeInferenceNode extends Node<TypeInferenceNode> {
           // TODO(paulberry): if this reference refers to a variable, should it
           // be considered a type inference dependency?
           refPtr++;
+          intPtr += 2;
+          int numTypeArguments = unlinkedConst.ints[intPtr++];
+          refPtr += numTypeArguments;
+          break;
+        case UnlinkedConstOperation.invokeMethod:
+          intPtr += 2;
+          int numTypeArguments = unlinkedConst.ints[intPtr++];
+          refPtr += numTypeArguments;
           break;
         case UnlinkedConstOperation.typeCast:
         case UnlinkedConstOperation.typeCheck:
           refPtr++;
+          break;
+        case UnlinkedConstOperation.pushLocalFunctionReference:
+          int popCount = unlinkedConst.ints[intPtr++];
+          assert(popCount == 0); // TODO(paulberry): handle the nonzero case.
+          dependencies.add(functionElement
+              .getLocalFunction(unlinkedConst.ints[intPtr++])
+              .asTypeInferenceNode);
           break;
         default:
           break;
       }
     }
     assert(refPtr == unlinkedConst.references.length);
+    assert(intPtr == unlinkedConst.ints.length);
   }
 
   @override
   List<TypeInferenceNode> computeDependencies() {
     List<TypeInferenceNode> dependencies = <TypeInferenceNode>[];
-    collectDependencies(
-        dependencies,
-        variableElement.unlinkedVariable.constExpr,
-        variableElement.compilationUnit);
+    collectDependencies(dependencies, functionElement._unlinkedExecutable,
+        functionElement.compilationUnit);
     return dependencies;
   }
 
   void evaluate(bool inCycle) {
     if (inCycle) {
-      _inferredType = DynamicTypeImpl.instance;
+      functionElement._setInferredType(DynamicTypeImpl.instance);
     } else {
-      // Perform RPN evaluation of the cycle, using a stack of
-      // inferred types.
-      List<DartType> stack = <DartType>[];
-      int intPtr = 0;
-      int refPtr = 0;
-      int strPtr = 0;
-      int assignmentOperatorPtr = 0;
-      UnlinkedConst unlinkedConst = variableElement.unlinkedVariable.constExpr;
-
-      LibraryElementForLink libraryElement =
-          variableElement.compilationUnit.enclosingElement;
-      Linker linker = libraryElement._linker;
-      TypeProvider typeProvider = linker.typeProvider;
-
-      DartType leastUpperBound(DartType s, DartType t) {
-        return linker.typeSystem.getLeastUpperBound(typeProvider, s, t);
-      }
-
-      List<DartType> popList(int n) {
-        List<DartType> result = stack.sublist(stack.length - n, stack.length);
-        stack.length -= n;
-        return result;
-      }
-
-      DartType dynamicIfNull(DartType type) {
-        if (type == null || type.isBottom) {
-          return DynamicTypeImpl.instance;
-        }
-        return type;
-      }
-
-      DartType getNextTypeRef() {
-        EntityRef ref = unlinkedConst.references[refPtr++];
-        return variableElement.compilationUnit
-            ._resolveTypeRef(ref, variableElement._typeParameterContext);
-      }
-
-      DartType refineBinaryExpressionType(TokenType operator,
-          DartType currentType, DartType leftType, DartType rightType) {
-        DartType intType = typeProvider.intType;
-        if (leftType == intType) {
-          // int op double
-          if (operator == TokenType.MINUS ||
-              operator == TokenType.PERCENT ||
-              operator == TokenType.PLUS ||
-              operator == TokenType.STAR) {
-            DartType doubleType = typeProvider.doubleType;
-            if (rightType == doubleType) {
-              return doubleType;
-            }
-          }
-          // int op int
-          if (operator == TokenType.MINUS ||
-              operator == TokenType.PERCENT ||
-              operator == TokenType.PLUS ||
-              operator == TokenType.STAR ||
-              operator == TokenType.TILDE_SLASH) {
-            if (rightType == intType) {
-              return intType;
-            }
-          }
-        }
-        // default
-        return currentType;
-      }
-
-      void computeBinaryOperatorType(TokenType operator) {
-        DartType right = stack.removeLast();
-        DartType left = stack.removeLast();
-        if (left is InterfaceType) {
-          MethodElement method =
-              left.lookUpMethod(operator.lexeme, libraryElement);
-          if (method != null) {
-            DartType type = method.returnType;
-            type = refineBinaryExpressionType(operator, type, left, right);
-            stack.add(type);
-            return;
-          }
-        }
-        stack.add(DynamicTypeImpl.instance);
-      }
-
-      for (UnlinkedConstOperation operation in unlinkedConst.operations) {
-        switch (operation) {
-          case UnlinkedConstOperation.pushInt:
-            intPtr++;
-            stack.add(typeProvider.intType);
-            break;
-          case UnlinkedConstOperation.pushLongInt:
-            int numInts = unlinkedConst.ints[intPtr++];
-            intPtr += numInts;
-            stack.add(typeProvider.intType);
-            break;
-          case UnlinkedConstOperation.pushDouble:
-            stack.add(typeProvider.doubleType);
-            break;
-          case UnlinkedConstOperation.pushTrue:
-          case UnlinkedConstOperation.pushFalse:
-            stack.add(typeProvider.boolType);
-            break;
-          case UnlinkedConstOperation.pushString:
-            strPtr++;
-            stack.add(typeProvider.stringType);
-            break;
-          case UnlinkedConstOperation.concatenate:
-            stack.length -= unlinkedConst.ints[intPtr++];
-            stack.add(typeProvider.stringType);
-            break;
-          case UnlinkedConstOperation.makeSymbol:
-            strPtr++;
-            stack.add(typeProvider.symbolType);
-            break;
-          case UnlinkedConstOperation.pushNull:
-            stack.add(BottomTypeImpl.instance);
-            break;
-          case UnlinkedConstOperation.pushReference:
-            EntityRef ref = unlinkedConst.references[refPtr++];
-            if (ref.paramReference != 0) {
-              stack.add(typeProvider.typeType);
-            } else {
-              // Synthetic function types can't be directly referred
-              // to by expressions.
-              assert(ref.syntheticReturnType == null);
-              // Nor can implicit function types derived from
-              // function-typed parameters.
-              assert(ref.implicitFunctionTypeIndices.isEmpty);
-              ReferenceableElementForLink element =
-                  variableElement.compilationUnit._resolveRef(ref.reference);
-              TypeInferenceNode typeInferenceNode = element.asTypeInferenceNode;
-              if (typeInferenceNode != null) {
-                assert(typeInferenceNode.isEvaluated);
-                stack.add(typeInferenceNode._inferredType);
-              } else {
-                stack.add(element.asStaticType);
-              }
-            }
-            break;
-          case UnlinkedConstOperation.extractProperty:
-            DartType target = stack.removeLast();
-            String propertyName = unlinkedConst.strings[strPtr++];
-            stack.add(() {
-              if (target is InterfaceType) {
-                PropertyAccessorElement getter =
-                    target.lookUpGetter(propertyName, libraryElement);
-                if (getter != null) {
-                  return getter.returnType;
-                }
-                MethodElement method =
-                    target.lookUpMethod(propertyName, libraryElement);
-                if (method != null) {
-                  return method.type;
-                }
-              }
-              return DynamicTypeImpl.instance;
-            }());
-            break;
-          case UnlinkedConstOperation.invokeConstructor:
-            int numNamed = unlinkedConst.ints[intPtr++];
-            int numPositional = unlinkedConst.ints[intPtr++];
-            // TODO(paulberry): don't just pop the args; use their types
-            // to infer the type of type arguments.
-            stack.length -= numNamed + numPositional;
-            strPtr += numNamed;
-            EntityRef ref = unlinkedConst.references[refPtr++];
-            ConstructorElementForLink element = variableElement.compilationUnit
-                ._resolveRef(ref.reference)
-                .asConstructor;
-            if (element != null) {
-              stack.add(element.enclosingElement.buildType(
-                  (int i) => i >= ref.typeArguments.length
-                      ? DynamicTypeImpl.instance
-                      : variableElement.compilationUnit._resolveTypeRef(
-                          ref.typeArguments[i],
-                          variableElement._typeParameterContext),
-                  const []));
-            } else {
-              stack.add(DynamicTypeImpl.instance);
-            }
-            break;
-          case UnlinkedConstOperation.makeUntypedList:
-            int numItems = unlinkedConst.ints[intPtr++];
-            DartType itemType = popList(numItems).reduce(leastUpperBound);
-            itemType = dynamicIfNull(itemType);
-            stack.add(typeProvider.listType.instantiate(<DartType>[itemType]));
-            break;
-          case UnlinkedConstOperation.makeUntypedMap:
-            int numEntries = unlinkedConst.ints[intPtr++];
-            List<DartType> keysValues = popList(2 * numEntries);
-            DartType keyType = null;
-            DartType valueType = null;
-            for (int i = 0; i < 2 * numEntries; i++) {
-              DartType type = keysValues[i];
-              if (i.isEven) {
-                keyType =
-                    keyType == null ? type : leastUpperBound(keyType, type);
-              } else {
-                valueType =
-                    valueType == null ? type : leastUpperBound(valueType, type);
-              }
-            }
-            keyType = dynamicIfNull(keyType);
-            valueType = dynamicIfNull(valueType);
-            stack.add(typeProvider.mapType
-                .instantiate(<DartType>[keyType, valueType]));
-            break;
-          case UnlinkedConstOperation.makeTypedList:
-            DartType itemType = getNextTypeRef();
-            stack.length -= unlinkedConst.ints[intPtr++];
-            stack.add(typeProvider.listType.instantiate(<DartType>[itemType]));
-            break;
-          case UnlinkedConstOperation.makeTypedMap:
-            DartType keyType = getNextTypeRef();
-            DartType valueType = getNextTypeRef();
-            stack.length -= 2 * unlinkedConst.ints[intPtr++];
-            stack.add(typeProvider.mapType
-                .instantiate(<DartType>[keyType, valueType]));
-            break;
-          case UnlinkedConstOperation.not:
-          case UnlinkedConstOperation.complement:
-          case UnlinkedConstOperation.negate:
-            stack.removeLast();
-            // TODO(paulberry): implement.
-            stack.add(DynamicTypeImpl.instance);
-            break;
-          case UnlinkedConstOperation.and:
-          case UnlinkedConstOperation.or:
-          case UnlinkedConstOperation.equal:
-          case UnlinkedConstOperation.notEqual:
-            stack.length -= 2;
-            stack.add(typeProvider.boolType);
-            break;
-          case UnlinkedConstOperation.bitXor:
-            computeBinaryOperatorType(TokenType.CARET);
-            break;
-          case UnlinkedConstOperation.bitAnd:
-            computeBinaryOperatorType(TokenType.AMPERSAND);
-            break;
-          case UnlinkedConstOperation.bitOr:
-            computeBinaryOperatorType(TokenType.BAR);
-            break;
-          case UnlinkedConstOperation.bitShiftRight:
-            computeBinaryOperatorType(TokenType.GT_GT);
-            break;
-          case UnlinkedConstOperation.bitShiftLeft:
-            computeBinaryOperatorType(TokenType.LT_LT);
-            break;
-          case UnlinkedConstOperation.add:
-            computeBinaryOperatorType(TokenType.PLUS);
-            break;
-          case UnlinkedConstOperation.subtract:
-            computeBinaryOperatorType(TokenType.MINUS);
-            break;
-          case UnlinkedConstOperation.multiply:
-            computeBinaryOperatorType(TokenType.STAR);
-            break;
-          case UnlinkedConstOperation.divide:
-            computeBinaryOperatorType(TokenType.SLASH);
-            break;
-          case UnlinkedConstOperation.floorDivide:
-            computeBinaryOperatorType(TokenType.TILDE_SLASH);
-            break;
-          case UnlinkedConstOperation.greater:
-            computeBinaryOperatorType(TokenType.GT);
-            break;
-          case UnlinkedConstOperation.less:
-            computeBinaryOperatorType(TokenType.LT);
-            break;
-          case UnlinkedConstOperation.greaterEqual:
-            computeBinaryOperatorType(TokenType.GT_EQ);
-            break;
-          case UnlinkedConstOperation.lessEqual:
-            computeBinaryOperatorType(TokenType.LT_EQ);
-            break;
-          case UnlinkedConstOperation.modulo:
-            computeBinaryOperatorType(TokenType.PERCENT);
-            break;
-          case UnlinkedConstOperation.conditional:
-            DartType elseType = stack.removeLast();
-            DartType thenType = stack.removeLast();
-            stack.removeLast();
-            DartType type = leastUpperBound(thenType, elseType);
-            type = dynamicIfNull(type);
-            stack.add(type);
-            break;
-          case UnlinkedConstOperation.assignToRef:
-            refPtr++;
-            UnlinkedExprAssignOperator operator =
-                unlinkedConst.assignmentOperators[assignmentOperatorPtr++];
-            if (operator == UnlinkedExprAssignOperator.assign) {
-              // The type of the assignment is the type of the value,
-              // which is already in the stack.
-            } else if (isIncrementOrDecrement(operator)) {
-              // TODO(scheglov) implement
-              stack.add(DynamicTypeImpl.instance);
-            } else {
-              stack.removeLast();
-              // TODO(scheglov) implement
-              stack.add(DynamicTypeImpl.instance);
-            }
-            break;
-          case UnlinkedConstOperation.assignToProperty:
-            strPtr++;
-            stack.removeLast();
-            UnlinkedExprAssignOperator operator =
-                unlinkedConst.assignmentOperators[assignmentOperatorPtr++];
-            if (operator == UnlinkedExprAssignOperator.assign) {
-              // The type of the assignment is the type of the value,
-              // which is already in the stack.
-            } else if (isIncrementOrDecrement(operator)) {
-              // TODO(scheglov) implement
-              stack.add(DynamicTypeImpl.instance);
-            } else {
-              stack.removeLast();
-              // TODO(scheglov) implement
-              stack.add(DynamicTypeImpl.instance);
-            }
-            break;
-          case UnlinkedConstOperation.assignToIndex:
-            stack.length -= 2;
-            UnlinkedExprAssignOperator operator =
-                unlinkedConst.assignmentOperators[assignmentOperatorPtr++];
-            if (operator == UnlinkedExprAssignOperator.assign) {
-              // The type of the assignment is the type of the value,
-              // which is already in the stack.
-            } else if (isIncrementOrDecrement(operator)) {
-              // TODO(scheglov) implement
-              stack.add(DynamicTypeImpl.instance);
-            } else {
-              stack.removeLast();
-              // TODO(scheglov) implement
-              stack.add(DynamicTypeImpl.instance);
-            }
-            break;
-          case UnlinkedConstOperation.extractIndex:
-            stack.length -= 2;
-            // TODO(paulberry): implement.
-            stack.add(DynamicTypeImpl.instance);
-            break;
-          case UnlinkedConstOperation.invokeMethodRef:
-            int numNamed = unlinkedConst.ints[intPtr++];
-            int numPositional = unlinkedConst.ints[intPtr++];
-            // TODO(paulberry): don't just pop the args; use their types
-            // to infer the type of type arguments.
-            stack.length -= numNamed + numPositional;
-            strPtr += numNamed;
-            refPtr++;
-            // TODO(paulberry): implement.
-            stack.add(DynamicTypeImpl.instance);
-            break;
-          case UnlinkedConstOperation.invokeMethod:
-            strPtr++;
-            int numNamed = unlinkedConst.ints[intPtr++];
-            int numPositional = unlinkedConst.ints[intPtr++];
-            // TODO(paulberry): don't just pop the args; use their types
-            // to infer the type of type arguments.
-            stack.length -= numNamed + numPositional;
-            strPtr += numNamed;
-            stack.removeLast();
-            // TODO(paulberry): implement.
-            stack.add(DynamicTypeImpl.instance);
-            break;
-          case UnlinkedConstOperation.cascadeSectionBegin:
-            stack.add(stack.last);
-            break;
-          case UnlinkedConstOperation.cascadeSectionEnd:
-            stack.removeLast();
-            break;
-          case UnlinkedConstOperation.typeCast:
-            stack.removeLast();
-            refPtr++;
-            // TODO(scheglov) implement
-            stack.add(DynamicTypeImpl.instance);
-            break;
-          case UnlinkedConstOperation.typeCheck:
-            stack.removeLast();
-            refPtr++;
-            stack.add(typeProvider.boolType);
-            break;
-          case UnlinkedConstOperation.throwException:
-            stack.removeLast();
-            stack.add(BottomTypeImpl.instance);
-            break;
-          default:
-            // TODO(paulberry): implement.
-            throw new UnimplementedError('$operation');
-        }
-      }
-      assert(intPtr == unlinkedConst.ints.length);
-      assert(refPtr == unlinkedConst.references.length);
-      assert(strPtr == unlinkedConst.strings.length);
-      assert(assignmentOperatorPtr == unlinkedConst.assignmentOperators.length);
-      assert(stack.length == 1);
-      _inferredType = dynamicIfNull(stack[0]);
+      functionElement
+          ._setInferredType(new ExprTypeComputer(functionElement).compute());
     }
-  }
-}
-
-/**
- * Element representing a type parameter resynthesized from a summary during
- * linking.
- */
-class TypeParameterElementForLink implements TypeParameterElement {
-  /**
-   * The unlinked representation of the type parameter in the summary.
-   */
-  final UnlinkedTypeParam _unlinkedTypeParam;
-
-  /**
-   * The number of type parameters whose scope overlaps this one, and which are
-   * declared earlier in the file.
-   */
-  final int nestingLevel;
-
-  TypeParameterTypeImpl _type;
-
-  TypeParameterElementForLink(this._unlinkedTypeParam, this.nestingLevel);
-
-  @override
-  DartType get bound {
-    if (_unlinkedTypeParam.bound == null) {
-      return null;
-    }
-    // TODO(scheglov) implement
-    throw new UnimplementedError();
   }
 
   @override
-  ElementKind get kind => ElementKind.TYPE_PARAMETER;
-
-  @override
-  String get name => _unlinkedTypeParam.name;
-
-  @override
-  TypeParameterTypeImpl get type => _type ??= new TypeParameterTypeImpl(this);
-
-  @override
-  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-/**
- * Mixin representing an element which can have type parameters.
- */
-abstract class TypeParameterizedElementForLink
-    implements TypeParameterizedElement {
-  List<TypeParameterType> _typeParameterTypes;
-  List<TypeParameterElementForLink> _typeParameters;
-  int _nestingLevel;
-
-  /**
-   * Get the type parameter context enclosing this one, if any.
-   */
-  TypeParameterizedElementForLink get enclosingTypeParameterContext;
-
-  /**
-   * Find out how many type parameters are in scope in this context.
-   */
-  int get typeParameterNestingLevel =>
-      _nestingLevel ??= _unlinkedTypeParams.length +
-          (enclosingTypeParameterContext?.typeParameterNestingLevel ?? 0);
-
-  List<TypeParameterElementForLink> get typeParameters {
-    if (_typeParameters == null) {
-      int enclosingNestingLevel =
-          enclosingTypeParameterContext?.typeParameterNestingLevel ?? 0;
-      int numTypeParameters = _unlinkedTypeParams.length;
-      _typeParameters =
-          new List<TypeParameterElementForLink>(numTypeParameters);
-      for (int i = 0; i < numTypeParameters; i++) {
-        _typeParameters[i] = new TypeParameterElementForLink(
-            _unlinkedTypeParams[i], enclosingNestingLevel + i);
-      }
-    }
-    return _typeParameters;
-  }
-
-  /**
-   * Get a list of [TypeParameterType] objects corresponding to the
-   * element's type parameters.
-   */
-  List<TypeParameterType> get typeParameterTypes {
-    if (_typeParameterTypes == null) {
-      _typeParameterTypes = typeParameters
-          .map((TypeParameterElementForLink e) => e.type)
-          .toList();
-    }
-    return _typeParameterTypes;
-  }
-
-  /**
-   * Get the [UnlinkedTypeParam]s representing the type parameters declared by
-   * this element.
-   */
-  List<UnlinkedTypeParam> get _unlinkedTypeParams;
-
-  /**
-   * Convert the given [index] into a type parameter type.
-   */
-  TypeParameterType getTypeParameterType(int index) {
-    List<TypeParameterType> types = typeParameterTypes;
-    if (index <= types.length) {
-      return types[types.length - index];
-    } else if (enclosingTypeParameterContext != null) {
-      return enclosingTypeParameterContext
-          .getTypeParameterType(index - types.length);
-    } else {
-      // If we get here, it means that a summary contained a type parameter index
-      // that was out of range.
-      throw new RangeError('Invalid type parameter index');
-    }
-  }
+  String toString() => 'TypeInferenceNode($functionElement)';
 }
 
 class TypeProviderForLink implements TypeProvider {
@@ -3328,39 +4796,22 @@ class TypeProviderForLink implements TypeProvider {
 /**
  * Singleton element used for unresolved references.
  */
-class UndefinedElementForLink implements ReferenceableElementForLink {
-  static const UndefinedElementForLink instance =
-      const UndefinedElementForLink._();
+class UndefinedElementForLink extends Object with ReferenceableElementForLink {
+  static final UndefinedElementForLink instance =
+      new UndefinedElementForLink._();
 
-  const UndefinedElementForLink._();
-
-  @override
-  ConstructorElementForLink get asConstructor => null;
+  UndefinedElementForLink._();
 
   @override
-  ConstVariableNode get asConstVariable => null;
-
-  @override
-  DartType get asStaticType => DynamicTypeImpl.instance;
-
-  @override
-  TypeInferenceNode get asTypeInferenceNode => null;
-
-  @override
-  DartType buildType(DartType getTypeArgument(int i),
-          List<int> implicitFunctionTypeIndices) =>
-      DynamicTypeImpl.instance;
-
-  @override
-  ReferenceableElementForLink getContainedName(String name) => this;
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /**
  * Element representing a top level variable resynthesized from a
  * summary during linking.
  */
-class VariableElementForLink
-    implements VariableElementImpl, ReferenceableElementForLink {
+abstract class VariableElementForLink
+    implements NonParameterVariableElementImpl, PropertyInducingElement {
   /**
    * The unlinked representation of the variable in the summary.
    */
@@ -3381,6 +4832,10 @@ class VariableElementForLink
   TypeInferenceNode _typeInferenceNode;
 
   FunctionElementForLink_Initializer _initializer;
+  DartType _inferredType;
+  DartType _declaredType;
+  PropertyAccessorElementForLink_Variable _getter;
+  PropertyAccessorElementForLink_Variable _setter;
 
   /**
    * The compilation unit in which this variable appears.
@@ -3388,35 +4843,66 @@ class VariableElementForLink
   final CompilationUnitElementForLink compilationUnit;
 
   VariableElementForLink(this.unlinkedVariable, this.compilationUnit) {
-    if (compilationUnit.isInBuildUnit && unlinkedVariable.constExpr != null) {
+    if (compilationUnit.isInBuildUnit &&
+        unlinkedVariable.initializer?.bodyExpr != null) {
       _constNode = new ConstVariableNode(this);
       if (unlinkedVariable.type == null) {
-        _typeInferenceNode = new TypeInferenceNode(this);
+        _typeInferenceNode = initializer.asTypeInferenceNode;
       }
     }
   }
 
-  @override
-  ConstructorElementForLink get asConstructor => null;
-
-  @override
-  ConstVariableNode get asConstVariable => _constNode;
-
-  @override
-  DartType get asStaticType {
-    // TODO(paulberry): implement.
-    return DynamicTypeImpl.instance;
+  /**
+   * If the variable has an explicitly declared return type, return it.
+   * Otherwise return `null`.
+   */
+  DartType get declaredType {
+    if (unlinkedVariable.type == null) {
+      return null;
+    } else {
+      return _declaredType ??= compilationUnit.resolveTypeRef(
+          unlinkedVariable.type, _typeParameterContext);
+    }
   }
 
   @override
-  TypeInferenceNode get asTypeInferenceNode => _typeInferenceNode;
+  PropertyAccessorElementForLink_Variable get getter =>
+      _getter ??= new PropertyAccessorElementForLink_Variable(this, false);
 
   @override
   bool get hasImplicitType => unlinkedVariable.type == null;
 
+  /**
+   * Return the inferred type of the variable element.  Should only be called if
+   * no type was explicitly declared.
+   */
+  DartType get inferredType {
+    // We should only try to infer a type when none is explicitly declared.
+    assert(unlinkedVariable.type == null);
+    if (_inferredType == null) {
+      if (_typeInferenceNode != null) {
+        assert(Linker._initializerTypeInferenceCycle == null);
+        Linker._initializerTypeInferenceCycle =
+            compilationUnit.library.libraryCycleForLink;
+        try {
+          new TypeInferenceDependencyWalker().walk(_typeInferenceNode);
+          assert(_inferredType != null);
+        } finally {
+          Linker._initializerTypeInferenceCycle = null;
+        }
+      } else if (compilationUnit.isInBuildUnit) {
+        _inferredType = DynamicTypeImpl.instance;
+      } else {
+        _inferredType = compilationUnit.getLinkedType(
+            unlinkedVariable.inferredTypeSlot, _typeParameterContext);
+      }
+    }
+    return _inferredType;
+  }
+
   @override
   FunctionElementForLink_Initializer get initializer {
-    if (unlinkedVariable.constExpr == null) {
+    if (unlinkedVariable.initializer == null) {
       return null;
     } else {
       return _initializer ??= new FunctionElementForLink_Initializer(this);
@@ -3439,6 +4925,25 @@ class VariableElementForLink
   String get name => unlinkedVariable.name;
 
   @override
+  DartType get propagatedType {
+    // TODO(paulberry): implement propagated types in the linker.
+    return DynamicTypeImpl.instance;
+  }
+
+  @override
+  PropertyAccessorElementForLink_Variable get setter {
+    if (!isConst && !isFinal) {
+      return _setter ??=
+          new PropertyAccessorElementForLink_Variable(this, true);
+    } else {
+      return null;
+    }
+  }
+
+  @override
+  DartType get type => declaredType ?? inferredType;
+
+  @override
   void set type(DartType newType) {
     // TODO(paulberry): store inferred type.
   }
@@ -3447,17 +4952,11 @@ class VariableElementForLink
    * The context in which type parameters should be interpreted, or `null` if
    * there are no type parameters in scope.
    */
-  TypeParameterizedElementForLink get _typeParameterContext;
-
-  @override
-  DartType buildType(DartType getTypeArgument(int i),
-          List<int> implicitFunctionTypeIndices) =>
-      DynamicTypeImpl.instance;
-
-  ReferenceableElementForLink getContainedName(String name) {
-    return new NonstaticMemberElementForLink(_constNode);
-  }
+  TypeParameterizedElementMixin get _typeParameterContext;
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  String toString() => '$enclosingElement.$name';
 }

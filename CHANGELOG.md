@@ -1,12 +1,161 @@
-## 1.16.0
+## 1.18.0
 
 ### Core library changes
 
-* `dart:convet`
+* `dart:core`
+  * Improved performance when parsing some common URIs.
+  * Fixed bug in `Uri.resolve` (SDK issue [26804](https://github.com/dart-lang/sdk/issues/26804)).
+* `dart:io`
+  * Adds file locking modes `FileLock.BLOCKING_SHARED` and
+    `FileLock.BLOCKING_EXCLUSIVE`.
+
+## 1.17.1 - 2016-06-10
+
+Patch release, resolves two issues:
+
+* VM: Fixes a bug that caused crashes in async functions.
+(SDK issue [26668](https://github.com/dart-lang/sdk/issues/26668))
+
+* VM: Fixes a bug that caused garbage collection of reachable weak properties.
+(https://codereview.chromium.org/2041413005)
+
+## 1.17.0 - 2016-06-08
+
+### Core library changes
+* `dart:convert`
+  * Deprecate `ChunkedConverter` which was erroneously added in 1.16.
+
+* `dart:core`
+  * `Uri.replace` supports iterables as values for the query parameters.
+  * `Uri.parseIPv6Address` returns a `Uint8List`.
+
+* `dart:io`
+  * Added `NetworkInterface.listSupported`, which is `true` when
+    `NetworkInterface.list` is supported, and `false` otherwise. Currently,
+    `NetworkInterface.list` is not supported on Android.
+
+### Tool Changes
+
+* Pub
+  * TAR files created while publishing a package on Mac OS and Linux now use a
+    more portable format.
+
+  * Errors caused by invalid arguments now print the full usage information for
+    the command.
+
+  * SDK constraints for dependency overrides are no longer considered when
+    determining the total SDK constraint for a lockfile.
+
+  * A bug has been fixed in which a lockfile was considered up-to-date when it
+    actually wasn't.
+
+  * A bug has been fixed in which `pub get --offline` would crash when a
+    prerelease version was selected.
+
+* Dartium and content shell
+  * Debugging Dart code inside iframes improved, was broken.
+
+## 1.16.1 - 2016-05-24
+
+Patch release, resolves one issue:
+
+* VM: Fixes a bug that caused intermittent hangs on Windows.
+(SDK issue [26400](https://github.com/dart-lang/sdk/issues/26400))
+
+## 1.16.0 - 2016-04-26
+
+### Core library changes
+
+* `dart:convert`
   * Added `BASE64URL` codec and corresponding `Base64Codec.urlSafe` constructor.
+
+  * Introduce `ChunkedConverter` and deprecate chunked methods on `Converter`.
+
+* `dart:html`
+
+  There have been a number of **BREAKING** changes to align APIs with recent
+  changes in Chrome. These include:
+
+  * Chrome's `ShadowRoot` interface no longer has the methods `getElementById`,
+    `getElementsByClassName`, and `getElementsByTagName`, e.g.,
+
+    ```dart
+    elem.shadowRoot.getElementsByClassName('clazz')
+    ```
+
+    should become:
+
+    ```dart
+    elem.shadowRoot.querySelectorAll('.clazz')
+    ```
+
+  * The `clipboardData` property has been removed from `KeyEvent`
+    and `Event`. It has been moved to the new `ClipboardEvent` class, which is
+    now used by `copy`, `cut`, and `paste` events.
+
+  * The `layer` property has been removed from `KeyEvent` and
+    `UIEvent`. It has been moved to `MouseEvent`.
+
+  * The `Point get page` property has been removed from `UIEvent`.
+    It still exists on `MouseEvent` and `Touch`.
+
+  There have also been a number of other additions and removals to `dart:html`,
+  `dart:indexed_db`, `dart:svg`, `dart:web_audio`, and `dart:web_gl` that
+  correspond to changes to Chrome APIs between v39 and v45. Many of the breaking
+  changes represent APIs that would have caused runtime exceptions when compiled
+  to Javascript and run on recent Chrome releases.
+
 * `dart:io`
   * Added `SecurityContext.alpnSupported`, which is true if a platform
     supports ALPN, and false otherwise.
+
+### JavaScript interop
+
+For performance reasons, a potentially **BREAKING** change was added for
+libraries that use JS interop.
+Any Dart file that uses `@JS` annotations on declarations (top-level functions,
+classes or class members) to interop with JavaScript code will require that the
+file have the annotation `@JS()` on a library directive.
+
+```dart
+@JS()
+library my_library;
+```
+
+The analyzer will enforce this by generating the error:
+
+The `@JS()` annotation can only be used if it is also declared on the library
+directive.
+
+If part file uses the `@JS()` annotation, the library that uses the part should
+have the `@JS()` annotation e.g.,
+
+```dart
+// library_1.dart
+@JS()
+library library_1;
+
+import 'package:js/js.dart';
+
+part 'part_1.dart';
+```
+
+```dart
+// part_1.dart
+part of library_1;
+
+@JS("frameworkStabilizers")
+external List<FrameworkStabilizer> get frameworkStabilizers;
+```
+
+If your library already has a JS module e.g.,
+
+```dart
+@JS('array.utils')
+library my_library;
+```
+
+Then your library will work without any additional changes.
 
 ### Analyzer
 
@@ -29,6 +178,10 @@
 
   * Both `pub get` and `pub upgrade` now have a `--no-precompile` flag that
     disables precompilation of executables and transformed dependencies.
+
+  * `pub publish` now resolves symlinks when publishing from a Git repository.
+    This matches the behavior it always had when publishing a package that
+    wasn't in a Git repository.
 
 * Dart Dev Compiler
   * The **experimental** `dartdevc` executable has been added to the SDK.

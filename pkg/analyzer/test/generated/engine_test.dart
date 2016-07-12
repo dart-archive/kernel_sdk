@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/plugin/resolver_provider.dart';
 import 'package:analyzer/source/embedder.dart';
 import 'package:analyzer/src/cancelable_future.dart';
 import 'package:analyzer/src/context/cache.dart';
@@ -190,10 +191,14 @@ class SourcesChangedListener {
 }
 
 /**
- * Instances of the class `TestAnalysisContext` implement an analysis context in which every
- * method will cause a test to fail when invoked.
+ * An analysis context in which almost every method will cause a test to fail
+ * when invoked.
  */
 class TestAnalysisContext implements InternalAnalysisContext {
+  @override
+  final ReentrantSynchronousStream<InvalidatedResult> onResultInvalidated =
+      new ReentrantSynchronousStream<InvalidatedResult>();
+
   @override
   ResultProvider resultProvider;
 
@@ -230,6 +235,7 @@ class TestAnalysisContext implements InternalAnalysisContext {
     return null;
   }
 
+  @deprecated
   @override
   EmbedderYamlLocator get embedderYamlLocator {
     fail("Unexpected invocation of get embedderYamlLocator");
@@ -240,6 +246,17 @@ class TestAnalysisContext implements InternalAnalysisContext {
   List<AnalysisTarget> get explicitTargets {
     fail("Unexpected invocation of visitCacheItems");
     return null;
+  }
+
+  @override
+  ResolverProvider get fileResolverProvider {
+    fail("Unexpected invocation of fileResolverProvider");
+    return null;
+  }
+
+  @override
+  void set fileResolverProvider(ResolverProvider resolverProvider) {
+    fail("Unexpected invocation of fileResolverProvider");
   }
 
   @override

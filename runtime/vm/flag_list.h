@@ -5,34 +5,52 @@
 #ifndef VM_FLAG_LIST_H_
 #define VM_FLAG_LIST_H_
 
+// Don't use USING_DBC outside of this file.
+#if defined(TARGET_ARCH_DBC)
+#define USING_DBC true
+#else
+#define USING_DBC false
+#endif
+
+// Don't use USING_MULTICORE outside of this file.
+#if defined(ARCH_IS_MULTI_CORE)
+#define USING_MULTICORE true
+#else
+#define USING_MULTICORE false
+#endif
+
 // List of all flags in the VM.
 // Flags can be one of three categories:
 // * P roduct flags: Can be set in any of the deployment modes, including in
 //   production.
-// * D ebug flags: Can only be set in debug VMs, which also have assertions
-//   enabled.
 // * R elease flags: Generally available flags except when building product.
+// * D ebug flags: Can only be set in debug VMs, which also have C++ assertions
+//   enabled.
 // * pre C ompile flags: Generally available flags except when building product
 //   or precompiled runtime.
 //
 // Usage:
 //   P(name, type, default_value, comment)
-//   D(name, type, default_value, comment)
 //   R(name, product_value, type, default_value, comment)
+//   D(name, type, default_value, comment)
 //   C(name, precompiled_value, product_value, type, default_value, comment)
 #define FLAG_LIST(P, R, D, C)                                                  \
-P(allow_absolute_addresses, bool, true,                                        \
-  "Allow embedding absolute addresses in generated code.")                     \
 P(always_megamorphic_calls, bool, false,                                       \
   "Instance call always as megamorphic.")                                      \
-C(background_compilation, false, false, bool, false,                           \
+P(background_compilation, bool, USING_MULTICORE,                               \
   "Run optimizing compilation in background")                                  \
+R(background_compilation_stop_alot, false, bool, false,                        \
+  "Stress test system: stop background compiler often.")                       \
+P(background_finalization, bool, USING_MULTICORE,                              \
+  "Run weak handle finalizers in background")                                  \
 R(break_at_isolate_spawn, false, bool, false,                                  \
   "Insert a one-time breakpoint at the entrypoint for all spawned isolates")   \
 C(collect_code, false, true, bool, true,                                       \
   "Attempt to GC infrequently used code.")                                     \
-P(collect_dynamic_function_names, bool, false,                                 \
+P(collect_dynamic_function_names, bool, true,                                  \
   "Collects all dynamic function names to identify unique targets")            \
+R(concurrent_sweep, USING_MULTICORE, bool, USING_MULTICORE,                    \
+  "Concurrent sweep for old generation.")                                      \
 R(dedup_instructions, true, bool, false,                                       \
   "Canonicalize instructions when precompiling.")                              \
 C(deoptimize_alot, false, false, bool, false,                                  \
@@ -45,6 +63,8 @@ R(disassemble, false, bool, false,                                             \
   "Disassemble dart code.")                                                    \
 R(disassemble_optimized, false, bool, false,                                   \
   "Disassemble optimized code.")                                               \
+R(dump_megamorphic_stats, false, bool, false,                                  \
+  "Dump megamorphic cache statistics")                                         \
 R(dump_symbol_stats, false, bool, false,                                       \
   "Dump symbol table statistics")                                              \
 R(enable_asserts, false, bool, false,                                          \
@@ -70,9 +90,9 @@ P(getter_setter_ratio, int, 13,                                                \
   "Ratio of getter/setter usage used for double field unboxing heuristics")    \
 P(guess_icdata_cid, bool, true,                                                \
   "Artificially create type feedback for arithmetic etc. operations")          \
-P(ic_range_profiling, bool, true,                                              \
+P(ic_range_profiling, bool, !USING_DBC,                                        \
   "Generate special IC stubs collecting range information ")                   \
-P(interpret_irregexp, bool, false,                                             \
+P(interpret_irregexp, bool, USING_DBC,                                         \
   "Use irregexp bytecode interpreter")                                         \
 P(lazy_dispatchers, bool, true,                                                \
   "Generate dispatchers lazily")                                               \
@@ -80,6 +100,11 @@ P(link_natives_lazily, bool, false,                                            \
   "Link native calls lazily")                                                  \
 C(load_deferred_eagerly, true, true, bool, false,                              \
   "Load deferred libraries eagerly.")                                          \
+R(log_marker_tasks, false, bool, false,                                        \
+  "Log debugging information for old gen GC marking tasks.")                   \
+R(marker_tasks, USING_MULTICORE ? 2 : 0, int, USING_MULTICORE ? 2 : 0,         \
+  "The number of tasks to spawn during old gen GC marking (0 means "           \
+  "perform all marking on main thread).")                                      \
 P(max_polymorphic_checks, int, 4,                                              \
   "Maximum number of polymorphic check, otherwise it is megamorphic.")         \
 P(max_equality_polymorphic_checks, int, 32,                                    \
@@ -107,19 +132,13 @@ P(precompiled_mode, bool, false,                                               \
   "Precompilation compiler mode")                                              \
 C(precompiled_runtime, true, false, bool, false,                               \
   "Precompiled runtime mode")                                                  \
-R(pretenure_all, false, bool, false,                                           \
-  "Global pretenuring (for testing).")                                         \
-P(pretenure_interval, int, 10,                                                 \
-  "Back off pretenuring after this many cycles.")                              \
-P(pretenure_threshold, int, 98,                                                \
-  "Trigger pretenuring when this many percent are promoted.")                  \
 R(print_ssa_liveness, false, bool, false,                                      \
   "Print liveness for ssa variables.")                                         \
 R(print_ssa_liveranges, false, bool, false,                                    \
   "Print live ranges after allocation.")                                       \
 C(print_stop_message, false, false, bool, false,                               \
   "Print stop message.")                                                       \
-R(profiler, false, bool, true,                                                 \
+R(profiler, false, bool, !USING_DBC,                                           \
   "Enable the profiler.")                                                      \
 P(reorder_basic_blocks, bool, true,                                            \
   "Reorder basic blocks")                                                      \
@@ -133,6 +152,8 @@ R(support_disassembler, false, bool, true,                                     \
   "Support the disassembler.")                                                 \
 R(support_il_printer, false, bool, true,                                       \
   "Support the IL printer.")                                                   \
+R(support_reload, false, bool, true,                                           \
+  "Support isolate reload.")                                                   \
 R(support_service, false, bool, true,                                          \
   "Support the service protocol.")                                             \
 R(support_timeline, false, bool, true,                                         \
@@ -163,6 +184,8 @@ P(use_field_guards, bool, false,                                               \
   "Use field guards and track field types")                                    \
 C(use_osr, false, false, bool, false,                                          \
   "Use OSR")                                                                   \
+R(verbose_dev, false, bool, false,                                             \
+  "Enables verbose messages during development.")                              \
 P(verbose_gc, bool, false,                                                     \
   "Enables verbose GC.")                                                       \
 P(verbose_gc_hdr, int, 40,                                                     \
@@ -173,6 +196,5 @@ R(verify_before_gc, false, bool, false,                                        \
   "Enables heap verification before GC.")                                      \
 D(verify_on_transition, bool, false,                                           \
   "Verify on dart <==> VM.")                                                   \
-
 
 #endif  // VM_FLAG_LIST_H_

@@ -4,15 +4,24 @@
 
 part of dart.dom.html;
 
-_wrapZone(callback(arg)) {
+ZoneUnaryCallback/*<R, T>*/ _registerZone/*<R, T>*/(Zone zone,
+    ZoneUnaryCallback/*<R, T>*/ callback) {
+  // For performance reasons avoid registering if we are in the root zone.
+  if (identical(zone, Zone.ROOT)) return callback;
+  if (callback == null) return null;
+  return zone.registerUnaryCallback(callback);
+}
+
+ZoneUnaryCallback/*<R, T>*/ _wrapZone/*<R, T>*/(ZoneUnaryCallback/*<R, T>*/ callback) {
   // For performance reasons avoid wrapping if we are in the root zone.
-  if (Zone.current == Zone.ROOT) return callback;
+  if (identical(Zone.current, Zone.ROOT)) return callback;
   if (callback == null) return null;
   return Zone.current.bindUnaryCallback(callback, runGuarded: true);
 }
 
-_wrapBinaryZone(callback(arg1, arg2)) {
-  if (Zone.current == Zone.ROOT) return callback;
+ZoneBinaryCallback/*<R, A, B>*/ _wrapBinaryZone/*<R, A, B>*/(
+    ZoneBinaryCallback/*<R, A, B>*/ callback) {
+  if (identical(Zone.current, Zone.ROOT)) return callback;
   if (callback == null) return null;
   return Zone.current.bindBinaryCallback(callback, runGuarded: true);
 }

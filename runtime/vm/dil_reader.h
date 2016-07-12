@@ -19,8 +19,9 @@ class DilReader;
 class BuildingTranslationHelper : public TranslationHelper {
  public:
   BuildingTranslationHelper(
-      DilReader* reader, dart::Zone* zone, Isolate* isolate)
-      : TranslationHelper(zone, isolate), reader_(reader) {}
+      DilReader* reader, dart::Thread* thread, dart::Zone* zone,
+      Isolate* isolate)
+      : TranslationHelper(thread, zone, isolate), reader_(reader) {}
   virtual ~BuildingTranslationHelper() {}
 
   virtual RawLibrary* LookupLibraryByDilLibrary(Library* library);
@@ -57,7 +58,7 @@ class DilReader {
       : thread_(dart::Thread::Current()),
         zone_(thread_->zone()),
         isolate_(thread_->isolate()),
-        translation_helper_(this, zone_, isolate_),
+        translation_helper_(this, thread_, zone_, isolate_),
         type_translator_(&translation_helper_, &active_class_),
         buffer_(buffer),
         buffer_length_(len) {}

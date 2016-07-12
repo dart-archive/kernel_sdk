@@ -41,6 +41,8 @@
  */
 library analyzer.tool.summary.idl;
 
+import 'package:analyzer/dart/element/element.dart';
+
 import 'base.dart' as base;
 import 'base.dart' show Id, TopLevel;
 import 'format.dart' as generated;
@@ -54,6 +56,44 @@ import 'format.dart' as generated;
  * the API of the code being analyzed) is also marked as `informative`.
  */
 const informative = null;
+
+/**
+ * Information about an analysis error in a source.
+ */
+abstract class CacheAnalysisError extends base.SummaryClass {
+  /**
+   * The correction to be displayed for this error, or `null` if there is no
+   * correction information for this error. The correction should indicate how
+   * the user can fix the error.
+   */
+  @Id(4)
+  String get correction;
+
+  /**
+   * The unique name of the error code.
+   */
+  @Id(0)
+  String get errorCodeUniqueName;
+
+  /**
+   * Length of the error range.
+   */
+  @Id(2)
+  int get length;
+
+  /**
+   * The message to be displayed for this error. The message should indicate
+   * what is wrong and why it is wrong.
+   */
+  @Id(3)
+  String get message;
+
+  /**
+   * Offset of the error range relative to the beginning of the file.
+   */
+  @Id(1)
+  int get offset;
+}
 
 /**
  * Information about a source that depends only on its content.
@@ -89,6 +129,21 @@ abstract class CacheSourceContent extends base.SummaryClass {
    */
   @Id(3)
   List<String> get partUris;
+}
+
+/**
+ * Errors of a source in a library, which depends on the import/export closure
+ * of the containing library and the source.
+ */
+@TopLevel('CSEL')
+abstract class CacheSourceErrorsInLibrary extends base.SummaryClass {
+  factory CacheSourceErrorsInLibrary.fromBuffer(List<int> buffer) =>
+      generated.readCacheSourceErrorsInLibrary(buffer);
+  /**
+   * The list of errors in the source in the library.
+   */
+  @Id(0)
+  List<CacheAnalysisError> get errors;
 }
 
 /**
@@ -202,8 +257,7 @@ abstract class EntityRef extends base.SummaryClass {
 
   /**
    * If this is an instantiation of a generic type or generic executable, the
-   * type arguments used to instantiate it.  Trailing type arguments of type
-   * `dynamic` are omitted.
+   * type arguments used to instantiate it (if any).
    */
   @Id(1)
   List<EntityRef> get typeArguments;
@@ -341,7 +395,12 @@ enum IndexSyntheticElementKind {
   /**
    * The synthetic `values` getter of an enum.
    */
-  enumValues
+  enumValues,
+
+  /**
+   * The containing unit itself.
+   */
+  unit
 }
 
 /**
@@ -622,6 +681,7 @@ abstract class PackageBundle extends base.SummaryClass {
    * is encoded as a hexadecimal string using lower case letters.
    */
   @Id(4)
+  @informative
   List<String> get unlinkedUnitHashes;
 
   /**
@@ -1117,10 +1177,10 @@ enum UnlinkedConstOperation {
   pushNull,
 
   /**
-   * Push the value of the constant constructor parameter with
-   * the name obtained from [UnlinkedConst.strings].
+   * Push the value of the function parameter with the name obtained from
+   * [UnlinkedConst.strings].
    */
-  pushConstructorParameter,
+  pushParameter,
 
   /**
    * Evaluate a (potentially qualified) identifier expression and push the
@@ -1394,8 +1454,11 @@ enum UnlinkedConstOperation {
    * stack (where `m` is obtained from [UnlinkedConst.ints]) into a list (filled
    * from the end) and use them as positional arguments.  Use the lists of
    * positional and names arguments to invoke a method (or a function) with
-   * the reference from [UnlinkedConst.references].  Push the result of
-   * invocation value into the stack.
+   * the reference from [UnlinkedConst.references].  If `k` is nonzero (where
+   * `k` is obtained from [UnlinkedConst.ints]), obtain `k` type arguments from
+   * [UnlinkedConst.references] and use them as generic type arguments for the
+   * aforementioned method or function.  Push the result of the invocation onto
+   * the stack.
    *
    * In general `a.b` cannot not be distinguished between: `a` is a prefix and
    * `b` is a top-level function; or `a` is an object and `b` is the name of a
@@ -1412,11 +1475,14 @@ enum UnlinkedConstOperation {
    * stack (where `m` is obtained from [UnlinkedConst.ints]) into a list (filled
    * from the end) and use them as positional arguments.  Use the lists of
    * positional and names arguments to invoke the method with the name from
-   * [UnlinkedConst.strings] of the target popped from the stack, and push the
-   * resulting value into the stack.
+   * [UnlinkedConst.strings] of the target popped from the stack.  If `k` is
+   * nonzero (where `k` is obtained from [UnlinkedConst.ints]), obtain `k` type
+   * arguments from [UnlinkedConst.references] and use them as generic type
+   * arguments for the aforementioned method.  Push the result of the
+   * invocation onto the stack.
    *
    * This operation should be used for invocation of a method invocation
-   * where `target` is know to be an object instance.
+   * where `target` is known to be an object instance.
    */
   invokeMethod,
 
@@ -1448,12 +1514,28 @@ enum UnlinkedConstOperation {
    * Pop the top value from the stack and raise an exception with this value.
    */
   throwException,
+
+  /**
+   * Obtain two values `n` and `m` from [UnlinkedConst.ints].  Then, starting at
+   * the executable element for the expression being evaluated, if n > 0, pop to
+   * the nth enclosing function element.  Then, push the mth local function of
+   * that element onto the stack.
+   */
+  pushLocalFunctionReference,
 }
 
 /**
  * Unlinked summary information about a constructor initializer.
  */
 abstract class UnlinkedConstructorInitializer extends base.SummaryClass {
+  /**
+   * If there are `m` [arguments] and `n` [argumentNames], then each argument
+   * from [arguments] with index `i` such that `n + i - m >= 0`, should be used
+   * with the name at `n + i - m`.
+   */
+  @Id(4)
+  List<String> get argumentNames;
+
   /**
    * If [kind] is `thisInvocation` or `superInvocation`, the arguments of the
    * invocation.  Otherwise empty.
@@ -1615,6 +1697,14 @@ abstract class UnlinkedExecutable extends base.SummaryClass {
   List<UnlinkedConst> get annotations;
 
   /**
+   * If this executable's function body is declared using `=>`, the expression
+   * to the right of the `=>`.  May be omitted if neither type inference nor
+   * constant evaluation depends on the function body.
+   */
+  @Id(29)
+  UnlinkedConst get bodyExpr;
+
+  /**
    * Code range of the executable.
    */
   @informative
@@ -1664,6 +1754,13 @@ abstract class UnlinkedExecutable extends base.SummaryClass {
   bool get isAbstract;
 
   /**
+   * Indicates whether the executable has body marked as being asynchronous.
+   */
+  @informative
+  @Id(27)
+  bool get isAsynchronous;
+
+  /**
    * Indicates whether the executable is declared using the `const` keyword.
    */
   @Id(12)
@@ -1680,6 +1777,13 @@ abstract class UnlinkedExecutable extends base.SummaryClass {
    */
   @Id(8)
   bool get isFactory;
+
+  /**
+   * Indicates whether the executable has body marked as being a generator.
+   */
+  @informative
+  @Id(28)
+  bool get isGenerator;
 
   /**
    * Indicates whether the executable is a redirected constructor.
@@ -1707,7 +1811,6 @@ abstract class UnlinkedExecutable extends base.SummaryClass {
   /**
    * The list of local functions.
    */
-  @informative
   @Id(18)
   List<UnlinkedExecutable> get localFunctions;
 
@@ -2105,16 +2208,8 @@ abstract class UnlinkedParam extends base.SummaryClass {
    * Code range of the parameter.
    */
   @informative
-  @Id(14)
-  CodeRange get codeRange;
-
-  /**
-   * If the parameter has a default value, the constant expression in the
-   * default value.  Note that the presence of this expression does not mean
-   * that it is a valid, check [UnlinkedConst.isInvalid].
-   */
   @Id(7)
-  UnlinkedConst get defaultValue;
+  CodeRange get codeRange;
 
   /**
    * If the parameter has a default value, the source text of the constant
@@ -2268,8 +2363,8 @@ abstract class UnlinkedPublicName extends base.SummaryClass {
 
   /**
    * If this [UnlinkedPublicName] is a class, the list of members which can be
-   * referenced from constants or factory redirects - static constant fields,
-   * static methods, and constructors.  Otherwise empty.
+   * referenced statically - static fields, static methods, and constructors.
+   * Otherwise empty.
    *
    * Unnamed constructors are not included since they do not constitute a
    * separate name added to any namespace.
@@ -2586,16 +2681,8 @@ abstract class UnlinkedVariable extends base.SummaryClass {
    * Code range of the variable.
    */
   @informative
-  @Id(14)
-  CodeRange get codeRange;
-
-  /**
-   * If [isConst] is true, and the variable has an initializer, the constant
-   * expression in the initializer.  Note that the presence of this expression
-   * does not mean that it is a valid, check [UnlinkedConst.isInvalid].
-   */
   @Id(5)
-  UnlinkedConst get constExpr;
+  CodeRange get codeRange;
 
   /**
    * Documentation comment for the variable, or `null` if there is no
@@ -2618,7 +2705,6 @@ abstract class UnlinkedVariable extends base.SummaryClass {
    * The synthetic initializer function of the variable.  Absent if the variable
    * does not have an initializer.
    */
-  @informative
   @Id(13)
   UnlinkedExecutable get initializer;
 

@@ -323,8 +323,8 @@ static void PushArgumentsArray(Assembler* assembler) {
   __ jmp(&loop_condition, Assembler::kNearJump);
   __ Bind(&loop);
   __ movl(EDI, Address(EBX, 0));
-  // No generational barrier needed, since array is in new space.
-  __ InitializeFieldNoBarrier(EAX, Address(ECX, 0), EDI);
+  // Generational barrier is needed, array is not necessarily in new space.
+  __ StoreIntoObject(EAX, Address(ECX, 0), EDI);
   __ AddImmediate(ECX, Immediate(kWordSize));
   __ AddImmediate(EBX, Immediate(-kWordSize));
   __ Bind(&loop_condition);
@@ -561,11 +561,10 @@ void StubCode::GenerateAllocateArrayStub(Assembler* assembler) {
   __ cmpl(EDX, max_len);
   __ j(GREATER, &slow_case);
 
-  __ MaybeTraceAllocation(kArrayCid,
-                          EAX,
-                          &slow_case,
-                          Assembler::kFarJump,
-                          /* inline_isolate = */ false);
+  NOT_IN_PRODUCT(__ MaybeTraceAllocation(kArrayCid,
+                                         EAX,
+                                         &slow_case,
+                                         Assembler::kFarJump));
 
   const intptr_t fixed_size = sizeof(RawArray) + kObjectAlignment - 1;
   __ leal(EBX, Address(EDX, TIMES_2, fixed_size));  // EDX is Smi.
@@ -577,7 +576,7 @@ void StubCode::GenerateAllocateArrayStub(Assembler* assembler) {
   // EBX: allocation size.
 
   const intptr_t cid = kArrayCid;
-  Heap::Space space = Heap::SpaceForAllocation(cid);
+  Heap::Space space = Heap::kNew;
   __ movl(EDI, Address(THR, Thread::heap_offset()));
   __ movl(EAX, Address(EDI, Heap::TopOffset(space)));
   __ addl(EBX, EAX);
@@ -597,8 +596,7 @@ void StubCode::GenerateAllocateArrayStub(Assembler* assembler) {
   __ movl(Address(EDI, Heap::TopOffset(space)), EBX);
   __ subl(EBX, EAX);
   __ addl(EAX, Immediate(kHeapObjectTag));
-  __ UpdateAllocationStatsWithSize(cid, EBX, EDI, space,
-                                   /* inline_isolate = */ false);
+  NOT_IN_PRODUCT(__ UpdateAllocationStatsWithSize(cid, EBX, EDI, space));
 
   // Initialize the tags.
   // EAX: new object start as a tagged pointer.
@@ -626,12 +624,13 @@ void StubCode::GenerateAllocateArrayStub(Assembler* assembler) {
   // ECX: array element type.
   // EDX: Array length as Smi (preserved).
   // Store the type argument field.
-  __ InitializeFieldNoBarrier(EAX,
+  // No generetional barrier needed, since we store into a new object.
+  __ StoreIntoObjectNoBarrier(EAX,
                               FieldAddress(EAX, Array::type_arguments_offset()),
                               ECX);
 
   // Set the length field.
-  __ InitializeFieldNoBarrier(EAX,
+  __ StoreIntoObjectNoBarrier(EAX,
                               FieldAddress(EAX, Array::length_offset()),
                               EDX);
 
@@ -650,7 +649,7 @@ void StubCode::GenerateAllocateArrayStub(Assembler* assembler) {
   __ cmpl(EDI, EBX);
   __ j(ABOVE_EQUAL, &done, Assembler::kNearJump);
   // No generational barrier needed, since we are storing null.
-  __ InitializeFieldNoBarrier(EAX, Address(EDI, 0), Object::null_object());
+  __ StoreIntoObjectNoBarrier(EAX, Address(EDI, 0), Object::null_object());
   __ addl(EDI, Immediate(kWordSize));
   __ jmp(&init_loop, Assembler::kNearJump);
   __ Bind(&done);
@@ -800,16 +799,15 @@ void StubCode::GenerateAllocateContextStub(Assembler* assembler) {
     __ leal(EBX, Address(EDX, TIMES_4, fixed_size));
     __ andl(EBX, Immediate(-kObjectAlignment));
 
-    __ MaybeTraceAllocation(kContextCid,
-                            EAX,
-                            &slow_case,
-                            Assembler::kFarJump,
-                            /* inline_isolate = */ false);
+    NOT_IN_PRODUCT(__ MaybeTraceAllocation(kContextCid,
+                                           EAX,
+                                           &slow_case,
+                                           Assembler::kFarJump));
 
     // Now allocate the object.
     // EDX: number of context variables.
     const intptr_t cid = kContextCid;
-    Heap::Space space = Heap::SpaceForAllocation(cid);
+    Heap::Space space = Heap::kNew;
     __ movl(ECX, Address(THR, Thread::heap_offset()));
     __ movl(EAX, Address(ECX, Heap::TopOffset(space)));
     __ addl(EBX, EAX);
@@ -839,8 +837,7 @@ void StubCode::GenerateAllocateContextStub(Assembler* assembler) {
     __ subl(EBX, EAX);
     __ addl(EAX, Immediate(kHeapObjectTag));
     // Generate isolate-independent code to allow sharing between isolates.
-    __ UpdateAllocationStatsWithSize(cid, EBX, EDI, space,
-                                     /* inline_isolate = */ false);
+    NOT_IN_PRODUCT(__ UpdateAllocationStatsWithSize(cid, EBX, EDI, space));
 
     // Calculate the size tag.
     // EAX: new object.
@@ -876,7 +873,7 @@ void StubCode::GenerateAllocateContextStub(Assembler* assembler) {
     // EAX: new object.
     // EDX: number of context variables.
     // No generational barrier needed, since we are storing null.
-    __ InitializeFieldNoBarrier(EAX,
+    __ StoreIntoObjectNoBarrier(EAX,
                                 FieldAddress(EAX, Context::parent_offset()),
                                 Object::null_object());
 
@@ -891,7 +888,7 @@ void StubCode::GenerateAllocateContextStub(Assembler* assembler) {
       __ Bind(&loop);
       __ decl(EDX);
       // No generational barrier needed, since we are storing null.
-      __ InitializeFieldNoBarrier(EAX,
+      __ StoreIntoObjectNoBarrier(EAX,
                                   Address(EBX, EDX, TIMES_4, 0),
                                   Object::null_object());
       __ Bind(&entry);
@@ -1022,7 +1019,7 @@ void StubCode::GenerateAllocationStubForClass(
     // Allocate the object and update top to point to
     // next object start and initialize the allocated object.
     // EDX: instantiated type arguments (if is_cls_parameterized).
-    Heap::Space space = Heap::SpaceForAllocation(cls.id());
+    Heap::Space space = Heap::kNew;
     __ movl(EDI, Address(THR, Thread::heap_offset()));
     __ movl(EAX, Address(EDI, Heap::TopOffset(space)));
     __ leal(EBX, Address(EAX, instance_size));
@@ -1037,8 +1034,7 @@ void StubCode::GenerateAllocationStubForClass(
       __ j(ABOVE_EQUAL, &slow_case);
     }
     __ movl(Address(EDI, Heap::TopOffset(space)), EBX);
-    __ UpdateAllocationStats(cls.id(), ECX, space,
-                             /* inline_isolate = */ false);
+    NOT_IN_PRODUCT(__ UpdateAllocationStats(cls.id(), ECX, space));
 
     // EAX: new object start (untagged).
     // EBX: next object start.
@@ -1063,7 +1059,7 @@ void StubCode::GenerateAllocationStubForClass(
       for (intptr_t current_offset = Instance::NextFieldOffset();
            current_offset < instance_size;
            current_offset += kWordSize) {
-        __ InitializeFieldNoBarrier(EAX,
+        __ StoreIntoObjectNoBarrier(EAX,
                                     FieldAddress(EAX, current_offset),
                                     Object::null_object());
       }
@@ -1079,7 +1075,7 @@ void StubCode::GenerateAllocationStubForClass(
       __ Bind(&init_loop);
       __ cmpl(ECX, EBX);
       __ j(ABOVE_EQUAL, &done, Assembler::kNearJump);
-      __ InitializeFieldNoBarrier(EAX,
+      __ StoreIntoObjectNoBarrier(EAX,
                                   Address(ECX, 0),
                                   Object::null_object());
       __ addl(ECX, Immediate(kWordSize));
@@ -1087,11 +1083,11 @@ void StubCode::GenerateAllocationStubForClass(
       __ Bind(&done);
     }
     if (is_cls_parameterized) {
+      // EAX: new object (tagged).
       // EDX: new object type arguments.
       // Set the type arguments in the new object.
       intptr_t offset = cls.type_arguments_field_offset();
-      // TODO(koda): Figure out why previous content is sometimes null here.
-      __ InitializeFieldNoBarrier(EAX, FieldAddress(EAX, offset), EDX);
+      __ StoreIntoObjectNoBarrier(EAX, FieldAddress(EAX, offset), EDX);
     }
     // Done allocating and initializing the instance.
     // EAX: new object (tagged).
@@ -2034,6 +2030,7 @@ void StubCode::EmitMegamorphicLookup(Assembler* assembler) {
   // EBX: mask.
   __ pushl(ECX);  // Spill MegamorphicCache.
   __ movl(ECX, EAX);
+  __ imull(ECX, Immediate(MegamorphicCache::kSpreadFactor));
   // ECX: probe.
 
   Label loop, update, load_target_function;

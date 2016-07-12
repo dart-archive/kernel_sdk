@@ -301,7 +301,7 @@ class Listener {
 
   void beginTypeVariable(Token token) {}
 
-  void endTypeVariable(Token token) {}
+  void endTypeVariable(Token token, Token extendsOrSuper) {}
 
   void beginTypeVariables(Token token) {}
 
@@ -319,9 +319,7 @@ class Listener {
 
   void endWhileStatement(Token whileKeyword, Token endToken) {}
 
-  void handleAsOperator(Token operathor, Token endToken) {
-    // TODO(ahe): Rename [operathor] to "operator" when VM bug is fixed.
-  }
+  void handleAsOperator(Token operator, Token endToken) {}
 
   void handleAssignmentExpression(Token token) {}
 
@@ -338,9 +336,7 @@ class Listener {
   void handleIndexedExpression(
       Token openCurlyBracket, Token closeCurlyBracket) {}
 
-  void handleIsOperator(Token operathor, Token not, Token endToken) {
-    // TODO(ahe): Rename [operathor] to "operator" when VM bug is fixed.
-  }
+  void handleIsOperator(Token operator, Token not, Token endToken) {}
 
   void handleLiteralBool(Token token) {}
 
@@ -548,6 +544,15 @@ class Listener {
 
   void reportError(Spannable spannable, MessageKind messageKind,
       [Map arguments = const {}]) {
+    if (spannable is ErrorToken) {
+      reportErrorToken(spannable);
+    } else {
+      reportErrorHelper(spannable, messageKind, arguments);
+    }
+  }
+
+  void reportErrorHelper(Spannable spannable, MessageKind messageKind,
+      [Map arguments = const {}]) {
     MessageTemplate template = MessageTemplate.TEMPLATES[messageKind];
     String message = template.message(arguments, true).toString();
     Token token;
@@ -568,7 +573,7 @@ class Listener {
         String padding = "0000".substring(hex.length);
         hex = "$padding$hex";
       }
-      reportError(
+      reportErrorHelper(
           token, MessageKind.BAD_INPUT_CHARACTER, {'characterHex': hex});
     } else if (token is UnterminatedToken) {
       MessageKind kind;
@@ -601,11 +606,11 @@ class Listener {
           kind = MessageKind.UNTERMINATED_TOKEN;
           break;
       }
-      reportError(token, kind, arguments);
+      reportErrorHelper(token, kind, arguments);
     } else if (token is UnmatchedToken) {
       String begin = token.begin.value;
       String end = closeBraceFor(begin);
-      reportError(
+      reportErrorHelper(
           token, MessageKind.UNMATCHED_TOKEN, {'begin': begin, 'end': end});
     } else {
       throw new SpannableAssertionFailure(token, token.assertionMessage);

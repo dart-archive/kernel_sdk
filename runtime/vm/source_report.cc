@@ -30,6 +30,22 @@ SourceReport::SourceReport(intptr_t report_set, CompileMode compile_mode)
 }
 
 
+SourceReport::~SourceReport() {
+  ClearScriptTable();
+}
+
+
+void SourceReport::ClearScriptTable() {
+  for (intptr_t i = 0; i < script_table_entries_.length(); i++) {
+    delete script_table_entries_[i];
+    script_table_entries_[i] = NULL;
+  }
+  script_table_entries_.Clear();
+  script_table_.Clear();
+  next_script_index_ = 0;
+}
+
+
 void SourceReport::Init(Thread* thread,
                         const Script* script,
                         TokenPosition start_pos,
@@ -38,9 +54,7 @@ void SourceReport::Init(Thread* thread,
   script_ = script;
   start_pos_ = start_pos;
   end_pos_ = end_pos;
-  script_table_entries_.Clear();
-  script_table_.Clear();
-  next_script_index_ = 0;
+  ClearScriptTable();
   if (IsReportRequested(kProfile)) {
     // Build the profile.
     SampleFilter samplesForIsolate(thread_->isolate(),
@@ -99,19 +113,38 @@ bool SourceReport::ShouldSkipFunction(const Function& func) {
 
 intptr_t SourceReport::GetScriptIndex(const Script& script) {
   const String& url = String::Handle(zone(), script.url());
-  ScriptTableEntry* pair = script_table_.Lookup(&url);
+  ScriptTableEntry* pair = script_table_.LookupValue(&url);
   if (pair != NULL) {
     return pair->index;
   }
-
-  ScriptTableEntry tmp;
-  tmp.key = &url;
-  tmp.index = next_script_index_++;
-  tmp.script = &script;
+  ScriptTableEntry* tmp = new ScriptTableEntry();
+  tmp->key = &url;
+  tmp->index = next_script_index_++;
+  tmp->script = &Script::Handle(zone(), script.raw());
   script_table_entries_.Add(tmp);
-  script_table_.Insert(&(script_table_entries_.Last()));
-  return tmp.index;
+  script_table_.Insert(tmp);
+  ASSERT(script_table_entries_.length() == next_script_index_);
+#if defined(DEBUG)
+  VerifyScriptTable();
+#endif
+  return tmp->index;
 }
+
+
+#if defined(DEBUG)
+void SourceReport::VerifyScriptTable() {
+  for (intptr_t i = 0; i < script_table_entries_.length(); i++) {
+    const String* url = script_table_entries_[i]->key;
+    const Script* script = script_table_entries_[i]->script;
+    intptr_t index = script_table_entries_[i]->index;
+    ASSERT(i == index);
+    const String& url2 = String::Handle(zone(), script->url());
+    ASSERT(url2.Equals(*url));
+    ScriptTableEntry* pair = script_table_.LookupValue(&url2);
+    ASSERT(i == pair->index);
+  }
+}
+#endif
 
 
 bool SourceReport::ScriptIsLoadedByLibrary(const Script& script,
@@ -145,8 +178,16 @@ void SourceReport::PrintCallSitesData(JSONObject* jsobj,
       RawPcDescriptors::kIcCall | RawPcDescriptors::kUnoptStaticCall);
   while (iter.MoveNext()) {
     HANDLESCOPE(thread());
+    // TODO(zra): Remove this bailout once DBC has reliable ICData.
+#if defined(TARGET_ARCH_DBC)
+    if (iter.DeoptId() >= ic_data_array->length()) {
+      continue;
+    }
+#else
+    ASSERT(iter.DeoptId() < ic_data_array->length());
+#endif
     const ICData* ic_data = (*ic_data_array)[iter.DeoptId()];
-    if (!ic_data->IsNull()) {
+    if (ic_data != NULL) {
       const TokenPosition token_pos = iter.TokenPos();
       if ((token_pos < begin_pos) || (token_pos > end_pos)) {
         // Does not correspond to a valid source position.
@@ -157,6 +198,7 @@ void SourceReport::PrintCallSitesData(JSONObject* jsobj,
     }
   }
 }
+
 
 void SourceReport::PrintCoverageData(JSONObject* jsobj,
                                      const Function& function,
@@ -186,8 +228,16 @@ void SourceReport::PrintCoverageData(JSONObject* jsobj,
       RawPcDescriptors::kIcCall | RawPcDescriptors::kUnoptStaticCall);
   while (iter.MoveNext()) {
     HANDLESCOPE(thread());
+    // TODO(zra): Remove this bailout once DBC has reliable ICData.
+#if defined(TARGET_ARCH_DBC)
+    if (iter.DeoptId() >= ic_data_array->length()) {
+      continue;
+    }
+#else
+    ASSERT(iter.DeoptId() < ic_data_array->length());
+#endif
     const ICData* ic_data = (*ic_data_array)[iter.DeoptId()];
-    if (!ic_data->IsNull()) {
+    if (ic_data != NULL) {
       const TokenPosition token_pos = iter.TokenPos();
       if ((token_pos < begin_pos) || (token_pos > end_pos)) {
         // Does not correspond to a valid source position.
@@ -225,6 +275,7 @@ void SourceReport::PrintCoverageData(JSONObject* jsobj,
     }
   }
 }
+
 
 void SourceReport::PrintPossibleBreakpointsData(JSONObject* jsobj,
                                                 const Function& func,
@@ -319,8 +370,8 @@ void SourceReport::PrintProfileData(JSONObject* jsobj,
 
 
 void SourceReport::PrintScriptTable(JSONArray* scripts) {
-  for (int i = 0; i < script_table_entries_.length(); i++) {
-    const Script* script = script_table_entries_[i].script;
+  for (intptr_t i = 0; i < script_table_entries_.length(); i++) {
+    const Script* script = script_table_entries_[i]->script;
     scripts->AddValue(*script);
   }
 }
@@ -338,8 +389,16 @@ void SourceReport::VisitFunction(JSONArray* jsarr, const Function& func) {
   Code& code = Code::Handle(zone(), func.unoptimized_code());
   if (code.IsNull()) {
     if (func.HasCode() || (compile_mode_ == kForceCompile)) {
-      if (Compiler::EnsureUnoptimizedCode(thread(), func) != Error::null()) {
-        // Ignore the error and this function entirely.
+      const Error& err =
+          Error::Handle(Compiler::EnsureUnoptimizedCode(thread(), func));
+      if (!err.IsNull()) {
+        // Emit an uncompiled range for this function with error information.
+        JSONObject range(jsarr);
+        range.AddProperty("scriptIndex", GetScriptIndex(script));
+        range.AddProperty("startPos", begin_pos);
+        range.AddProperty("endPos", end_pos);
+        range.AddProperty("compiled", false);
+        range.AddProperty("error", err);
         return;
       }
       code = func.unoptimized_code();
@@ -393,9 +452,36 @@ void SourceReport::VisitLibrary(JSONArray* jsarr, const Library& lib) {
   Class& cls = Class::Handle(zone());
   Array& functions = Array::Handle(zone());
   Function& func = Function::Handle(zone());
+  Script& script = Script::Handle(zone());
   ClassDictionaryIterator it(lib, ClassDictionaryIterator::kIteratePrivate);
   while (it.HasNext()) {
     cls = it.GetNextClass();
+    if (!cls.is_finalized()) {
+      if (compile_mode_ == kForceCompile) {
+        const Error& err = Error::Handle(cls.EnsureIsFinalized(thread()));
+        if (!err.IsNull()) {
+          // Emit an uncompiled range for this class with error information.
+          JSONObject range(jsarr);
+          script = cls.script();
+          range.AddProperty("scriptIndex", GetScriptIndex(script));
+          range.AddProperty("startPos", cls.token_pos());
+          range.AddProperty("endPos", cls.ComputeEndTokenPos());
+          range.AddProperty("compiled", false);
+          range.AddProperty("error", err);
+          continue;
+        }
+      } else {
+        // Emit one range for the whole uncompiled class.
+        JSONObject range(jsarr);
+        script = cls.script();
+        range.AddProperty("scriptIndex", GetScriptIndex(script));
+        range.AddProperty("startPos", cls.token_pos());
+        range.AddProperty("endPos", cls.ComputeEndTokenPos());
+        range.AddProperty("compiled", false);
+        continue;
+      }
+    }
+
     functions = cls.functions();
     for (int i = 0; i < functions.Length(); i++) {
       func ^= functions.At(i);
@@ -450,6 +536,5 @@ void SourceReport::PrintJSON(JSONStream* js,
   JSONArray scripts(&report, "scripts");
   PrintScriptTable(&scripts);
 }
-
 
 }  // namespace dart

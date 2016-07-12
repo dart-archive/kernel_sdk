@@ -17,6 +17,12 @@ import 'package:analyzer/src/task/model.dart';
 import 'package:analyzer/task/model.dart';
 
 /**
+ * Return `true` if the [result] of the [target] should be flushed.
+ */
+typedef bool FlushResultFilter<V>(
+    AnalysisTarget target, ResultDescriptor<V> result);
+
+/**
  * Return `true` if the given [target] is a priority one.
  */
 typedef bool IsPriorityAnalysisTarget(AnalysisTarget target);
@@ -54,6 +60,7 @@ class AnalysisCache {
    */
   AnalysisCache(this._partitions) {
     for (CachePartition partition in _partitions) {
+      partition.containingCaches.add(this);
       ReentrantSynchronousStreamSubscription<InvalidatedResult> subscription =
           partition.onResultInvalidated.listen((InvalidatedResult event) {
         onResultInvalidated.add(event);
@@ -95,6 +102,18 @@ class AnalysisCache {
     for (ReentrantSynchronousStreamSubscription subscription
         in onResultInvalidatedPartitionSubscriptions) {
       subscription.cancel();
+    }
+    for (CachePartition partition in _partitions) {
+      partition.containingCaches.remove(this);
+    }
+  }
+
+  /**
+   * Flush results that satisfy the given [filter].
+   */
+  void flush(FlushResultFilter filter) {
+    for (CachePartition partition in _partitions) {
+      partition.flush(filter);
     }
   }
 
@@ -179,7 +198,7 @@ class AnalysisCache {
     if (entry == null) {
       return result.defaultValue;
     }
-    return entry.getValue(result) as Object/*=V*/;
+    return entry.getValue(result);
   }
 
   /**
@@ -282,6 +301,13 @@ class CacheEntry {
   static int nextInvalidateId = 0;
 
   /**
+   * A table containing the number of times the value of a result descriptor was
+   * recomputed after having been flushed.
+   */
+  static final Map<ResultDescriptor, int> recomputedCounts =
+      new HashMap<ResultDescriptor, int>();
+
+  /**
    * The target this entry is about.
    */
   final AnalysisTarget target;
@@ -315,9 +341,7 @@ class CacheEntry {
       new HashMap<ResultDescriptor, ResultData>();
 
   CacheEntry(this.target) {
-    if (target is ElementImpl) {
-      (target as ElementImpl).setModifier(Modifier.CACHE_KEY, true);
-    }
+    _markAsCacheKey(target);
   }
 
   /**
@@ -351,18 +375,25 @@ class CacheEntry {
    * Notifies the entry that the client is going to stop using it.
    */
   void dispose() {
-    _resultMap.forEach((descriptor, data) {
+    _resultMap.forEach((ResultDescriptor descriptor, ResultData data) {
       TargetedResult result = new TargetedResult(target, descriptor);
       for (TargetedResult dependedOnResult in data.dependedOnResults) {
-        ResultData dependedOnData = _partition._getDataFor(dependedOnResult);
-        if (dependedOnData != null) {
-          dependedOnData.dependentResults.remove(result);
+        for (AnalysisCache cache in _partition.containingCaches) {
+          CacheEntry entry = cache.get(dependedOnResult.target);
+          if (entry != null) {
+            ResultData data =
+                entry.getResultDataOrNull(dependedOnResult.result);
+            if (data != null) {
+              data.dependentResults.remove(result);
+            }
+          }
         }
       }
     });
     _resultMap.clear();
-    if (target is ElementImpl) {
-      (target as ElementImpl).setModifier(Modifier.CACHE_KEY, false);
+    AnalysisTarget oldTarget = target;
+    if (oldTarget is ElementImpl) {
+      oldTarget.setModifier(Modifier.CACHE_KEY, false);
     }
   }
 
@@ -376,12 +407,30 @@ class CacheEntry {
   }
 
   /**
-   * Look up the [ResultData] of [descriptor], or add a new one if it isn't
-   * there.
+   * Flush results that satisfy the given [filter].
+   */
+  void flush(FlushResultFilter filter) {
+    _resultMap.forEach((ResultDescriptor result, ResultData data) {
+      if (filter(target, result)) {
+        data.flush();
+      }
+    });
+  }
+
+  /**
+   * Return the result data associated with the [descriptor], creating one if it
+   * isn't there.
    */
   ResultData getResultData(ResultDescriptor descriptor) {
     return _resultMap.putIfAbsent(descriptor, () => new ResultData(descriptor));
   }
+
+  /**
+   * Return the result data associated with the [descriptor], or `null` if there
+   * is no data currently associated with the descriptor.
+   */
+  ResultData getResultDataOrNull(ResultDescriptor descriptor) =>
+      _resultMap[descriptor];
 
   /**
    * Return the state of the result represented by the given [descriptor].
@@ -514,8 +563,12 @@ class CacheEntry {
     }
     ResultData data = getResultData(descriptor);
     _setDependedOnResults(data, thisResult, dependedOn);
+    if (data.state == CacheState.FLUSHED) {
+      int count = recomputedCounts[descriptor] ?? 0;
+      recomputedCounts[descriptor] = count + 1;
+    }
     data.state = CacheState.VALID;
-    data.value = value == null ? descriptor.defaultValue : value;
+    data.value = value ?? descriptor.defaultValue;
   }
 
   /**
@@ -572,6 +625,11 @@ class CacheEntry {
         return;
       }
     }
+//    if (deltaResult != null && deltaResult != DeltaResult.KEEP_CONTINUE) {
+//      String indent = '  ' * level;
+//      String deltaResultName = deltaResult.toString().split('.').last;
+//      print('[$id]$indent$deltaResultName $descriptor for $target');
+//    }
     if (deltaResult == DeltaResult.INVALIDATE_NO_DELTA) {
       delta = null;
     }
@@ -585,11 +643,25 @@ class CacheEntry {
 //      }
     }
     // Stop depending on other results.
-    TargetedResult thisResult = new TargetedResult(target, descriptor);
-    for (TargetedResult dependedOnResult in thisData.dependedOnResults) {
-      ResultData data = _partition._getDataFor(dependedOnResult);
-      if (data != null && deltaResult != DeltaResult.KEEP_CONTINUE) {
-        data.dependentResults.remove(thisResult);
+    if (deltaResult != DeltaResult.KEEP_CONTINUE) {
+      TargetedResult thisResult = new TargetedResult(target, descriptor);
+      List<AnalysisCache> caches = _partition.containingCaches;
+      int cacheLength = caches.length;
+      List<TargetedResult> results = thisData.dependedOnResults;
+      int resultLength = results.length;
+      for (int i = 0; i < resultLength; i++) {
+        TargetedResult dependedOnResult = results[i];
+        for (int j = 0; j < cacheLength; j++) {
+          AnalysisCache cache = caches[j];
+          CacheEntry entry = cache.get(dependedOnResult.target);
+          if (entry != null) {
+            ResultData data =
+                entry.getResultDataOrNull(dependedOnResult.result);
+            if (data != null) {
+              data.dependentResults.remove(thisResult);
+            }
+          }
+        }
       }
     }
     // Invalidate results that depend on this result.
@@ -612,7 +684,9 @@ class CacheEntry {
    */
   void _invalidateAll() {
     List<ResultDescriptor> results = _resultMap.keys.toList();
-    for (ResultDescriptor result in results) {
+    int length = results.length;
+    for (int i = 0; i < length; i++) {
+      ResultDescriptor result = results[i];
       _invalidate(nextInvalidateId++, result, null, 0);
     }
   }
@@ -622,12 +696,30 @@ class CacheEntry {
    */
   void _invalidateDependentResults(
       int id, ResultData thisData, Delta delta, int level) {
+    // It is necessary to copy the results to a list to avoid a concurrent
+    // modification of the set of dependent results.
+    List<AnalysisCache> caches = _partition.containingCaches;
+    int cacheLength = caches.length;
     List<TargetedResult> dependentResults = thisData.dependentResults.toList();
-    for (TargetedResult dependentResult in dependentResults) {
-      CacheEntry entry = _partition.get(dependentResult.target);
-      if (entry != null) {
-        entry._invalidate(id, dependentResult.result, delta, level);
+    int resultLength = dependentResults.length;
+    for (int i = 0; i < resultLength; i++) {
+      TargetedResult dependentResult = dependentResults[i];
+      for (int j = 0; j < cacheLength; j++) {
+        AnalysisCache cache = caches[j];
+        CacheEntry entry = cache.get(dependentResult.target);
+        if (entry != null) {
+          entry._invalidate(id, dependentResult.result, delta, level);
+        }
       }
+    }
+  }
+
+  /**
+   * If the given `target` is an element, mark it as being a cache key.
+   */
+  void _markAsCacheKey(AnalysisTarget target) {
+    if (target is ElementImpl) {
+      target.setModifier(Modifier.CACHE_KEY, true);
     }
   }
 
@@ -636,19 +728,39 @@ class CacheEntry {
    */
   void _setDependedOnResults(ResultData thisData, TargetedResult thisResult,
       List<TargetedResult> dependedOn) {
-    thisData.dependedOnResults.forEach((TargetedResult dependedOnResult) {
-      ResultData data = _partition._getDataFor(dependedOnResult);
-      if (data != null) {
-        data.dependentResults.remove(thisResult);
+    List<AnalysisCache> caches = _partition.containingCaches;
+    int cacheLength = caches.length;
+
+    List<TargetedResult> oldResults = thisData.dependedOnResults;
+    int oldLength = oldResults.length;
+    for (int i = 0; i < oldLength; i++) {
+      TargetedResult dependedOnResult = oldResults[i];
+      for (int j = 0; j < cacheLength; j++) {
+        AnalysisCache cache = caches[j];
+        CacheEntry entry = cache.get(dependedOnResult.target);
+        if (entry != null) {
+          ResultData data = entry.getResultDataOrNull(dependedOnResult.result);
+          if (data != null) {
+            data.dependentResults.remove(thisResult);
+          }
+        }
       }
-    });
+    }
     thisData.dependedOnResults = dependedOn;
-    thisData.dependedOnResults.forEach((TargetedResult dependedOnResult) {
-      ResultData data = _partition._getDataFor(dependedOnResult);
-      if (data != null) {
-        data.dependentResults.add(thisResult);
+    int newLength = dependedOn.length;
+    for (int i = 0; i < newLength; i++) {
+      TargetedResult dependedOnResult = dependedOn[i];
+      for (int j = 0; j < cacheLength; j++) {
+        AnalysisCache cache = caches[j];
+        CacheEntry entry = cache.get(dependedOnResult.target);
+        if (entry != null) {
+          ResultData data = entry.getResultDataOrNull(dependedOnResult.result);
+          if (data != null) {
+            data.dependentResults.add(thisResult);
+          }
+        }
       }
-    });
+    }
   }
 
   /**
@@ -662,9 +774,16 @@ class CacheEntry {
     thisData.state = CacheState.ERROR;
     thisData.value = descriptor.defaultValue;
     // Propagate the error state.
+    List<AnalysisCache> caches = _partition.containingCaches;
+    int cacheLength = caches.length;
     thisData.dependentResults.forEach((TargetedResult dependentResult) {
-      CacheEntry entry = _partition.get(dependentResult.target);
-      entry._setErrorState(dependentResult.result, exception);
+      for (int i = 0; i < cacheLength; i++) {
+        AnalysisCache cache = caches[i];
+        CacheEntry entry = cache.get(dependentResult.target);
+        if (entry != null) {
+          entry._setErrorState(dependentResult.result, exception);
+        }
+      }
     });
   }
 
@@ -857,6 +976,12 @@ abstract class CachePartition {
   final InternalAnalysisContext context;
 
   /**
+   * A list of the caches that contain this partition. This includes the cache
+   * associated with the context that owns this partition.
+   */
+  final List<AnalysisCache> containingCaches = <AnalysisCache>[];
+
+  /**
    * A table mapping caching policies to the cache flush managers.
    */
   final HashMap<ResultCachingPolicy, CacheFlushManager> _flushManagerMap =
@@ -904,6 +1029,15 @@ abstract class CachePartition {
   }
 
   /**
+   * Flush results that satisfy the given [filter].
+   */
+  void flush(FlushResultFilter filter) {
+    for (CacheEntry entry in entryMap.values) {
+      entry.flush(filter);
+    }
+  }
+
+  /**
    * Return the entry associated with the given [target].
    */
   CacheEntry get(AnalysisTarget target) => entryMap[target];
@@ -914,7 +1048,7 @@ abstract class CachePartition {
    */
   List<Source> getSourcesWithFullName(String path) {
     List<Source> sources = pathToSource[path];
-    return sources != null ? sources : Source.EMPTY_LIST;
+    return sources ?? Source.EMPTY_LIST;
   }
 
   /**
@@ -1003,11 +1137,6 @@ abstract class CachePartition {
       String fullName = target.fullName;
       pathToSource.putIfAbsent(fullName, () => <Source>[]).add(target);
     }
-  }
-
-  ResultData _getDataFor(TargetedResult result) {
-    CacheEntry entry = context.analysisCache.get(result.target);
-    return entry != null ? entry._resultMap[result.result] : null;
   }
 
   /**

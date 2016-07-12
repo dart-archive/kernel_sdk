@@ -65,12 +65,20 @@ class AtomicOperations : public AllStatic {
 
 }  // namespace dart
 
+#if defined(USING_SIMULATOR) && !defined(TARGET_ARCH_DBC)
+#define USING_SIMULATOR_ATOMICS
+#endif
+
+#if defined(USING_SIMULATOR_ATOMICS)
 // We need to use the simulator to ensure that atomic operations are observed
 // both in C++ and in generated code if the simulator is active.
 #include "vm/atomic_simulator.h"
+#endif
 
 #if defined(TARGET_OS_ANDROID)
 #include "vm/atomic_android.h"
+#elif defined(TARGET_OS_FUCHSIA)
+#include "vm/atomic_fuchsia.h"
 #elif defined(TARGET_OS_LINUX)
 #include "vm/atomic_linux.h"
 #elif defined(TARGET_OS_MACOS)

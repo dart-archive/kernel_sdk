@@ -234,21 +234,6 @@ abstract class TestSuite {
     return dartExecutable;
   }
 
-  String get dartVmProductBinaryFileName {
-    // Controlled by user with the option "--dart".
-    String dartExecutable = configuration['dart'];
-
-    if (dartExecutable == '') {
-      String suffix = executableBinarySuffix;
-      dartExecutable = useSdk
-          ? '$buildDir/dart-sdk/bin/dart_product$suffix'
-          : '$buildDir/dart_product$suffix';
-    }
-
-    TestUtils.ensureExists(dartExecutable, configuration);
-    return dartExecutable;
-  }
-
   String get d8FileName {
     var suffix = getExecutableSuffix('d8');
     var d8Dir = TestUtils.dartDir.append('third_party/d8');
@@ -452,6 +437,7 @@ abstract class TestSuite {
      *  dart/
      *      pkg/PACKAGE_NAME
      *      third_party/pkg/PACKAGE_NAME
+     *      third_party/pkg_tested/PACKAGE_NAME
      *      runtime/observatory/PACKAGE_NAME
      *      sdk/lib/_internal/PACKAGE_NAME
      */
@@ -465,6 +451,7 @@ abstract class TestSuite {
     var futures = [
       listDir(dartDir.append('pkg'), isValid),
       listDir(dartDir.append('third_party').append('pkg'), isValid),
+      listDir(dartDir.append('third_party').append('pkg_tested'), isValid),
       listDir(dartDir.append('runtime').append('observatory'), isValid),
       listDir(dartDir.append('sdk').append('lib').append('_internal'), isValid),
     ];
@@ -1360,6 +1347,14 @@ class StandardTestSuite extends TestSuite {
         contentShellOptions.add('--no-timeout');
         contentShellOptions.add('--dump-render-tree');
 
+        // Disable the GPU under Linux and Dartium. If the GPU is enabled,
+        // Chrome may send a termination signal to a test.  The test will be
+        // terminated if a machine (bot) doesn't have a GPU or if a test is
+        // still running after a certain period of time.
+        if (configuration['system'] == 'linux' &&
+            configuration['runtime'] == 'drt') {
+          contentShellOptions.add('--disable-gpu');
+        }
         if (compiler == 'none') {
           dartFlags.add('--ignore-unrecognized-flags');
           if (configuration["checked"]) {
@@ -1634,7 +1629,7 @@ class StandardTestSuite extends TestSuite {
    *     // OtherScripts=file1.dart file2.dart
    *
    *   - You can indicate whether a test is treated as a web-only test by
-   *   using an explicit import to a part of the the dart:html library:
+   *   using an explicit import to a part of the dart:html library:
    *
    *     import 'dart:html';
    *     import 'dart:web_audio';
@@ -1808,11 +1803,11 @@ class StandardTestSuite extends TestSuite {
   }
 
   List<List<String>> getVmOptions(Map optionsFromFile) {
-    var COMPILERS = const ['none', 'precompiler', 'dart2app'];
+    var COMPILERS = const ['none', 'precompiler', 'dart2app', 'dart2appjit'];
     var RUNTIMES = const [
       'none',
       'dart_precompiled',
-      'dart_product',
+      'dart_app',
       'vm',
       'drt',
       'dartium',
@@ -2228,7 +2223,9 @@ class TestUtils {
   }
 
   static deleteTempSnapshotDirectory(Map configuration) {
-    if (configuration['compiler'] == 'dart2app') {
+    if (configuration['compiler'] == 'dart2app' ||
+        configuration['compiler'] == 'dart2appjit' ||
+        configuration['compiler'] == 'precompiler') {
       var checked = configuration['checked'] ? '-checked' : '';
       var minified = configuration['minified'] ? '-minified' : '';
       var csp = configuration['csp'] ? '-csp' : '';
@@ -2278,12 +2275,12 @@ class TestUtils {
   static String outputDir(Map configuration) {
     var result = '';
     var system = configuration['system'];
-    if (system == 'linux') {
+    if (system == 'linux' || system == 'android' || system == 'windows') {
       result = 'out/';
     } else if (system == 'macos') {
       result = 'xcodebuild/';
-    } else if (system == 'windows') {
-      result = 'build/';
+    } else {
+      throw new Exception('Unknown operating system: "$system"');
     }
     return result;
   }
@@ -2380,9 +2377,22 @@ class TestUtils {
       default:
         throw 'Unrecognized mode configuration: ${configuration['mode']}';
     }
+    var os;
+    switch (configuration['system']) {
+      case 'android':
+        os = 'Android';
+        break;
+      case 'linux':
+      case 'macos':
+      case 'windows':
+        os = '';
+        break;
+      default:
+        throw 'Unrecognized operating system: ${configuration['system']}';
+    }
     var arch = configuration['arch'].toUpperCase();
-    var normal = '$mode$arch';
-    var cross = '${mode}X$arch';
+    var normal = '$mode$os$arch';
+    var cross = '$mode${os}X$arch';
     var outDir = outputDir(configuration);
     var normalDir = new Directory(new Path('$outDir$normal').toNativePath());
     var crossDir = new Directory(new Path('$outDir$cross').toNativePath());
@@ -2413,6 +2423,8 @@ class TestUtils {
    */
   static List<String> getExtraVmOptions(Map configuration) =>
       getExtraOptions(configuration, 'vm_options');
+
+  static int shortNameCounter = 0;  // Make unique short file names on Windows.
 
   static String getShortName(String path) {
     final PATH_REPLACEMENTS = const {
@@ -2477,6 +2489,7 @@ class TestUtils {
     }
     path = path.replaceAll('/', '_');
     final int WINDOWS_SHORTEN_PATH_LIMIT = 58;
+    final int WINDOWS_PATH_END_LENGTH = 30;
     if (Platform.operatingSystem == 'windows' &&
         path.length > WINDOWS_SHORTEN_PATH_LIMIT) {
       for (var key in PATH_REPLACEMENTS.keys) {
@@ -2484,6 +2497,11 @@ class TestUtils {
           path = path.replaceFirst(key, PATH_REPLACEMENTS[key]);
           break;
         }
+      }
+      if (path.length > WINDOWS_SHORTEN_PATH_LIMIT) {
+        ++shortNameCounter;
+        var pathEnd = path.substring(path.length - WINDOWS_PATH_END_LENGTH);
+        path = "short${shortNameCounter}_$pathEnd";
       }
     }
     return path;
