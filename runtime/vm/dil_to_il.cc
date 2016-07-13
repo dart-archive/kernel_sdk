@@ -532,13 +532,13 @@ void ScopeBuilder::VisitFunctionNode(FunctionNode* node) {
     {
       LocalVariable* temp = NULL;
       LookupCapturedVariableByName(
-          (function_depth_ == 0) ? &result_->yield_jump_variable : &temp,
+          (depth_.function_ == 0) ? &result_->yield_jump_variable : &temp,
           Symbols::AwaitJumpVar());
     }
     {
       LocalVariable* temp = NULL;
       LookupCapturedVariableByName(
-          (function_depth_ == 0) ? &result_->yield_context_variable : &temp,
+          (depth_.function_ == 0) ? &result_->yield_context_variable : &temp,
           Symbols::AwaitContextVar());
     }
   }
@@ -547,7 +547,7 @@ void ScopeBuilder::VisitFunctionNode(FunctionNode* node) {
 
 void ScopeBuilder::VisitYieldStatement(YieldStatement* node) {
   ASSERT(node->is_native());
-  if (function_depth_ == 0) {
+  if (depth_.function_ == 0) {
     // Promote all currently visible local variables into the context.
     // TODO(vegorov) we don't need to promote those variables that are
     // not used across yields.
