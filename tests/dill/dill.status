@@ -104,7 +104,6 @@ co19/Language/Expressions/Property_Extraction/General_Closurization/setter_looku
 co19/Language/Expressions/Property_Extraction/General_Closurization/setter_lookup_t04_test: CompileTimeError
 co19/Language/Expressions/Property_Extraction/General_Closurization/static_type_t05_test: CompileTimeError
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/expression_evaluation_t07_test: CompileTimeError
-co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/no_such_method_t01_test: RuntimeError
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/proxy_annotation_t02_test: Crash
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/proxy_annotation_t04_test: Crash
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/proxy_annotation_t06_test: Crash
@@ -182,21 +181,6 @@ co19/Language/Statements/Switch/scope_t02_test: Crash
 co19/Language/Types/Interface_Types/subtype_t44_test: RuntimeError
 co19/Language/Variables/constant_variable_t01_test: RuntimeError
 co19/Language/Variables/constant_variable_t02_test: RuntimeError
-co19/Language/Variables/local_variable_t03_test: Crash
-co19/LibTest/async/DeferredLibrary/DeferredLibrary_A01_t01_test: RuntimeError
-co19/LibTest/collection/ListBase/ListBase_class_A01_t02_test: Timeout
-co19/LibTest/collection/ListMixin/ListMixin_class_A01_t02_test: Pass, Slow
-co19/LibTest/core/Invocation/isAccessor_A01_t01_test: Crash
-co19/LibTest/core/Invocation/isAccessor_A01_t02_test: Crash
-co19/LibTest/core/Invocation/isGetter_A01_t01_test: Crash
-co19/LibTest/core/Invocation/isGetter_A01_t02_test: Crash
-co19/LibTest/core/Invocation/isMethod_A01_t01_test: Crash
-co19/LibTest/core/Invocation/isMethod_A01_t02_test: Crash
-co19/LibTest/core/Invocation/isSetter_A01_t01_test: Crash
-co19/LibTest/core/Invocation/isSetter_A01_t02_test: Crash
-co19/LibTest/core/Invocation/memberName_A01_t01_test: Crash
-co19/LibTest/core/Invocation/namedArguments_A01_t01_test: Crash
-co19/LibTest/core/Invocation/positionalArguments_A01_t01_test: Crash
-co19/LibTest/math/Point/operator_addition_A02_t01_test: Crash
-co19/LibTest/math/Point/operator_mult_A03_t01_test: Crash
-co19/LibTest/math/Point/operator_subtraction_A02_t01_test: Crash
+
+# Expects identity const[] == i.positionalArguments.
+co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/no_such_method_t01_test: RuntimeError
