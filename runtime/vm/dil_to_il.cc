@@ -70,6 +70,7 @@ void ScopeBuilder::AddParameter(VariableDeclaration* declaration,
 
 
 void ScopeBuilder::AddExceptionVariables() {
+  if (function_depth_ > 0) return;
   if (result_->exception_variables.length() >= handler_depth_) return;
 
   ASSERT(result_->exception_variables.length() == handler_depth_ - 1);
@@ -92,6 +93,7 @@ void ScopeBuilder::AddExceptionVariables() {
 
 
 void ScopeBuilder::AddIteratorVariable() {
+  if (function_depth_ > 0) return;
   if (result_->iterator_variables.length() >= for_in_depth_) return;
 
   ASSERT(result_->iterator_variables.length() == for_in_depth_ - 1);
@@ -331,12 +333,15 @@ void ScopeBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
 
 void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
                                        FunctionNode* function) {
-  intptr_t saved_loop_depth = loop_depth_;
-  intptr_t saved_handler_depth = handler_depth_;
-  intptr_t saved_finally_depth = finally_depth_;
+  const intptr_t saved_loop_depth = loop_depth_;
+  const intptr_t saved_handler_depth = handler_depth_;
+  const intptr_t saved_finally_depth = finally_depth_;
+  LocalScope* saved_function_scope = function_scope_;
+
   loop_depth_ = handler_depth_ = finally_depth_ = 0;
   ++function_depth_;
   EnterScope(parent);
+  function_scope_ = scope_;
   if (function_depth_ == 1) {
     FunctionScope function_scope = { function, scope_ };
     result_->function_scopes.Add(function_scope);
@@ -348,6 +353,7 @@ void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
   loop_depth_ = saved_loop_depth;
   handler_depth_ = saved_handler_depth;
   finally_depth_ = saved_finally_depth;
+  function_scope_ = saved_function_scope;
 }
 
 
@@ -451,7 +457,7 @@ void ScopeBuilder::VisitForInStatement(ForInStatement* node) {
 
 
 void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
-  if (result_->switch_variable == NULL) {
+  if ((function_depth_ == 0) && (result_->switch_variable == NULL)) {
     LocalVariable* variable = MakeVariable(Symbols::SwitchExpr());
     function_scope_->AddVariable(variable);
     result_->switch_variable = variable;
@@ -461,7 +467,9 @@ void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
 
 
 void ScopeBuilder::VisitReturnStatement(ReturnStatement* node) {
-  if (finally_depth_ > 0 && result_->finally_return_variable == NULL) {
+  if ((function_depth_ == 0) &&
+      (finally_depth_ > 0) &&
+      (result_->finally_return_variable == NULL)) {
     const dart::String& name = H.DartSymbol(":try_finally_return_value");
     LocalVariable* variable = MakeVariable(name);
     function_scope_->AddVariable(variable);
