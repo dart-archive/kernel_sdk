@@ -185,3 +185,6 @@ co19/Language/Expressions/Instance_Creation/New/body_execution_t04_test: Compile
 co19/Language/Expressions/Instance_Creation/New/static_type_t01_test: CompileTimeError
 co19/Language/Expressions/Instance_Creation/New/evaluation_t03_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/evaluation_t15_test: RuntimeError
+
+# Expects identity const[] == i.positionalArguments.
+co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/no_such_method_t01_test: RuntimeError

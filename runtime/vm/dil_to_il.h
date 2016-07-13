@@ -379,11 +379,7 @@ class ScopeBuilder : public RecursiveVisitor {
         translation_helper_(Thread::Current(), zone_, Isolate::Current()),
         function_scope_(NULL),
         scope_(NULL),
-        loop_depth_(0),
-        function_depth_(0),
-        handler_depth_(0),
-        finally_depth_(0),
-        for_in_depth_(0),
+        depth_(0),
         name_index_(0) {
   }
 
@@ -426,7 +422,11 @@ class ScopeBuilder : public RecursiveVisitor {
   void AddParameters(FunctionNode* function, intptr_t pos = 0);
   void AddParameter(VariableDeclaration* declaration, intptr_t pos);
   void AddVariable(VariableDeclaration* declaration);
-  void AddExceptionVariables();
+  void AddExceptionVariable(GrowableArray<LocalVariable*>* variables,
+                            const char* prefix,
+                            intptr_t nesting_depth);
+  void AddTryVariables();
+  void AddCatchVariables();
   void AddIteratorVariable();
 
   // Record an assignment or reference to a variable.  If the occurrence is
@@ -434,12 +434,27 @@ class ScopeBuilder : public RecursiveVisitor {
   // captured variable.
   void LookupVariable(VariableDeclaration* declaration);
 
-  const dart::String& GenerateName();
-  const dart::String& GenerateHandlerName(const char* base);
-  const dart::String& GenerateIteratorName();
+  const dart::String& GenerateName(const char* prefix, intptr_t suffix);
 
   void HandleLocalFunction(TreeNode* parent, FunctionNode* function);
   void HandleSpecialLoad(LocalVariable** variable, const dart::String& symbol);
+
+  struct DepthState {
+    explicit DepthState(intptr_t function)
+        : loop_(0),
+          function_(function),
+          try_(0),
+          catch_(0),
+          finally_(0),
+          for_in_(0) { }
+
+    intptr_t loop_;
+    intptr_t function_;
+    intptr_t try_;
+    intptr_t catch_;
+    intptr_t finally_;
+    intptr_t for_in_;
+  };
 
   ScopeBuildingResult* result_;
   ParsedFunction* parsed_function_;
@@ -448,13 +463,10 @@ class ScopeBuilder : public RecursiveVisitor {
   Zone* zone_;
   TranslationHelper translation_helper_;
 
+
   LocalScope* function_scope_;
   LocalScope* scope_;
-  intptr_t loop_depth_;
-  intptr_t function_depth_;
-  unsigned handler_depth_;
-  intptr_t finally_depth_;
-  unsigned for_in_depth_;
+  DepthState depth_;
 
   intptr_t name_index_;
 };
@@ -666,8 +678,9 @@ class FlowGraphBuilder : public TreeVisitor {
 
   intptr_t context_depth_;
   intptr_t loop_depth_;
-  unsigned handler_depth_;
-  unsigned for_in_depth_;
+  intptr_t try_depth_;
+  intptr_t catch_depth_;
+  intptr_t for_in_depth_;
   Fragment fragment_;
   Value* stack_;
   intptr_t pending_argument_count_;
@@ -677,13 +690,13 @@ class FlowGraphBuilder : public TreeVisitor {
   ScopeBuildingResult* scopes_;
 
   LocalVariable* CurrentException() {
-    return scopes_->exception_variables[handler_depth_ - 1];
+    return scopes_->exception_variables[catch_depth_ - 1];
   }
   LocalVariable* CurrentStackTrace() {
-    return scopes_->stack_trace_variables[handler_depth_ - 1];
+    return scopes_->stack_trace_variables[catch_depth_ - 1];
   }
   LocalVariable* CurrentCatchContext() {
-    return scopes_->catch_context_variables[handler_depth_ - 1];
+    return scopes_->catch_context_variables[try_depth_];
   }
 
   // A chained list of breakable blocks. Chaining and lookup is done by the

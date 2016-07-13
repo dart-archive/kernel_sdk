@@ -25,7 +25,7 @@ namespace dil {
 
 
 void ScopeBuilder::EnterScope(TreeNode* node) {
-  scope_ = new(Z) LocalScope(scope_, function_depth_, loop_depth_);
+  scope_ = new(Z) LocalScope(scope_, depth_.function_, depth_.loop_);
   result_->scopes.Insert(node, scope_);
 }
 
@@ -69,35 +69,42 @@ void ScopeBuilder::AddParameter(VariableDeclaration* declaration,
 }
 
 
-void ScopeBuilder::AddExceptionVariables() {
-  if (function_depth_ > 0) return;
-  if (result_->exception_variables.length() >= handler_depth_) return;
+void ScopeBuilder::AddExceptionVariable(
+    GrowableArray<LocalVariable*>* variables,
+    const char* prefix,
+    intptr_t nesting_depth) {
+  if (depth_.function_ > 0) return;
+  if (variables->length() >= nesting_depth) return;
 
-  ASSERT(result_->exception_variables.length() == handler_depth_ - 1);
-  ASSERT(result_->exception_variables.length() ==
-         result_->stack_trace_variables.length());
-  ASSERT(result_->exception_variables.length() ==
-         result_->catch_context_variables.length());
-  LocalVariable* exception = MakeVariable(GenerateHandlerName(":exception"));
-  LocalVariable* stack_trace =
-      MakeVariable(GenerateHandlerName(":stack_trace"));
-  LocalVariable* catch_context =
-      MakeVariable(GenerateHandlerName(":saved_try_context_var"));
-  function_scope_->AddVariable(exception);
-  function_scope_->AddVariable(stack_trace);
-  function_scope_->AddVariable(catch_context);
-  result_->exception_variables.Add(exception);
-  result_->stack_trace_variables.Add(stack_trace);
-  result_->catch_context_variables.Add(catch_context);
+  LocalVariable* v = MakeVariable(GenerateName(prefix, nesting_depth - 1));
+  function_scope_->AddVariable(v);
+  variables->Add(v);
+}
+
+void ScopeBuilder::AddTryVariables() {
+  AddExceptionVariable(&result_->catch_context_variables,
+                       ":saved_try_context_var",
+                       depth_.try_);
+}
+
+
+void ScopeBuilder::AddCatchVariables() {
+  AddExceptionVariable(&result_->exception_variables,
+                       ":exception",
+                       depth_.catch_);
+  AddExceptionVariable(&result_->stack_trace_variables,
+                       ":stack_trace",
+                       depth_.catch_);
 }
 
 
 void ScopeBuilder::AddIteratorVariable() {
-  if (function_depth_ > 0) return;
-  if (result_->iterator_variables.length() >= for_in_depth_) return;
+  if (depth_.function_ > 0) return;
+  if (result_->iterator_variables.length() >= depth_.for_in_) return;
 
-  ASSERT(result_->iterator_variables.length() == for_in_depth_ - 1);
-  LocalVariable* iterator = MakeVariable(GenerateIteratorName());
+  ASSERT(result_->iterator_variables.length() == depth_.for_in_ - 1);
+  LocalVariable* iterator = MakeVariable(
+      GenerateName(":iterator", depth_.for_in_ - 1));
   function_scope_->AddVariable(iterator);
   result_->iterator_variables.Add(iterator);
 }
@@ -136,23 +143,10 @@ void ScopeBuilder::LookupVariable(VariableDeclaration* declaration) {
 }
 
 
-const dart::String& ScopeBuilder::GenerateName() {
+const dart::String& ScopeBuilder::GenerateName(const char* prefix,
+                                               intptr_t suffix) {
   char name[64];
-  OS::SNPrint(name, 64, ":var%" PRIxPTR "", name_index_++);
-  return H.DartSymbol(name);
-}
-
-
-const dart::String& ScopeBuilder::GenerateHandlerName(const char* base) {
-  char name[64];
-  OS::SNPrint(name, 64, "%s%d", base, handler_depth_ - 1);
-  return H.DartSymbol(name);
-}
-
-
-const dart::String& ScopeBuilder::GenerateIteratorName() {
-  char name[64];
-  OS::SNPrint(name, 64, ":iterator%d", for_in_depth_ - 1);
+  OS::SNPrint(name, 64, "%s%" Pd "", prefix, suffix);
   return H.DartSymbol(name);
 }
 
@@ -160,7 +154,7 @@ const dart::String& ScopeBuilder::GenerateIteratorName() {
 void ScopeBuilder::AddVariable(VariableDeclaration* declaration) {
   // TODO(kmillikin): Handle final and const, including function declarations.
   const dart::String& name = declaration->name()->is_empty()
-      ? GenerateName()
+      ? GenerateName(":var", name_index_++)
       : H.DartSymbol(declaration->name());
   LocalVariable* variable = MakeVariable(name);
   scope_->AddVariable(variable);
@@ -171,7 +165,7 @@ void ScopeBuilder::AddVariable(VariableDeclaration* declaration) {
 ScopeBuildingResult* ScopeBuilder::BuildScopes() {
   if (result_ != NULL) return result_;
 
-  ASSERT(scope_ == NULL && loop_depth_ == 0 && function_depth_ == 0);
+  ASSERT(scope_ == NULL && depth_.loop_ == 0 && depth_.function_ == 0);
   result_ = new(Z) ScopeBuildingResult();
 
   ParsedFunction* parsed_function = parsed_function_;
@@ -333,26 +327,19 @@ void ScopeBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
 
 void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
                                        FunctionNode* function) {
-  const intptr_t saved_loop_depth = loop_depth_;
-  const intptr_t saved_handler_depth = handler_depth_;
-  const intptr_t saved_finally_depth = finally_depth_;
   LocalScope* saved_function_scope = function_scope_;
-
-  loop_depth_ = handler_depth_ = finally_depth_ = 0;
-  ++function_depth_;
+  ScopeBuilder::DepthState saved_depth_state = depth_;
+  depth_ = DepthState(depth_.function_ + 1);
   EnterScope(parent);
   function_scope_ = scope_;
-  if (function_depth_ == 1) {
+  if (depth_.function_ == 1) {
     FunctionScope function_scope = { function, scope_ };
     result_->function_scopes.Add(function_scope);
   }
   AddParameters(function);
   VisitFunctionNode(function);
   ExitScope();
-  --function_depth_;
-  loop_depth_ = saved_loop_depth;
-  handler_depth_ = saved_handler_depth;
-  finally_depth_ = saved_finally_depth;
+  depth_ = saved_depth_state;
   function_scope_ = saved_function_scope;
 }
 
@@ -409,16 +396,16 @@ void ScopeBuilder::VisitFunctionDeclaration(FunctionDeclaration* node) {
 
 
 void ScopeBuilder::VisitWhileStatement(WhileStatement* node) {
-  ++loop_depth_;
+  ++depth_.loop_;
   node->VisitChildren(this);
-  --loop_depth_;
+  --depth_.loop_;
 }
 
 
 void ScopeBuilder::VisitDoStatement(DoStatement* node) {
-  ++loop_depth_;
+  ++depth_.loop_;
   node->VisitChildren(this);
-  --loop_depth_;
+  --depth_.loop_;
 }
 
 
@@ -428,7 +415,7 @@ void ScopeBuilder::VisitForStatement(ForStatement* node) {
   for (intptr_t i = 0; i < variables.length(); ++i) {
     VisitVariableDeclaration(variables[i]);
   }
-  ++loop_depth_;
+  ++depth_.loop_;
   if (node->condition() != NULL) {
     node->condition()->AcceptExpressionVisitor(this);
   }
@@ -437,27 +424,27 @@ void ScopeBuilder::VisitForStatement(ForStatement* node) {
   for (intptr_t i = 0; i < updates.length(); ++i) {
     updates[i]->AcceptExpressionVisitor(this);
   }
-  --loop_depth_;
+  --depth_.loop_;
   ExitScope();
 }
 
 
 void ScopeBuilder::VisitForInStatement(ForInStatement* node) {
   node->iterable()->AcceptExpressionVisitor(this);
-  ++for_in_depth_;
+  ++depth_.for_in_;
   AddIteratorVariable();
-  ++loop_depth_;
+  ++depth_.loop_;
   EnterScope(node);
   VisitVariableDeclaration(node->variable());
   node->body()->AcceptStatementVisitor(this);
   ExitScope();
-  --loop_depth_;
-  --for_in_depth_;
+  --depth_.loop_;
+  --depth_.for_in_;
 }
 
 
 void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
-  if ((function_depth_ == 0) && (result_->switch_variable == NULL)) {
+  if ((depth_.function_ == 0) && (result_->switch_variable == NULL)) {
     LocalVariable* variable = MakeVariable(Symbols::SwitchExpr());
     function_scope_->AddVariable(variable);
     result_->switch_variable = variable;
@@ -467,8 +454,8 @@ void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
 
 
 void ScopeBuilder::VisitReturnStatement(ReturnStatement* node) {
-  if ((function_depth_ == 0) &&
-      (finally_depth_ > 0) &&
+  if ((depth_.function_ == 0) &&
+      (depth_.finally_ > 0) &&
       (result_->finally_return_variable == NULL)) {
     const dart::String& name = H.DartSymbol(":try_finally_return_value");
     LocalVariable* variable = MakeVariable(name);
@@ -480,10 +467,13 @@ void ScopeBuilder::VisitReturnStatement(ReturnStatement* node) {
 
 
 void ScopeBuilder::VisitTryCatch(TryCatch* node) {
+  ++depth_.try_;
+  AddTryVariables();
   node->body()->AcceptStatementVisitor(this);
+  --depth_.try_;
 
-  ++handler_depth_;
-  AddExceptionVariables();
+  ++depth_.catch_;
+  AddCatchVariables();
   List<Catch>& catches = node->catches();
   for (intptr_t i = 0; i < catches.length(); ++i) {
     Catch* ketch = catches[i];
@@ -497,19 +487,22 @@ void ScopeBuilder::VisitTryCatch(TryCatch* node) {
     ketch->body()->AcceptStatementVisitor(this);
     ExitScope();
   }
-  --handler_depth_;
+  --depth_.catch_;
 }
 
 
 void ScopeBuilder::VisitTryFinally(TryFinally* node) {
-  ++finally_depth_;
+  ++depth_.try_;
+  ++depth_.finally_;
+  AddTryVariables();
   node->body()->AcceptStatementVisitor(this);
-  --finally_depth_;
+  --depth_.finally_;
+  --depth_.try_;
 
-  ++handler_depth_;
-  AddExceptionVariables();
+  ++depth_.catch_;
+  AddCatchVariables();
   node->finalizer()->AcceptStatementVisitor(this);
-  --handler_depth_;
+  --depth_.catch_;
 }
 
 
@@ -1454,7 +1447,8 @@ FlowGraphBuilder::FlowGraphBuilder(
     next_function_id_(0),
     context_depth_(0),
     loop_depth_(0),
-    handler_depth_(0),
+    try_depth_(0),
+    catch_depth_(0),
     for_in_depth_(0),
     stack_(NULL),
     pending_argument_count_(0),
@@ -1762,7 +1756,7 @@ Fragment FlowGraphBuilder::TryCatch(int try_handler_index) {
   JoinEntryInstr* entry =
       new(Z) JoinEntryInstr(AllocateBlockId(), try_handler_index);
   body += LoadLocal(parsed_function_->current_context_var());
-  body += StoreLocal(scopes_->catch_context_variables[handler_depth_]);
+  body += StoreLocal(CurrentCatchContext());
   body += Drop();
   body += Goto(entry);
   return Fragment(body.entry, entry);
@@ -4595,11 +4589,13 @@ void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
   JoinEntryInstr* after_try = BuildJoinEntry();
 
   // Fill in the body of the try.
+  ++try_depth_;
   {
     TryCatchBlock tcb(this, try_handler_index);
     TryFinallyBlock tfb(this, node->finalizer());
     try_body += TranslateStatement(node->body());
   }
+  --try_depth_;
 
   if (try_body.is_open()) {
     // Please note: The try index will be on level out of this block,
@@ -4615,7 +4611,7 @@ void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
   }
 
   // Fill in the body of the catch.
-  ++handler_depth_;
+  ++catch_depth_;
   const Array& handler_types = Array::ZoneHandle(Z, Array::New(1, Heap::kOld));
   handler_types.SetAt(0, Object::dynamic_type());
   Fragment finally_body = CatchBlockEntry(handler_types, try_handler_index);
@@ -4628,7 +4624,7 @@ void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
     finally_body += RethrowException(try_handler_index);
     Drop();
   }
-  --handler_depth_;
+  --catch_depth_;
 
   fragment_ = Fragment(try_body.entry, after_try);
 }
@@ -4640,13 +4636,15 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
   JoinEntryInstr* after_try = BuildJoinEntry();
 
   // Fill in the body of the try.
+  ++try_depth_;
   {
     TryCatchBlock block(this, try_handler_index);
     try_body += TranslateStatement(node->body());
     try_body += Goto(after_try);
   }
+  --try_depth_;
 
-  ++handler_depth_;
+  ++catch_depth_;
   const Array& handler_types =
       Array::ZoneHandle(Z, Array::New(node->catches().length(), Heap::kOld));
   Fragment catch_body = CatchBlockEntry(handler_types, try_handler_index);
@@ -4732,7 +4730,7 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
     catch_body += RethrowException(try_handler_index);
     Drop();
   }
-  --handler_depth_;
+  --catch_depth_;
 
   fragment_ = Fragment(try_body.entry, after_try);
 }
