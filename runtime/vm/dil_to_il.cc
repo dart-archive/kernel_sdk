@@ -833,26 +833,26 @@ const dart::String& TranslationHelper::DartClassName(dil::Class* dil_klass) {
 
 const dart::String& TranslationHelper::DartConstructorName(Constructor* node) {
   Class* klass = Class::Cast(node->parent());
-  return DartFactoryName(klass, node->name()->string());  // NOLINT
+  return DartFactoryName(klass, node->name());
 }
 
 
 const dart::String& TranslationHelper::DartProcedureName(Procedure* procedure) {
   if (procedure->kind() == Procedure::kSetter) {
-    return DartSetterName(procedure->name()->string());
+    return DartSetterName(procedure->name());
   } else if (procedure->kind() == Procedure::kGetter) {
-    return DartGetterName(procedure->name()->string());
+    return DartGetterName(procedure->name());
   } else if (procedure->kind() == Procedure::kFactory) {
     return DartFactoryName(
         Class::Cast(procedure->parent()),
-        procedure->name()->string());
+        procedure->name());
   } else {
-    return DartSymbol(procedure->name()->string());
+    return DartMethodName(procedure->name());
   }
 }
 
 
-const dart::String& TranslationHelper::DartSetterName(String* content) {
+const dart::String& TranslationHelper::DartSetterName(Name* dil_name) {
   // The names flowing into [content] are coming from the DILL file:
   //   * user-defined setters: `fieldname=`
   //   * property-set expressions:  `fieldname`
@@ -861,6 +861,7 @@ const dart::String& TranslationHelper::DartSetterName(String* content) {
   //
   // => In order to be consistent, we remove the `=` always and adopt the VM
   //    conventions.
+  String* content = dil_name->string();
   ASSERT(content->size() > 0);
   intptr_t skip = 0;
   if (content->buffer()[content->size() - 1] == '=') {
@@ -868,28 +869,50 @@ const dart::String& TranslationHelper::DartSetterName(String* content) {
   }
   dart::String& name = dart::String::ZoneHandle(Z,
       dart::String::FromUTF8(content->buffer(), content->size() - skip));
-  return dart::String::ZoneHandle(Z, dart::Field::SetterSymbol(name));
+  ManglePrivateName(dil_name, &name, false);
+  name = dart::Field::SetterSymbol(name);
+  return name;
 }
 
 
-const dart::String& TranslationHelper::DartGetterName(String* content) {
-  return dart::String::ZoneHandle(Z,
-      dart::Field::GetterSymbol(DartString(content)));
+const dart::String& TranslationHelper::DartGetterName(Name* dil_name) {
+  dart::String& name = DartString(dil_name->string());
+  ManglePrivateName(dil_name, &name, false);
+  name = dart::Field::GetterSymbol(name);
+  return name;
 }
 
 
-const dart::String& TranslationHelper::DartInitializerName(String* content) {
-  return dart::String::Handle(Z,
-      Symbols::FromConcat(thread_, Symbols::InitPrefix(), DartSymbol(content)));
+const dart::String& TranslationHelper::DartFieldName(Name* dil_name) {
+  dart::String& name = DartString(dil_name->string());
+  return ManglePrivateName(dil_name, &name);
+}
+
+
+const dart::String& TranslationHelper::DartInitializerName(Name* dil_name) {
+  // The [DartFieldName] will take care of mangling the name.
+  dart::String& name = dart::String::Handle(Z, DartFieldName(dil_name).raw());
+  name = Symbols::FromConcat(thread_, Symbols::InitPrefix(), name);
+  return name;
+}
+
+
+const dart::String& TranslationHelper::DartMethodName(Name* dil_name) {
+  dart::String& name = DartString(dil_name->string());
+  return ManglePrivateName(dil_name, &name);
 }
 
 
 const dart::String& TranslationHelper::DartFactoryName(Class* klass,
-                                                       String* method_name) {
+                                                       Name* method_name) {
+  dart::String& name =
+      dart::String::Handle(Z, DartMethodName(method_name).raw());
+  ManglePrivateName(method_name, &name, false);
+
   // We build a String which looks like <classname>.<constructor-name>.
   dart::String& temp = dart::String::Handle(Z, DartClassName(klass).raw());
   temp = dart::String::Concat(temp, Symbols::Dot());
-  temp = dart::String::Concat(temp, DartString(method_name));
+  temp = dart::String::Concat(temp, name);
   return dart::String::ZoneHandle(Z, dart::Symbols::New(thread_, temp));
 }
 
@@ -1034,6 +1057,20 @@ void TranslationHelper::ReportError(const Error& prev_error,
       prev_error, null_script, TokenPosition::kNoSource, format, args);
   va_end(args);
   UNREACHABLE();
+}
+
+
+dart::String& TranslationHelper::ManglePrivateName(
+    Name* dil_name, dart::String* name_to_modify, bool symbolize) {
+  // Mangle private names using library's private key.
+  if (dil_name->string()->buffer()[0] == '_') {   // NOLINT
+    const dart::Library& library = dart::Library::Handle(
+        LookupLibraryByDilLibrary(dil_name->library()));
+    *name_to_modify = library.PrivateName(*name_to_modify);
+  } else if (symbolize) {
+    *name_to_modify = Symbols::New(thread_, *name_to_modify);
+  }
+  return *name_to_modify;
 }
 
 
@@ -1216,9 +1253,9 @@ void ConstantEvaluator::VisitMethodInvocation(MethodInvocation* node) {
   // TODO(kustermann): Are there convenience function in the VM which do this?
   // TODO(kustermann): Can we assume this will never be a no-such-method error?
   dart::Function& function = dart::Function::Handle(Z);
+  const dart::String& method_name = H.DartMethodName(node->name());
   while (!klass.IsNull()) {
-    function = klass.LookupDynamicFunctionAllowPrivate(
-        H.DartSymbol(node->name()->string()));
+    function = klass.LookupDynamicFunctionAllowPrivate(method_name);
     if (!function.IsNull()) break;
     klass = klass.SuperClass();
   }
@@ -3356,8 +3393,7 @@ void FlowGraphBuilder::VisitStaticGet(StaticGet* node) {
       fragment_ = Constant(constant_evaluator_.EvaluateExpression(node));
     } else {
       const dart::Class& owner = dart::Class::Handle(Z, field.Owner());
-      const dart::String& getter_name =
-          H.DartGetterName(dil_field->name()->string());
+      const dart::String& getter_name = H.DartGetterName(dil_field->name());
       const Function& getter =
           Function::ZoneHandle(Z, owner.LookupStaticFunction(getter_name));
       if (getter.IsNull() || !field.has_initializer()) {
@@ -3426,7 +3462,7 @@ void FlowGraphBuilder::VisitStaticSet(StaticSet* node) {
 void FlowGraphBuilder::VisitPropertyGet(PropertyGet* node) {
   Fragment instructions = TranslateExpression(node->receiver());
   instructions += PushArgument();
-  const dart::String& getter_name = H.DartGetterName(node->name()->string());
+  const dart::String& getter_name = H.DartGetterName(node->name());
   fragment_ = instructions + InstanceCall(getter_name, Token::kGET, 1);
 }
 
@@ -3440,7 +3476,7 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
   instructions += StoreLocal(variable);
   instructions += PushArgument();
 
-  const dart::String& setter_name = H.DartSetterName(node->name()->string());
+  const dart::String& setter_name = H.DartSetterName(node->name());
   instructions += InstanceCall(setter_name, Token::kSET, 2);
   fragment_ = instructions + Drop();
 }
@@ -3453,13 +3489,13 @@ void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
     dart::Class& klass = dart::Class::Handle(Z,
         H.LookupClassByDilClass(Class::Cast(node->target()->parent())));
     const dart::String& getter_name = H.DartGetterName(
-        node->target()->name()->string());
+        node->target()->name());
     target = Resolver::ResolveDynamicAnyArgs(zone_, klass, getter_name);
     ASSERT(!target.IsNull());
   } else {
     ASSERT(node->target()->IsField());
     const dart::String& getter_name = H.DartGetterName(
-        node->target()->name()->string());
+        node->target()->name());
     target = LookupMethodByMember(node->target(), getter_name);
     ASSERT(target.IsGetterFunction() || target.IsImplicitGetterFunction());
   }
@@ -3472,7 +3508,7 @@ void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
 
 void FlowGraphBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
   const dart::String& method_name =
-      H.DartSetterName(node->target()->name()->string());
+      H.DartSetterName(node->target()->name());
   const Function& target = Function::ZoneHandle(Z,
       LookupMethodByMember(node->target(), method_name));
   ASSERT(target.IsSetterFunction() || target.IsImplicitSetterFunction());
@@ -3577,7 +3613,7 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   Array& argument_names = Array::ZoneHandle(Z);
   instructions += TranslateArguments(node->arguments(), &argument_names);
 
-  const dart::String& name = H.DartSymbol(node->name()->string());  // NOLINT
+  const dart::String& name = H.DartMethodName(node->name());
   intptr_t argument_count = node->arguments()->count() + 1;
 
   intptr_t num_args_checked = 1;
@@ -3596,8 +3632,7 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
 
 
 void FlowGraphBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
-  const dart::String& method_name =
-      H.DartSymbol(node->target()->name()->string());  // NOLINT
+  const dart::String& method_name = H.DartMethodName(node->target()->name());
   const Function& target = Function::ZoneHandle(Z,
       LookupMethodByMember(node->target(), method_name));
 

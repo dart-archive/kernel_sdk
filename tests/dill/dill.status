@@ -16,8 +16,6 @@ co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superi
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/initializing_formals_execution_t02_test: RuntimeError
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/inheritance_t03_test: RuntimeError
-co19/Language/Classes/Superclasses/Inheritance_and_Overriding/inheritance_t06_test: RuntimeError
-co19/Language/Classes/Superclasses/Inheritance_and_Overriding/overriding_t04_test: CompileTimeError
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t04_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t05_test: Crash
@@ -33,8 +31,6 @@ co19/Language/Expressions/Instance_Creation/Const/canonicalized_t05_test: Runtim
 co19/Language/Expressions/Instance_Creation/New/evaluation_t01_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/evaluation_t02_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/evaluation_t12_test: RuntimeError
-co19/Language/Expressions/Lookup/Method_Lookup/superclass_t07_test: RuntimeError
-co19/Language/Expressions/Method_Invocation/Ordinary_Invocation/accessible_instance_member_t02_test: RuntimeError
 co19/Language/Expressions/Method_Invocation/Super_Invocation/evaluation_t05_test: Crash
 co19/Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t01_test: RuntimeError
 co19/Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t02_test: RuntimeError
@@ -79,9 +75,6 @@ co19/Language/Functions/External_Functions/not_connected_to_a_body_t01_test: Run
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t16_test: RuntimeError
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t17_test: RuntimeError
 co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t02_test: Crash
-co19/Language/Libraries_and_Scripts/private_access_t01_test: RuntimeError
-co19/Language/Overview/Privacy/private_and_public_t08_test: RuntimeError
-co19/Language/Overview/Privacy/private_and_public_t21_test: RuntimeError
 co19/Language/Statements/Labels/scope_t01_test: Crash
 co19/Language/Statements/Labels/scope_t07_test: Crash
 co19/Language/Types/Interface_Types/subtype_t44_test: RuntimeError

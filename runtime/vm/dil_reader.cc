@@ -158,7 +158,7 @@ void DilReader::ReadLibrary(Library* dil_library) {
     for (intptr_t i = 0; i < dil_library->fields().length(); i++) {
       Field* dil_field = dil_library->fields()[i];
 
-      const dart::String& name = H.DartSymbol(dil_field->name()->string());
+      const dart::String& name = H.DartFieldName(dil_field->name());
       dart::Field& field = dart::Field::Handle(Z, dart::Field::NewTopLevel(
             name,
             dil_field->IsConst(),
@@ -285,7 +285,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
   for (intptr_t i = 0; i < dil_klass->fields().length(); i++) {
     Field* dil_field = dil_klass->fields()[i];
 
-    const dart::String& name = H.DartSymbol(dil_field->name()->string());
+    const dart::String& name = H.DartFieldName(dil_field->name());
     const AbstractType& type = AbstractType::dynamic_type();
     dart::Field& field = dart::Field::Handle(Z,
         dart::Field::New(name,
@@ -387,8 +387,7 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
   // For static fields we only need the getter if the field is lazy-initialized.
   if (dil_field->IsStatic() && !field.has_initializer()) return;
 
-  const dart::String& getter_name =
-      H.DartGetterName(dil_field->name()->string());
+  const dart::String& getter_name = H.DartGetterName(dil_field->name());
   dart::Function& getter = dart::Function::ZoneHandle(Z, dart::Function::New(
       getter_name,
       dart::RawFunction::kImplicitGetter,
@@ -410,8 +409,7 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
   SetupFieldAccessorFunction(klass, getter);
 
   if (!dil_field->IsStatic() && !dil_field->IsFinal()) {
-    const dart::String& setter_name =
-        H.DartSetterName(dil_field->name()->string());  // NOLINT
+    const dart::String& setter_name = H.DartSetterName(dil_field->name());
     dart::Function& setter = dart::Function::ZoneHandle(Z, dart::Function::New(
           setter_name,
           RawFunction::kImplicitSetter,
@@ -539,7 +537,7 @@ void DilReader::GenerateStaticFieldInitializer(const dart::Field& field,
       // Create a static final getter.
       dart::Class& owner = dart::Class::Handle(Z, field.Owner());
       const dart::String& initializer_name =
-          H.DartInitializerName(dil_field->name()->string());  // NOLINT
+          H.DartInitializerName(dil_field->name());
       dart::Function& initializer = dart::Function::Handle(Z,
           dart::Function::New(initializer_name,
                               RawFunction::kImplicitStaticFinalGetter,

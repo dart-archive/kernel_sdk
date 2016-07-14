@@ -148,14 +148,15 @@ class TranslationHelper {
   const dart::String& DartSymbol(String* content) const;
 
   const dart::String& DartClassName(Class* dil_klass);
-
   const dart::String& DartConstructorName(Constructor* node);
   const dart::String& DartProcedureName(Procedure* procedure);
 
-  const dart::String& DartSetterName(String* content);
-  const dart::String& DartGetterName(String* content);
-  const dart::String& DartInitializerName(String* content);
-  const dart::String& DartFactoryName(Class* klass, String* method_name);
+  const dart::String& DartSetterName(Name* dil_name);
+  const dart::String& DartGetterName(Name* dil_name);
+  const dart::String& DartFieldName(Name* dil_name);
+  const dart::String& DartInitializerName(Name* dil_name);
+  const dart::String& DartMethodName(Name* dil_name);
+  const dart::String& DartFactoryName(Class* klass, Name* dil_name);
 
   // A subclass overrides these when reading in the DIL program in order to
   // support recursive type expressions (e.g. for "implements X" ...
@@ -175,6 +176,12 @@ class TranslationHelper {
   void ReportError(const Error& prev_error, const char* format, ...);
 
  private:
+  // This will mangle [dil_name] (if necessary) and make the result a symbol.
+  // The result will be avilable in [name_to_modify] and it is also returned.
+  dart::String& ManglePrivateName(Name* dil_name,
+                                  dart::String* name_to_modify,
+                                  bool symbolize = true);
+
   dart::Thread* thread_;
   dart::Zone* zone_;
   dart::Isolate* isolate_;
