@@ -352,3 +352,176 @@ patch class NoSuchMethodError {
     return msg_buf.toString();
   }
 }
+
+patch _unresolvedConstructorError(
+    Object typeLiteral,
+    Symbol fullConstructorName,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      typeLiteral,
+      fullConstructorName,
+      _InvocationMirror._CONSTRUCTOR << _InvocationMirror._CALL_SHIFT,
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedStaticGetterError(
+    Object typeLiteral,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      typeLiteral,
+      name,
+      (_InvocationMirror._GETTER << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._STATIC << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedStaticSetterError(
+    Object typeLiteral,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      typeLiteral,
+      name,
+      (_InvocationMirror._SETTER << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._STATIC << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedStaticMethodError(
+    Object typeLiteral,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      typeLiteral,
+      name,
+      (_InvocationMirror._METHOD << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._STATIC << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedTopLevelGetterError(
+    Object unused,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      unused,
+      name,
+      (_InvocationMirror._GETTER << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._TOP_LEVEL << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedTopLevelSetterError(
+    Object unused,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      unused,
+      name,
+      (_InvocationMirror._SETTER << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._TOP_LEVEL << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedTopLevelMethodError(
+    Object unused,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      unused,
+      name,
+      (_InvocationMirror._METHOD << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._TOP_LEVEL << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedSuperGetterError(
+    Object receiver,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      receiver,
+      name,
+      (_InvocationMirror._GETTER << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._SUPER << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedSuperSetterError(
+    Object receiver,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      receiver,
+      name,
+      (_InvocationMirror._SETTER << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._SUPER << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _unresolvedSuperMethodError(
+    Object receiver,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError._withType(
+      receiver,
+      name,
+      (_InvocationMirror._METHOD << _InvocationMirror._TYPE_SHIFT) +
+          (_InvocationMirror._SUPER << _InvocationMirror._CALL_SHIFT),
+      arguments,
+      namedArguments,
+      existingArgumentNames);
+}
+
+patch _genericNoSuchMethod(
+    Object receiver,
+    Symbol methodName,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames) {
+  return new NoSuchMethodError(receiver, methodName, arguments, namedArguments,
+      existingArgumentNames);
+}
+
+patch _malformedTypeError(String errorMessage) {
+  return new _TypeError._create(null, null, null, errorMessage);
+}

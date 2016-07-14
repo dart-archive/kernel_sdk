@@ -571,3 +571,82 @@ class CyclicInitializationError extends Error {
       ? "Reading static variable during its initialization"
       : "Reading static variable '$variableName' during its initialization";
 }
+
+external _unresolvedConstructorError(
+    Object typeLiteral,
+    Symbol fullConstructorName,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedStaticGetterError(
+    Object typeLiteral,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedStaticSetterError(
+    Object typeLiteral,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedStaticMethodError(
+    Object typeLiteral,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedTopLevelGetterError(
+    Object unused,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedTopLevelSetterError(
+    Object unused,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedTopLevelMethodError(
+    Object unused,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedSuperGetterError(
+    Object receiver,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedSuperSetterError(
+    Object receiver,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _unresolvedSuperMethodError(
+    Object receiver,
+    Symbol name,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _genericNoSuchMethod(
+    Object receiver,
+    Symbol methodName,
+    List arguments,
+    Map<Symbol, dynamic> namedArguments,
+    List existingArgumentNames);
+
+external _malformedTypeError(String errorMessage);
