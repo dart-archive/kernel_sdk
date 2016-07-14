@@ -7,7 +7,7 @@ co19/LibTest/isolate/*: Skip
 # We don't have support for dart:mirrors or metadata annotations ATM.
 co19/Language/Metadata/*: Skip
 
-co19/Language/Generics/syntax_t17_test: Crash
+co19/Language/Generics/syntax_t17_test: Crash # Rasta has written a library file, not a program.
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/initializing_formals_execution_t02_test: RuntimeError
@@ -16,10 +16,8 @@ co19/Language/Classes/Static_Methods/same_name_method_and_setter_t01_test: Runti
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/inheritance_t03_test: RuntimeError
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/inheritance_t06_test: RuntimeError
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/overriding_t04_test: CompileTimeError
-co19/Language/Expressions/Assignment/setter_assignment_t09_test: RuntimeError
 co19/Language/Expressions/Assignment/variable_assignment_t03_test: RuntimeError
 co19/Language/Expressions/Assignment/variable_assignment_t04_test: RuntimeError
-co19/Language/Expressions/Assignment/variable_assignment_t07_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t04_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t05_test: Crash
@@ -36,7 +34,6 @@ co19/Language/Expressions/Instance_Creation/New/evaluation_t01_test: RuntimeErro
 co19/Language/Expressions/Instance_Creation/New/evaluation_t02_test: RuntimeError
 co19/Language/Expressions/Instance_Creation/New/evaluation_t12_test: RuntimeError
 co19/Language/Expressions/Lookup/Method_Lookup/superclass_t07_test: RuntimeError
-co19/Language/Expressions/Method_Invocation/3_Static_Invocation_A04_t09_test: RuntimeError
 co19/Language/Expressions/Method_Invocation/Ordinary_Invocation/accessible_instance_member_t02_test: RuntimeError
 co19/Language/Expressions/Method_Invocation/Super_Invocation/evaluation_t05_test: Crash
 co19/Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t01_test: RuntimeError
@@ -78,7 +75,6 @@ co19/Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Clo
 co19/Language/Expressions/Strings/adjacent_strings_t02_test: RuntimeError
 co19/Language/Expressions/Symbols/syntax_t01_test: RuntimeError
 co19/Language/Expressions/Symbols/syntax_t02_test: RuntimeError
-co19/Language/Expressions/Top_level_Getter_Invocation/17_Getter_Invocation_A07_t02_test: RuntimeError
 co19/Language/Functions/External_Functions/not_connected_to_a_body_t01_test: RuntimeError
 co19/Language/Functions/Formal_Parameters/Optional_Formals/syntax_t06_test: RuntimeError
 co19/Language/Functions/Formal_Parameters/Optional_Formals/syntax_t10_test: RuntimeError
@@ -87,8 +83,6 @@ co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t16_test: RuntimeE
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t17_test: RuntimeError
 co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t02_test: Crash
 co19/Language/Libraries_and_Scripts/private_access_t01_test: RuntimeError
-co19/Language/Mixins/Mixin_Application/error_t01_test: CompileTimeError
-co19/Language/Mixins/Mixin_Application/error_t02_test: CompileTimeError
 co19/Language/Overview/Privacy/private_and_public_t08_test: RuntimeError
 co19/Language/Overview/Privacy/private_and_public_t21_test: RuntimeError
 co19/Language/Statements/Labels/scope_t01_test: Crash
@@ -97,7 +91,6 @@ co19/Language/Types/Interface_Types/subtype_t44_test: RuntimeError
 co19/Language/Variables/constant_variable_t01_test: RuntimeError
 co19/Language/Variables/constant_variable_t02_test: RuntimeError
 co19/LibTest/async/DeferredLibrary/DeferredLibrary_A01_t01_test: RuntimeError
-co19/LibTest/collection/ListMixin/ListMixin_class_A01_t02_test: Timeout
 co19/LibTest/core/Invocation/isAccessor_A01_t01_test: RuntimeError
 co19/LibTest/core/Invocation/isAccessor_A01_t02_test: RuntimeError
 co19/LibTest/core/Invocation/isGetter_A01_t01_test: RuntimeError
@@ -112,3 +105,6 @@ co19/LibTest/core/Invocation/positionalArguments_A01_t01_test: RuntimeError
 
 # Expects identity const[] == i.positionalArguments.
 co19/Language/Expressions/Property_Extraction/Getter_Access_and_Method_Extraction/no_such_method_t01_test: RuntimeError
+
+co19/LibTest/collection/ListBase/ListBase_class_A01_t02_test: Slow, Pass
+co19/LibTest/collection/ListMixin/ListMixin_class_A01_t02_test: Slow, Pass
