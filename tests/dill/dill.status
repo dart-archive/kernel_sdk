@@ -7,17 +7,17 @@ co19/LibTest/isolate/*: Skip
 # We don't have support for dart:mirrors or metadata annotations ATM.
 co19/Language/Metadata/*: Skip
 
+# Rasta (and dart2js) don't allow a setter and method to have the same name.
+co19/Language/Classes/Setters/name_t07_test: RuntimeError
+co19/Language/Classes/Static_Methods/same_name_method_and_setter_t01_test: RuntimeError
+
 co19/Language/Generics/syntax_t17_test: Crash # Rasta has written a library file, not a program.
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/initializing_formals_execution_t02_test: RuntimeError
-co19/Language/Classes/Setters/name_t07_test: RuntimeError
-co19/Language/Classes/Static_Methods/same_name_method_and_setter_t01_test: RuntimeError
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/inheritance_t03_test: RuntimeError
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/inheritance_t06_test: RuntimeError
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/overriding_t04_test: CompileTimeError
-co19/Language/Expressions/Assignment/variable_assignment_t03_test: RuntimeError
-co19/Language/Expressions/Assignment/variable_assignment_t04_test: RuntimeError
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t04_test: Crash
 co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t05_test: Crash
@@ -76,9 +76,6 @@ co19/Language/Expressions/Strings/adjacent_strings_t02_test: RuntimeError
 co19/Language/Expressions/Symbols/syntax_t01_test: RuntimeError
 co19/Language/Expressions/Symbols/syntax_t02_test: RuntimeError
 co19/Language/Functions/External_Functions/not_connected_to_a_body_t01_test: RuntimeError
-co19/Language/Functions/Formal_Parameters/Optional_Formals/syntax_t06_test: RuntimeError
-co19/Language/Functions/Formal_Parameters/Optional_Formals/syntax_t10_test: RuntimeError
-co19/Language/Functions/Formal_Parameters/Required_Formals/syntax_t05_test: RuntimeError
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t16_test: RuntimeError
 co19/Language/Libraries_and_Scripts/Imports/namespace_changes_t17_test: RuntimeError
 co19/Language/Libraries_and_Scripts/Scripts/top_level_main_t02_test: Crash
@@ -88,8 +85,6 @@ co19/Language/Overview/Privacy/private_and_public_t21_test: RuntimeError
 co19/Language/Statements/Labels/scope_t01_test: Crash
 co19/Language/Statements/Labels/scope_t07_test: Crash
 co19/Language/Types/Interface_Types/subtype_t44_test: RuntimeError
-co19/Language/Variables/constant_variable_t01_test: RuntimeError
-co19/Language/Variables/constant_variable_t02_test: RuntimeError
 co19/LibTest/async/DeferredLibrary/DeferredLibrary_A01_t01_test: RuntimeError
 co19/LibTest/core/Invocation/isAccessor_A01_t01_test: RuntimeError
 co19/LibTest/core/Invocation/isAccessor_A01_t02_test: RuntimeError

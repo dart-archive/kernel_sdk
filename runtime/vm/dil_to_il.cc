@@ -3333,9 +3333,16 @@ void FlowGraphBuilder::VisitVariableGet(VariableGet* node) {
 
 
 void FlowGraphBuilder::VisitVariableSet(VariableSet* node) {
-  LocalVariable* local = LookupVariable(node->variable());
   Fragment instructions = TranslateExpression(node->expression());
-  fragment_ = instructions + StoreLocal(local);
+  // The IR should not include assignments to final or const variables.
+  // This is https://github.com/dart-lang/rasta/issues/83.
+  //
+  // TODO(kmillikin): simply ASSERT that the variable is not const or final
+  // when that issue is fixed.
+  fragment_ = instructions +
+      ((node->variable()->IsFinal() || node->variable()->IsConst())
+           ? Drop() + ThrowNoSuchMethodError()
+           : StoreLocal(LookupVariable(node->variable())));
 }
 
 
