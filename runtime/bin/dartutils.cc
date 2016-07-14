@@ -572,7 +572,7 @@ void FUNCTION_NAME(Builtin_LoadSource)(Dart_NativeArguments args) {
     // Entry file. Check for payload and load accordingly.
     bool is_snapshot = false;
     bool is_dilfile = false;
-    const uint8_t *payload = DartUtils::SniffForMagicNumber(
+    const uint8_t* payload = DartUtils::SniffForMagicNumber(
         data, &num_bytes, &is_snapshot, &is_dilfile);
 
     if (is_snapshot) {

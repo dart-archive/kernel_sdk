@@ -485,8 +485,33 @@ static Dart_Handle LoadSnapshotCreationScript(const char* script_name) {
     return resolved_uri;
   }
   // Now load the contents of the specified uri.
-  const char* resolved_uri_string = DartUtils::GetStringValue(resolved_uri);
-  Dart_Handle source =  LoadUrlContents(resolved_uri_string);
+
+  // Read the bytes.
+  void *file = DartUtils::OpenFile(script_name, false);
+  if (file == NULL) {
+    FATAL1("Could not open file %s for reading\n", script_name);
+  }
+  const uint8_t* data;
+  intptr_t data_len;
+  DartUtils::ReadFile(&data, &data_len, file);
+  DartUtils::CloseFile(file);
+
+  intptr_t payload_bytes = data_len;
+  bool is_snapshot, is_dilfile;
+  const uint8_t* payload = DartUtils::SniffForMagicNumber(
+      data, &payload_bytes, &is_snapshot, &is_dilfile);
+
+  if (is_dilfile) {
+    Dart_Handle library = Dart_LoadDil(payload, payload_bytes);
+    free(const_cast<uint8_t*>(data));
+    return library;
+  } else if (is_snapshot) {
+    FATAL1("Cannot use a snapshot from %s to generate a snapshot\n",
+        script_name);
+  }
+
+  Dart_Handle source = Dart_NewStringFromUTF8(data, data_len);
+  free(const_cast<uint8_t*>(data));
   if (Dart_IsError(source)) {
     return source;
   }
