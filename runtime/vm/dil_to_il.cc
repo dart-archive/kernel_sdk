@@ -73,13 +73,44 @@ void ScopeBuilder::AddExceptionVariable(
     GrowableArray<LocalVariable*>* variables,
     const char* prefix,
     intptr_t nesting_depth) {
+  LocalVariable* v = NULL;
+
+  // If we are inside a function with yield points then Kernel transformer
+  // could have lifted some of the auxiliary exception variables into the
+  // context to preserve them across yield points because they might
+  // be needed for rethrow.
+  // Check if it did and capture such variables instead of introducing
+  // new local ones.
+  // Note: function that wrap kSyncYielding function does not contain
+  // its own try/catches.
+  if (current_function_node_->async_marker() == FunctionNode::kSyncYielding) {
+    ASSERT(current_function_scope_->parent() != NULL);
+    v = current_function_scope_->parent()->LocalLookupVariable(
+        GenerateName(prefix, nesting_depth - 1));
+    if (v != NULL) {
+      scope_->CaptureVariable(v);
+    }
+  }
+
+  // No need to create variables for try/catch-statements inside
+  // nested functions.
   if (depth_.function_ > 0) return;
   if (variables->length() >= nesting_depth) return;
 
-  LocalVariable* v = MakeVariable(GenerateName(prefix, nesting_depth - 1));
-  function_scope_->AddVariable(v);
+  // If variable was not lifted by the transformer introduce a new
+  // one into the current function scope.
+  if (v == NULL) {
+    v = MakeVariable(GenerateName(prefix, nesting_depth - 1));
+
+    // If transformer did not lift the variable then there is no need
+    // to lift it into the context when we encouter a YieldStatement.
+    v->set_is_forced_stack();
+    current_function_scope_->AddVariable(v);
+  }
+
   variables->Add(v);
 }
+
 
 void ScopeBuilder::AddTryVariables() {
   AddExceptionVariable(&result_->catch_context_variables,
@@ -105,7 +136,7 @@ void ScopeBuilder::AddIteratorVariable() {
   ASSERT(result_->iterator_variables.length() == depth_.for_in_ - 1);
   LocalVariable* iterator = MakeVariable(
       GenerateName(":iterator", depth_.for_in_ - 1));
-  function_scope_->AddVariable(iterator);
+  current_function_scope_->AddVariable(iterator);
   result_->iterator_variables.Add(iterator);
 }
 
@@ -117,9 +148,9 @@ void ScopeBuilder::LookupVariable(VariableDeclaration* declaration) {
     // case that we are compiling a nested function and the variable is
     // declared in an outer scope.  In that case, look it up in the scope by
     // name and add it to the variable map to simplify later lookup.
-    ASSERT(function_scope_->parent() != NULL);
+    ASSERT(current_function_scope_->parent() != NULL);
     const dart::String& name = H.DartSymbol(declaration->name());
-    variable = function_scope_->parent()->LookupVariable(name, true);
+    variable = current_function_scope_->parent()->LookupVariable(name, true);
     ASSERT(variable != NULL);
     result_->locals.Insert(declaration, variable);
   }
@@ -186,7 +217,7 @@ ScopeBuildingResult* ScopeBuilder::BuildScopes() {
     enclosing_scope = LocalScope::RestoreOuterScope(
         ContextScope::Handle(Z, function.context_scope()));
   }
-  function_scope_ = scope_ = new(Z) LocalScope(enclosing_scope, 0, 0);
+  current_function_scope_ = scope_ = new(Z) LocalScope(enclosing_scope, 0, 0);
   scope_->AddVariable(parsed_function->EnsureExpressionTemp());
   scope_->AddVariable(parsed_function->current_context_var());
   parsed_function->SetNodeSequence(
@@ -206,6 +237,8 @@ ScopeBuildingResult* ScopeBuilder::BuildScopes() {
       } else {
         node = FunctionNode::Cast(node_);
       }
+      current_function_node_ = node;
+
       intptr_t pos = 0;
       if (function.IsClosureFunction()) {
         LocalVariable* variable = MakeVariable(Symbols::ClosureParameter());
@@ -337,11 +370,13 @@ void ScopeBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
 
 void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
                                        FunctionNode* function) {
-  LocalScope* saved_function_scope = function_scope_;
+  LocalScope* saved_function_scope = current_function_scope_;
+  FunctionNode* saved_function_node = current_function_node_;
   ScopeBuilder::DepthState saved_depth_state = depth_;
   depth_ = DepthState(depth_.function_ + 1);
   EnterScope(parent);
-  function_scope_ = scope_;
+  current_function_scope_ = scope_;
+  current_function_node_ = function;
   if (depth_.function_ == 1) {
     FunctionScope function_scope = { function, scope_ };
     result_->function_scopes.Add(function_scope);
@@ -350,22 +385,25 @@ void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
   VisitFunctionNode(function);
   ExitScope();
   depth_ = saved_depth_state;
-  function_scope_ = saved_function_scope;
+  current_function_scope_ = saved_function_scope;
+  current_function_node_ = saved_function_node;
 }
 
 
 void ScopeBuilder::HandleSpecialLoad(LocalVariable** variable,
                                      const dart::String& symbol) {
-  if (function_scope_->parent() != NULL) {
+  if (current_function_scope_->parent() != NULL) {
     // We are building the scope tree of a closure function and saw [node]. We
     // lazily populate the variable using the parent function scope.
     if (*variable == NULL) {
-      *variable = function_scope_->parent()->LookupVariable(symbol, true);
+      *variable =
+          current_function_scope_->parent()->LookupVariable(symbol, true);
       ASSERT(*variable != NULL);
     }
   }
 
-  if (function_scope_->parent() != NULL || scope_->function_level() > 0) {
+  if ((current_function_scope_->parent() != NULL) ||
+      (scope_->function_level() > 0)) {
     // Every scope we use the [variable] from needs to be notified of the usage
     // in order to ensure that preserving the context scope on that particular
     // use-site also includes the [variable].
@@ -456,7 +494,7 @@ void ScopeBuilder::VisitForInStatement(ForInStatement* node) {
 void ScopeBuilder::AddSwitchVariable() {
   if ((depth_.function_ == 0) && (result_->switch_variable == NULL)) {
     LocalVariable* variable = MakeVariable(Symbols::SwitchExpr());
-    function_scope_->AddVariable(variable);
+    current_function_scope_->AddVariable(variable);
     result_->switch_variable = variable;
   }
 }
@@ -474,7 +512,7 @@ void ScopeBuilder::VisitReturnStatement(ReturnStatement* node) {
       (result_->finally_return_variable == NULL)) {
     const dart::String& name = H.DartSymbol(":try_finally_return_value");
     LocalVariable* variable = MakeVariable(name);
-    function_scope_->AddVariable(variable);
+    current_function_scope_->AddVariable(variable);
     result_->finally_return_variable = variable;
   }
   node->VisitChildren(this);
@@ -557,7 +595,7 @@ void ScopeBuilder::VisitYieldStatement(YieldStatement* node) {
     // Promote all currently visible local variables into the context.
     // TODO(vegorov) we don't need to promote those variables that are
     // not used across yields.
-    scope_->CaptureLocalVariables(function_scope_);
+    scope_->CaptureLocalVariables(current_function_scope_);
   }
 }
 
@@ -696,6 +734,9 @@ class TryFinallyBlock {
         outer_(builder->try_finally_block_),
         finalizer_(finalizer),
         context_depth_(builder->context_depth_),
+        // Finalizers are executed outside of the try block hence
+        // try depth of finalizers are one less than current try
+        // depth.
         try_depth_(builder->try_depth_ - 1) {
     builder_->try_finally_block_ = this;
   }
@@ -1882,6 +1923,10 @@ Fragment FlowGraphBuilder::BranchIfStrictEqual(
 
 Fragment FlowGraphBuilder::CatchBlockEntry(const Array& handler_types,
                                            intptr_t handler_index) {
+  const bool should_restore_closure_context =
+    CurrentException()->is_captured() ||
+    CurrentStackTrace()->is_captured() ||
+    CurrentCatchContext()->is_captured();
   CatchBlockEntryInstr* entry =
       new(Z) CatchBlockEntryInstr(AllocateBlockId(),
                                   CurrentTryIndex(),
@@ -1890,12 +1935,25 @@ Fragment FlowGraphBuilder::CatchBlockEntry(const Array& handler_types,
                                   handler_index,
                                   *CurrentException(),
                                   *CurrentStackTrace(),
-                                  true);
+                                  true,
+                                  should_restore_closure_context);
   graph_entry_->AddCatchEntry(entry);
   Fragment instructions(entry);
+
+  // :saved_try_context_var can be captured in the context of
+  // of the closure, in this case CatchBlockEntryInstr restores
+  // :current_context_var to point to closure context in the
+  // same way as normal function prologue does.
+  // Update current context depth to reflect that.
+  const intptr_t saved_context_depth = context_depth_;
+  ASSERT(!CurrentCatchContext()->is_captured() ||
+         CurrentCatchContext()->owner()->context_level() == 0);
+  context_depth_ = 0;
   instructions += LoadLocal(CurrentCatchContext());
   instructions += StoreLocal(parsed_function_->current_context_var());
   instructions += Drop();
+  context_depth_ = saved_context_depth;
+
   return instructions;
 }
 
@@ -2650,10 +2708,11 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     context_depth_ = scopes_->yield_jump_variable->owner()->context_level();
 
     // Prepend an entry corresponding to normal entry to the function.
-    // Note: DropTempsInstr just serves as an anchor instruction, it will
-    // not be actually linked into the graph.
-    yield_continuations_.InsertAt(0, new(Z) DropTempsInstr(0, NULL));
-    yield_continuations_[0]->LinkTo(body.entry);
+    yield_continuations_.InsertAt(
+        0,
+        YieldContinuation(new(Z) DropTempsInstr(0, NULL),
+                          CatchClauseNode::kInvalidTryIndex));
+    yield_continuations_[0].entry->LinkTo(body.entry);
 
     // Build a switch statement.
     Fragment dispatch;
@@ -2663,6 +2722,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     dispatch += StoreLocal(scopes_->switch_variable);
     dispatch += Drop();
 
+    BlockEntryInstr* block = NULL;
     for (intptr_t i = 0; i < yield_continuations_.length(); i++) {
       if (i == 1) {
         // This is not a normal entry but a resumption.  Restore
@@ -2678,7 +2738,8 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
         // Coninue to the last continuation.
         // Note: continuations start with nop DropTemps instruction
         // which acts like an anchor, so we need to skip it.
-        dispatch <<= yield_continuations_[i]->next();
+        block->set_try_index(yield_continuations_[i].try_index);
+        dispatch <<= yield_continuations_[i].entry->next();
         break;
       }
 
@@ -2697,10 +2758,12 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
       // True branch is linked to appropriate continuation point.
       // Note: continuations start with nop DropTemps instruction
       // which acts like an anchor, so we need to skip it.
-      then->LinkTo(yield_continuations_[i]->next());
+      then->LinkTo(yield_continuations_[i].entry->next());
+      then->set_try_index(yield_continuations_[i].try_index);
 
       // False branch will contain the next comparison.
       dispatch = Fragment(dispatch.entry, otherwise);
+      block = otherwise;
     }
     body = dispatch;
 
@@ -5110,14 +5173,52 @@ void FlowGraphBuilder::VisitYieldStatement(YieldStatement* node) {
   instructions += Return();
   instructions = instructions.closed();
 
-  // This drops temporary variable from the stack that prologue creates.
-  // See BuildGraphOfFunction.
   // Note: DropTempsInstr serves as an anchor instruction. It will not
   // be linked into the resulting graph.
-  Instruction* anchor = new(Z) DropTempsInstr(0, NULL);
-  yield_continuations_.Add(anchor);
+  DropTempsInstr* anchor = new(Z) DropTempsInstr(0, NULL);
+  yield_continuations_.Add(YieldContinuation(anchor, CurrentTryIndex()));
 
   Fragment continuation(instructions.entry, anchor);
+
+  // TODO(vegorov): we need a better way to detect if we need to check for an
+  // exception after yield or not.
+  if (parsed_function_->function().NumOptionalPositionalParameters() == 3) {
+    // If function takes three parameters then the second and the third
+    // are exception and stack_trace. Check if exception is non-null
+    // and rethrow it.
+    //
+    //   :async_op([:result, :exception, :stack_trace]) {
+    //     ...
+    //     Continuation<index>:
+    //       if (:exception != null) rethrow(:exception, :stack_trace);
+    //     ...
+    //   }
+    //
+    LocalScope* scope = parsed_function_->node_sequence()->scope();
+    LocalVariable* exception_var = scope->VariableAt(2);
+    LocalVariable* stack_trace_var = scope->VariableAt(3);
+    ASSERT(exception_var->name().raw() == Symbols::ExceptionParameter().raw());
+    ASSERT(stack_trace_var->name().raw() ==
+               Symbols::StackTraceParameter().raw());
+
+    TargetEntryInstr* no_error;
+    TargetEntryInstr* error;
+
+    continuation += LoadLocal(exception_var);
+    continuation += BranchIfNull(&no_error, &error);
+
+    Fragment rethrow(error);
+    rethrow += LoadLocal(exception_var);
+    rethrow += PushArgument();
+    rethrow += LoadLocal(stack_trace_var);
+    rethrow += PushArgument();
+    rethrow += RethrowException(CatchClauseNode::kInvalidTryIndex);
+    Drop();
+
+
+    continuation = Fragment(continuation.entry, no_error);
+  }
+
   fragment_ = continuation;
 }
 

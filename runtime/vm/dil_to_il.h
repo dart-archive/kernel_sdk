@@ -406,7 +406,7 @@ class ScopeBuilder : public RecursiveVisitor {
         node_(node),
         zone_(Thread::Current()->zone()),
         translation_helper_(Thread::Current(), zone_, Isolate::Current()),
-        function_scope_(NULL),
+        current_function_scope_(NULL),
         scope_(NULL),
         depth_(0),
         name_index_(0) {
@@ -498,7 +498,8 @@ class ScopeBuilder : public RecursiveVisitor {
   TranslationHelper translation_helper_;
 
 
-  LocalScope* function_scope_;
+  FunctionNode* current_function_node_;
+  LocalScope* current_function_scope_;
   LocalScope* scope_;
   DepthState depth_;
 
@@ -741,7 +742,19 @@ class FlowGraphBuilder : public TreeVisitor {
 
   ScopeBuildingResult* scopes_;
 
-  GrowableArray<Instruction*> yield_continuations_;
+  struct YieldContinuation {
+    Instruction* entry;
+    intptr_t try_index;
+
+    YieldContinuation(Instruction* entry, intptr_t try_index)
+        : entry(entry), try_index(try_index) { }
+
+    YieldContinuation()
+        : entry(NULL),
+          try_index(CatchClauseNode::kInvalidTryIndex) { }
+  };
+
+  GrowableArray<YieldContinuation> yield_continuations_;
 
   LocalVariable* CurrentException() {
     return scopes_->exception_variables[catch_depth_ - 1];

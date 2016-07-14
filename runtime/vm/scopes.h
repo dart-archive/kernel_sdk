@@ -33,6 +33,7 @@ class LocalVariable : public ZoneAllocated {
       is_captured_(false),
       is_invisible_(false),
       is_captured_parameter_(false),
+      is_forced_stack_(false),
       index_(LocalVariable::kUninitializedIndex) {
     ASSERT(type.IsZoneHandle() || type.IsReadOnlyHandle());
     ASSERT(type.IsFinalized());
@@ -54,6 +55,9 @@ class LocalVariable : public ZoneAllocated {
 
   bool is_captured() const { return is_captured_; }
   void set_is_captured() { is_captured_ = true; }
+
+  bool is_forced_stack() const { return is_forced_stack_; }
+  void set_is_forced_stack() { is_forced_stack_ = true; }
 
   bool HasIndex() const {
     return index_ != kUninitializedIndex;
@@ -122,6 +126,7 @@ class LocalVariable : public ZoneAllocated {
                       // in the stack frame.
   bool is_invisible_;
   bool is_captured_parameter_;
+  bool is_forced_stack_;
   int index_;  // Allocation index in words relative to frame pointer (if not
                // captured), or relative to the context pointer (if captured).
 

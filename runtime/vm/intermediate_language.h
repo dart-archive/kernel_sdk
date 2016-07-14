@@ -1567,7 +1567,8 @@ class CatchBlockEntryInstr : public BlockEntryInstr {
                        intptr_t catch_try_index,
                        const LocalVariable& exception_var,
                        const LocalVariable& stacktrace_var,
-                       bool needs_stacktrace)
+                       bool needs_stacktrace,
+                       bool should_restore_closure_context = false)
       : BlockEntryInstr(block_id, try_index),
         graph_entry_(graph_entry),
         predecessor_(NULL),
@@ -1575,7 +1576,8 @@ class CatchBlockEntryInstr : public BlockEntryInstr {
         catch_try_index_(catch_try_index),
         exception_var_(exception_var),
         stacktrace_var_(stacktrace_var),
-        needs_stacktrace_(needs_stacktrace) { }
+        needs_stacktrace_(needs_stacktrace),
+        should_restore_closure_context_(should_restore_closure_context) { }
 
   DECLARE_INSTRUCTION(CatchBlockEntry)
 
@@ -1614,6 +1616,12 @@ class CatchBlockEntryInstr : public BlockEntryInstr {
     predecessor_ = predecessor;
   }
 
+  bool should_restore_closure_context() const {
+    ASSERT(exception_var_.is_captured() == stacktrace_var_.is_captured());
+    ASSERT(!exception_var_.is_captured() || should_restore_closure_context_);
+    return should_restore_closure_context_;
+  }
+
   GraphEntryInstr* graph_entry_;
   BlockEntryInstr* predecessor_;
   const Array& catch_handler_types_;
@@ -1622,6 +1630,7 @@ class CatchBlockEntryInstr : public BlockEntryInstr {
   const LocalVariable& exception_var_;
   const LocalVariable& stacktrace_var_;
   const bool needs_stacktrace_;
+  const bool should_restore_closure_context_;
 
   DISALLOW_COPY_AND_ASSIGN(CatchBlockEntryInstr);
 };
