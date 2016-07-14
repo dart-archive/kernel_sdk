@@ -566,6 +566,8 @@ dart::Library& DilReader::LookupLibrary(Library* library) {
     const dart::String& url = H.DartSymbol(library->import_uri());
     if (library->IsCorelibrary()) {
       *handle = dart::Library::LookupLibrary(thread_, url);
+      bool ok = ClassFinalizer::ProcessPendingClasses();
+      if (!ok) FATAL("Could not finish loading core libraries");
     } else {
       *handle = dart::Library::New(url);
       handle->SetLoadInProgress();
