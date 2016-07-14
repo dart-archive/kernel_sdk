@@ -4785,7 +4785,7 @@ Fragment FlowGraphBuilder::TranslateFunctionNode(FunctionNode* node,
   // simply numbered the immediately-nested functions with respect to the
   // parent.
   Function& function = Function::ZoneHandle(Z);
-  for (unsigned i = 0; i < scopes_->function_scopes.length(); ++i) {
+  for (intptr_t i = 0; i < scopes_->function_scopes.length(); ++i) {
     if (scopes_->function_scopes[i].function != node) continue;
 
     function = I->LookupClosureFunction(parsed_function_->function(),
