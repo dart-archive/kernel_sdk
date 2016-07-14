@@ -346,12 +346,13 @@ void DilReader::ReadProcedure(const dart::Library& library,
   const dart::String& name = H.DartProcedureName(dil_procedure);
   TokenPosition pos(0);
   bool is_method = dil_klass != NULL && !dil_procedure->IsStatic();
+  bool is_abstract = dil_procedure->IsAbstract();
   dart::Function& function = dart::Function::ZoneHandle(Z, Function::New(
         name,
         GetFunctionType(dil_procedure),
         !is_method,  // is_static
         false,  // is_const
-        dil_procedure->IsAbstract(),
+        is_abstract,
         dil_procedure->IsExternal(),
         false,  // is_native
         owner,
@@ -365,7 +366,7 @@ void DilReader::ReadProcedure(const dart::Library& library,
                           false);  // is_closure
 
   // In precompiled mode we need to eagerly generate method extractors.
-  if (!FLAG_lazy_dispatchers && is_method) {
+  if (!FLAG_lazy_dispatchers && is_method && !is_abstract) {
     dart::String& getter_name =
         dart::String::ZoneHandle(Z, dart::Field::GetterSymbol(name));
     function = function.CreateMethodExtractor(getter_name);
