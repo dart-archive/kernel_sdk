@@ -458,6 +458,7 @@ class ScopeBuilder : public RecursiveVisitor {
   void AddTryVariables();
   void AddCatchVariables();
   void AddIteratorVariable();
+  void AddSwitchVariable();
 
   // Record an assignment or reference to a variable.  If the occurrence is
   // in a nested function, ensure that the variable is handled properly as a

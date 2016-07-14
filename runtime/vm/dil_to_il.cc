@@ -453,12 +453,17 @@ void ScopeBuilder::VisitForInStatement(ForInStatement* node) {
 }
 
 
-void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
+void ScopeBuilder::AddSwitchVariable() {
   if ((depth_.function_ == 0) && (result_->switch_variable == NULL)) {
     LocalVariable* variable = MakeVariable(Symbols::SwitchExpr());
     function_scope_->AddVariable(variable);
     result_->switch_variable = variable;
   }
+}
+
+
+void ScopeBuilder::VisitSwitchStatement(SwitchStatement* node) {
+  AddSwitchVariable();
   node->VisitChildren(this);
 }
 
@@ -548,6 +553,7 @@ void ScopeBuilder::VisitFunctionNode(FunctionNode* node) {
 void ScopeBuilder::VisitYieldStatement(YieldStatement* node) {
   ASSERT(node->is_native());
   if (depth_.function_ == 0) {
+    AddSwitchVariable();
     // Promote all currently visible local variables into the context.
     // TODO(vegorov) we don't need to promote those variables that are
     // not used across yields.
@@ -2644,7 +2650,9 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     context_depth_ = scopes_->yield_jump_variable->owner()->context_level();
 
     // Prepend an entry corresponding to normal entry to the function.
-    yield_continuations_.InsertAt(0, new(Z) DropTempsInstr(1, NULL));
+    // Note: DropTempsInstr just serves as an anchor instruction, it will
+    // not be actually linked into the graph.
+    yield_continuations_.InsertAt(0, new(Z) DropTempsInstr(0, NULL));
     yield_continuations_[0]->LinkTo(body.entry);
 
     // Build a switch statement.
@@ -2652,7 +2660,8 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
 
     // Load :await_jump_var into a temporary.
     dispatch += LoadLocal(scopes_->yield_jump_variable);
-    LocalVariable* jump_target = MakeTemporary();
+    dispatch += StoreLocal(scopes_->switch_variable);
+    dispatch += Drop();
 
     for (intptr_t i = 0; i < yield_continuations_.length(); i++) {
       if (i == 1) {
@@ -2667,7 +2676,9 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
       if (i == (yield_continuations_.length() - 1)) {
         // We reached the last possility, no need to build more ifs.
         // Coninue to the last continuation.
-        dispatch <<= yield_continuations_[i];
+        // Note: continuations start with nop DropTemps instruction
+        // which acts like an anchor, so we need to skip it.
+        dispatch <<= yield_continuations_[i]->next();
         break;
       }
 
@@ -2679,12 +2690,14 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
       //
       TargetEntryInstr* then;
       TargetEntryInstr* otherwise;
-      dispatch += LoadLocal(jump_target);
+      dispatch += LoadLocal(scopes_->switch_variable);
       dispatch += IntConstant(i);
       dispatch += BranchIfStrictEqual(&then, &otherwise);
 
       // True branch is linked to appropriate continuation point.
-      then->LinkTo(yield_continuations_[i]);
+      // Note: continuations start with nop DropTemps instruction
+      // which acts like an anchor, so we need to skip it.
+      then->LinkTo(yield_continuations_[i]->next());
 
       // False branch will contain the next comparison.
       dispatch = Fragment(dispatch.entry, otherwise);
@@ -5099,10 +5112,12 @@ void FlowGraphBuilder::VisitYieldStatement(YieldStatement* node) {
 
   // This drops temporary variable from the stack that prologue creates.
   // See BuildGraphOfFunction.
-  DropTempsInstr* drop = new(Z) DropTempsInstr(1, NULL);
-  yield_continuations_.Add(drop);
+  // Note: DropTempsInstr serves as an anchor instruction. It will not
+  // be linked into the resulting graph.
+  Instruction* anchor = new(Z) DropTempsInstr(0, NULL);
+  yield_continuations_.Add(anchor);
 
-  Fragment continuation(instructions.entry, drop);
+  Fragment continuation(instructions.entry, anchor);
   fragment_ = continuation;
 }
 
