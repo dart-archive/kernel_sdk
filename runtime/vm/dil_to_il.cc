@@ -4396,7 +4396,8 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
   //   * `case e1: case e2: body`
   Fragment* body_fragments = new Fragment[node->cases().length()];
 
-  for (intptr_t i = 0; i < node->cases().length(); i++) {
+  intptr_t num_cases = node->cases().length();
+  for (intptr_t i = 0; i < num_cases; i++) {
     SwitchCase* switch_case = node->cases()[i];
     Fragment& body_fragment = body_fragments[i] =
         TranslateStatement(switch_case->body());
@@ -4461,7 +4462,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
   //   * jump directly to a body (if there is no jumper)
   //   * jump to a wrapper block which jumps to the body (if there is a jumper)
   Fragment current_instructions = head_instructions;
-  for (intptr_t i = 0; i < node->cases().length(); i++) {
+  for (intptr_t i = 0; i < num_cases; i++) {
     SwitchCase* switch_case = node->cases()[i];
 
     if (switch_case->is_default()) {
@@ -4485,6 +4486,12 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         current_instructions += body_fragments[i];
       }
     } else {
+      JoinEntryInstr* body_join = NULL;
+      if (block.HadJumper(switch_case)) {
+        body_join = block.Destination(switch_case);
+        body_fragments[i] = Fragment(body_join) + body_fragments[i];
+      }
+
       for (intptr_t j = 0; j < switch_case->expressions().length(); j++) {
         TargetEntryInstr* then;
         TargetEntryInstr* otherwise;
@@ -4500,13 +4507,11 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
 
         Fragment then_fragment(then);
 
-        if (block.HadJumper(switch_case)) {
+        if (body_join != NULL) {
           // There are several branches to the body, so we will make a goto to
-          // the join block (and prepend a join instruction to the real body).
-          JoinEntryInstr* join = block.Destination(switch_case);
-          then_fragment += Goto(join);
-          Fragment real_body(join);
-          real_body += body_fragments[i];
+          // the join block (the real body has already been prepended with a
+          // join instruction).
+          then_fragment += Goto(body_join);
         } else {
           // There is only a signle branch to the body, so we will just append
           // the body fragment.
@@ -4516,6 +4521,32 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         current_instructions = Fragment(otherwise);
       }
     }
+  }
+
+  bool has_no_default =
+      num_cases > 0 && !node->cases()[num_cases - 1]->is_default();
+  if (has_no_default) {
+    // There is no default, which means we have an open [current_instructions]
+    // (which is a [TargetEntryInstruction] for the last "otherwise" branch).
+    //
+    // Furthermore the last [SwitchCase] can be open as well.  If so, we need
+    // to join these two.
+    Fragment& last_body = body_fragments[node->cases().length() - 1];
+    if (last_body.is_open()) {
+      ASSERT(current_instructions.is_open());
+      ASSERT(current_instructions.current->IsTargetEntry());
+
+      // Join the last "otherwise" branch and the last [SwitchCase] fragment.
+      JoinEntryInstr* join = BuildJoinEntry();
+      current_instructions += Goto(join);
+      last_body += Goto(join);
+
+      current_instructions = Fragment(join);
+    }
+  } else {
+    // All non-default cases will be closed (i.e. break/continue/throw/return)
+    // So it is fine to just let more statements after the switch append to the
+    // default case.
   }
 
   delete[] body_fragments;

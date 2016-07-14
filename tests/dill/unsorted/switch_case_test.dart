@@ -1,3 +1,7 @@
+// Copyright (c) 2016, the Dart project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
+
 import 'expect.dart';
 
 mkOne() => 1;
@@ -9,7 +13,7 @@ testNormal() {
     case 0:
       result = 0;
       break;
-    case 1: 
+    case 1:
       result = 1;
       break;
     case 2:
@@ -28,7 +32,7 @@ testDefault() {
     case 0:
       result = 0;
       break;
-    case 1: 
+    case 1:
       result = 1;
       break;
     case 2:
@@ -47,7 +51,7 @@ testFallThrough() {
     case 0:
       result = 0;
       break;
-    case 1: 
+    case 1:
     case 2:
       result = 2;
       break;
@@ -66,7 +70,7 @@ testContinue() {
       break;
 
     setitto1:
-    case 1: 
+    case 1:
       result = 1;
       continue setitto3;
 
@@ -108,6 +112,40 @@ String testReturn() {
   }
 }
 
+regressionTest() {
+  Expect.isTrue(regressionTestHelper(0, 0) == -1);
+  Expect.isTrue(regressionTestHelper(4, 0) == -1);
+  Expect.isTrue(regressionTestHelper(4, 1) == 42);
+}
+
+regressionTestHelper(i, j) {
+  switch (i) {
+    case 4:
+      switch (j) {
+        case 1:
+          return 42;
+      }
+  }
+  return -1;
+}
+
+regressionTest2() {
+  var state = 1;
+  while (state < 2) {
+    switch (state) {
+      case 1:
+        state++;
+        break;
+      case 3:
+      case 4:
+        // We will translate this currently to an empty [Fragment] which can
+        // cause issues if we would like to append/prepend to it.
+        assert(false);
+    }
+  }
+  return [1];
+}
+
 main() {
   testNormal();
   testDefault();
@@ -115,6 +153,8 @@ main() {
   testContinue();
   testOnlyDefault();
   testOnlyDefaultWithBreak();
+  regressionTest();
+  regressionTest2();
 
   var result = testReturn();
   Expect.isTrue(result == "good");
