@@ -319,6 +319,15 @@ class ConstantEvaluator : public ExpressionVisitor {
  private:
   RawInstance* Canonicalize(const Instance& instance);
 
+  // This will translate type arguments form [dil_arguments].  If no type
+  // arguments are passed and the [target] is a factory then the null type
+  // argument array will be returned.
+  //
+  // If none of these cases apply, NULL will be returned.
+  const TypeArguments* TranslateTypeArguments(const Function& target,
+                                              dart::Class* target_klass,
+                                              Arguments* dil_arguments);
+
   const Object& RunFunction(const Function& function,
                             Arguments* arguments,
                             const Instance* receiver = NULL,

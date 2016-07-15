@@ -1212,23 +1212,31 @@ void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
 
 void ConstantEvaluator::VisitConstructorInvocation(
     ConstructorInvocation* node) {
-  // TODO(kustermann): Set correct type/type-arguments
   Arguments* dil_arguments = node->arguments();
 
   const Function& constructor =
       Function::Handle(Z, H.LookupConstructorByDilConstructor(node->target()));
+  dart::Class& klass = dart::Class::Handle(Z, constructor.Owner());
 
+  // Build the type arguments vector (if necessary).
+  const TypeArguments* type_arguments =
+      TranslateTypeArguments(constructor, &klass, dil_arguments);
+
+  // Prepare either the instance or the type argument vector for the constructor
+  // call.
   Instance* receiver = NULL;
-  const TypeArguments* type_arguments = NULL;
-  if (constructor.IsFactory()) {
-    type_arguments = &TypeArguments::ZoneHandle(Z, TypeArguments::null());
-  } else {
-    const dart::Class& klass = dart::Class::Handle(Z, constructor.Owner());
+  const TypeArguments* type_arguments_argument = NULL;
+  if (!constructor.IsFactory()) {
     receiver = &Instance::ZoneHandle(Z, Instance::New(klass, Heap::kOld));
+    if (type_arguments != NULL) {
+      receiver->SetTypeArguments(*type_arguments);
+    }
+  } else {
+    type_arguments_argument = type_arguments;
   }
 
   const Object& result = RunFunction(
-      constructor, dil_arguments, receiver, type_arguments);
+      constructor, dil_arguments, receiver, type_arguments_argument);
   if (constructor.IsFactory()) {
     // Factories return the new object.
     result_ ^= result.raw();
@@ -1241,8 +1249,10 @@ void ConstantEvaluator::VisitConstructorInvocation(
 
 
 void ConstantEvaluator::VisitMethodInvocation(MethodInvocation* node) {
-  // TODO(kustermann): Set correct type/type-arguments
   Arguments* dil_arguments = node->arguments();
+
+  // Dart does not support generic methods yet.
+  ASSERT(dil_arguments->types().length() == 0);
 
   const dart::Instance& receiver = EvaluateExpression(node->receiver());
   dart::Class& klass = dart::Class::Handle(Z,
@@ -1317,12 +1327,11 @@ void ConstantEvaluator::VisitVariableGet(VariableGet* node) {
 void ConstantEvaluator::VisitStaticInvocation(StaticInvocation* node) {
   const Function& function = Function::ZoneHandle(Z,
       H.LookupStaticMethodByDilProcedure(node->procedure()));
+  dart::Class& klass = dart::Class::Handle(Z, function.Owner());
 
-  // TODO(kustermann): Set correct type/type-arguments
-  const TypeArguments* type_arguments = NULL;
-  if (function.IsFactory()) {
-    type_arguments = &TypeArguments::ZoneHandle(Z, TypeArguments::null());
-  }
+  // Build the type arguments vector (if necessary).
+  const TypeArguments* type_arguments =
+      TranslateTypeArguments(function, &klass, node->arguments());
 
   const Object& result =
       RunFunction(function, node->arguments(), NULL, type_arguments);
@@ -1417,6 +1426,31 @@ RawInstance* ConstantEvaluator::Canonicalize(const Instance& instance) {
     }
     return result;
   }
+}
+
+
+const TypeArguments* ConstantEvaluator::TranslateTypeArguments(
+    const Function& target,
+    dart::Class* target_klass,
+    Arguments* dil_arguments) {
+  List<DartType>& dil_type_arguments = dil_arguments->types();
+
+  const TypeArguments* type_arguments = NULL;
+  if (dil_type_arguments.length() > 0) {
+    type_arguments = &T.TranslateInstantiatedTypeArguments(
+        target_klass,
+        dil_type_arguments.raw_array(),
+        dil_type_arguments.length());
+
+    if (!(type_arguments->IsNull() || type_arguments->IsInstantiated())) {
+      H.ReportError("Type must be constant in const constructor.");
+    }
+  } else if (target.IsFactory() && type_arguments == NULL) {
+    // All factories take a type arguments vector as first argument (independent
+    // of whether the class is generic or not).
+    type_arguments = &TypeArguments::ZoneHandle(Z, TypeArguments::null());
+  }
+  return type_arguments;
 }
 
 
@@ -3096,9 +3130,8 @@ void FlowGraphBuilder::VisitBigintLiteral(BigintLiteral* node) {
 
 
 void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
-  const dart::String& value = H.DartString(node->value());
   fragment_ = Fragment(Constant(
-      Double::ZoneHandle(Z, Double::New(value, Heap::kOld))));
+      constant_evaluator_.EvaluateExpression(node)));
 }
 
 
@@ -3609,7 +3642,9 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   Fragment instructions = TranslateExpression(node->receiver());
   instructions += PushArgument();
 
+  // Dart does not support generic methods yet.
   ASSERT(node->arguments()->types().length() == 0);
+
   Array& argument_names = Array::ZoneHandle(Z);
   instructions += TranslateArguments(node->arguments(), &argument_names);
 
