@@ -1,4 +1,4 @@
-unsorted/invocation_errors_test: Crash
+unsorted/invocation_errors_test: RuntimeError
 
 # Isolate spawning reloads sources based on Uri/class/function names which
 # doesn't reuse the dil nodes.
@@ -16,15 +16,6 @@ co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superi
 co19/Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02_test: RuntimeError
 co19/Language/Classes/Constructors/Generative_Constructors/initializing_formals_execution_t02_test: RuntimeError
 co19/Language/Classes/Superclasses/Inheritance_and_Overriding/inheritance_t03_test: RuntimeError
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t01_test: Crash
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t04_test: Crash
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/binding_t05_test: Crash
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/names_matching_t01_test: Crash
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/names_matching_t04_test: Crash
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/number_of_arguments_t01_test: Crash
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/number_of_arguments_t04_test: Crash
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/number_of_arguments_t05_test: Crash
-co19/Language/Expressions/Function_Invocation/Binding_Actuals_to_Formals/number_of_arguments_t08_test: Crash
 co19/Language/Expressions/Identifier_Reference/evaluation_type_parameter_t01_test: RuntimeError
 co19/Language/Expressions/Identifier_Reference/syntax_built_in_t01_test: CompileTimeError
 co19/Language/Expressions/Instance_Creation/Const/canonicalized_t05_test: RuntimeError

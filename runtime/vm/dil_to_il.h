@@ -158,6 +158,8 @@ class TranslationHelper {
   const dart::String& DartMethodName(Name* dil_name);
   const dart::String& DartFactoryName(Class* klass, Name* dil_name);
 
+  const Array& ArgumentNames(List<NamedExpression>* named);
+
   // A subclass overrides these when reading in the DIL program in order to
   // support recursive type expressions (e.g. for "implements X" ...
   // annotations).

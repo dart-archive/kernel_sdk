@@ -1074,6 +1074,17 @@ dart::String& TranslationHelper::ManglePrivateName(
 }
 
 
+const Array& TranslationHelper::ArgumentNames(List<NamedExpression>* named) {
+  if (named->length() == 0) return Array::ZoneHandle(Z);
+
+  const Array& names = Array::ZoneHandle(Z, Array::New(named->length()));
+  for (intptr_t i = 0; i < named->length(); ++i) {
+    names.SetAt(i, DartSymbol((*named)[i]->name()));
+  }
+  return names;
+}
+
+
 Instance& ConstantEvaluator::EvaluateExpression(Expression* expression) {
   expression->AcceptExpressionVisitor(this);
   // We return a new `ZoneHandle` here on purpose: The intermediate language
@@ -3563,13 +3574,38 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   const Function& target = Function::ZoneHandle(Z,
       H.LookupStaticMethodByDilProcedure(node->procedure()));
   intptr_t argument_count = node->arguments()->count();
+  if (target.IsGenerativeConstructor() || target.IsFactory()) {
+    // The VM requires currently a TypeArguments object as first parameter for
+    // every factory constructor :-/ !
+    //
+    // TODO(kustermann): Get rid of this after we're using our own core
+    // libraries.
+    ++argument_count;
+  }
+  List<NamedExpression>& named = node->arguments()->named();
+  const Array& argument_names = H.ArgumentNames(&named);
 
-  Array& argument_names = Array::ZoneHandle(Z);
   Fragment instructions;
+  if (!target.AreValidArguments(argument_count, argument_names, NULL)) {
+    // An argument mismatch for a static invocation really should not occur
+    // in the IR.  This is issue https://github.com/dart-lang/rasta/issues/76.
+    //
+    // TODO(kmillikin): Change this to an ASSERT when that issue is fixed.
+    List<Expression>& positional = node->arguments()->positional();
+    for (intptr_t i = 0; i < positional.length(); ++i) {
+      instructions += TranslateExpression(positional[i]);
+      instructions += Drop();
+    }
 
-  bool is_constructor =
-      target.kind() == RawFunction::kConstructor &&
-      !target.IsFactory();
+    for (intptr_t i = 0; i < named.length(); ++i) {
+      instructions += TranslateExpression(named[i]->expression());
+      instructions += Drop();
+    }
+
+    fragment_ = instructions + ThrowNoSuchMethodError();
+    return;
+  }
+
   LocalVariable* instance_variable = NULL;
 
   // If we cross the Dil -> VM core library boundary, a [StaticInvocation]
@@ -3581,7 +3617,7 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   //
   // TODO(kustermann): Get rid of this after we're using our own core
   // libraries.
-  if (is_constructor) {
+  if (target.IsGenerativeConstructor()) {
     dart::Class& klass = dart::Class::ZoneHandle(Z, target.Owner());
 
     if (klass.NumTypeArguments() > 0) {
@@ -3601,34 +3637,29 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
 
     instructions += LoadLocal(instance_variable);
     instructions += PushArgument();
-    argument_count++;
-  } else {
+  } else if (target.IsFactory()) {
     // The VM requires currently a TypeArguments object as first parameter for
     // every factory constructor :-/ !
     //
     // TODO(kustermann): Get rid of this after we're using our own core
     // libraries.
-    if (target.IsFactory()) {
-      argument_count++;
+    List<DartType>& dil_type_arguments = node->arguments()->types();
 
-      List<DartType>& dil_type_arguments = node->arguments()->types();
+    dart::Class& klass = dart::Class::Handle(Z, target.Owner());
+    const TypeArguments& type_arguments =
+        T.TranslateInstantiatedTypeArguments(&klass,
+                                             dil_type_arguments.raw_array(),
+                                             dil_type_arguments.length());
 
-      dart::Class& klass = dart::Class::Handle(Z, target.Owner());
-      const TypeArguments& type_arguments =
-          T.TranslateInstantiatedTypeArguments(&klass,
-                                               dil_type_arguments.raw_array(),
-                                               dil_type_arguments.length());
-
-      instructions += TranslateInstantiatedTypeArguments(type_arguments);
-      instructions += PushArgument();
-    } else {
-      ASSERT(node->arguments()->types().length() == 0);
-    }
+    instructions += TranslateInstantiatedTypeArguments(type_arguments);
+    instructions += PushArgument();
+  } else {
+    ASSERT(node->arguments()->types().length() == 0);
   }
-  instructions += TranslateArguments(node->arguments(), &argument_names);
+  instructions += TranslateArguments(node->arguments(), NULL);
   instructions += StaticCall(target, argument_count, argument_names);
 
-  if (is_constructor) {
+  if (target.IsGenerativeConstructor()) {
     // Drop the result of the constructor call and leave [instance_variable] on
     // top-of-stack.
     instructions += Drop();
@@ -4078,22 +4109,19 @@ Fragment FlowGraphBuilder::TranslateArguments(Arguments* node,
   Fragment instructions;
 
   List<Expression>& positional = node->positional();
-  List<NamedExpression>& named = node->named();
-  if (named.length() == 0) {
-    *argument_names = Array::null();
-  } else {
-    *argument_names = Array::New(named.length());
-  }
-
   for (intptr_t i = 0; i < positional.length(); ++i) {
     instructions += TranslateExpression(positional[i]);
     instructions += PushArgument();
+  }
+
+  List<NamedExpression>& named = node->named();
+  if (argument_names != NULL) {
+    *argument_names = H.ArgumentNames(&named).raw();
   }
   for (intptr_t i = 0; i < named.length(); ++i) {
     NamedExpression* named_expression = named[i];
     instructions += TranslateExpression(named_expression->expression());
     instructions += PushArgument();
-    argument_names->SetAt(i, H.DartSymbol(named_expression->name()));
   }
   return instructions;
 }
