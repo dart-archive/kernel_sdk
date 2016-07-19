@@ -85,15 +85,20 @@ abstract class CompilerConfiguration {
             arch: configuration['arch'],
             useBlobs: useBlobs,
             isAndroid: configuration['system'] == 'android');
+      case 'ir2ir':
+        return ComposedCompilerConfiguration.createIr2IrConfiguration(
+            configuration['kernel_transformers']);
       case 'rasta':
-        return new RastaCompilerConfiguration(
-            isHostChecked: isHostChecked);
+        return ComposedCompilerConfiguration.createRastaConfiguration(
+            isHostChecked: isHostChecked,
+            transformations: configuration['kernel_transformers']);
       case 'rastap':
         return ComposedCompilerConfiguration.createRastaPConfiguration(
             isHostChecked: isHostChecked,
             arch: configuration['arch'],
             useBlobs: useBlobs,
-            isAndroid: configuration['system'] == 'android');
+            isAndroid: configuration['system'] == 'android',
+            transformations: configuration['kernel_transformers']);
       case 'none':
         return new NoneCompilerConfiguration(
             isDebug: isDebug,
@@ -252,14 +257,51 @@ typedef List<String> CompilerArgumentsFunction(
     List<String> globalArguments,
     String previousCompilerOutput);
 
-class ComposedCompilerConfiguration extends CompilerConfiguration {
-  final List<CompilerConfiguration> nestedConfigurations;
-  final List<CompilerArgumentsFunction> compilerArgumentFunctions;
+class PipelineCommand {
+  final CompilerConfiguration compilerConfiguration;
+  final CompilerArgumentsFunction _argumentsFunction;
 
-  ComposedCompilerConfiguration(this.nestedConfigurations,
-                                this.compilerArgumentFunctions,
-                                {bool isHostChecked})
-      : super._subclass(isHostChecked: isHostChecked);
+  PipelineCommand._(this.compilerConfiguration, this._argumentsFunction);
+
+  factory PipelineCommand.runWithGlobalArguments(CompilerConfiguration conf) {
+    return new PipelineCommand._(conf, (List<String> globalArguments,
+                                        String previousOutput) {
+      assert(previousOutput == null);
+      return globalArguments;
+    });
+  }
+
+  factory PipelineCommand.runWithDartOrDillFile(CompilerConfiguration conf) {
+    return new PipelineCommand._(conf, (List<String> globalArguments,
+                                        String previousOutput) {
+      var filtered = globalArguments
+        .where((String name) => name.endsWith('.dart') ||
+                                name.endsWith('.dill'))
+        .toList();
+      assert(filtered.length == 1);
+      return [filtered[0]];
+    });
+  }
+
+  factory PipelineCommand.runWithPreviousDilOutput(CompilerConfiguration conf) {
+    return new PipelineCommand._(conf, (List<String> globalArguments,
+                                        String previousOutput) {
+      assert(previousOutput.endsWith('.dill'));
+      return [previousOutput];
+    });
+  }
+
+  List<String> extractArguments(List<String> globalArguments,
+                                String previousOutput) {
+    return _argumentsFunction(globalArguments, previousOutput);
+  }
+}
+
+class ComposedCompilerConfiguration extends CompilerConfiguration {
+  final List<PipelineCommand> pipelineCommands;
+
+  ComposedCompilerConfiguration(this.pipelineCommands)
+      : super._subclass();
 
   CommandArtifact computeCompilationArtifact(
       String buildDir,
@@ -271,19 +313,21 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
     List<Command> allCommands = [];
 
     // The first compilation command is as usual.
-    var arguments = compilerArgumentFunctions[0](globalArguments, null);
+    var arguments = pipelineCommands[0].extractArguments(globalArguments, null);
     CommandArtifact artifact =
-        nestedConfigurations[0].computeCompilationArtifact(
+        pipelineCommands[0].compilerConfiguration.computeCompilationArtifact(
           buildDir, tempDir, commandBuilder, arguments, environmentOverrides);
     allCommands.addAll(artifact.commands);
 
     // The following compilation commands are based on the output of the
     // previous one.
-    for (int i = 1; i < nestedConfigurations.length; i++) {
-      arguments = compilerArgumentFunctions[i](
-          globalArguments, artifact.filename);
-      artifact = nestedConfigurations[i].computeCompilationArtifact(
+    for (int i = 1; i < pipelineCommands.length; i++) {
+      PipelineCommand pc = pipelineCommands[i];
+
+      arguments = pc.extractArguments(globalArguments, artifact.filename);
+      artifact = pc.compilerConfiguration.computeCompilationArtifact(
           buildDir, tempDir, commandBuilder, arguments, environmentOverrides);
+
       allCommands.addAll(artifact.commands);
     }
 
@@ -292,8 +336,8 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
   }
 
   List<String> computeCompilerArguments(vmOptions, sharedOptions, args) {
-    // The result will be passed as an input to [computeCompilationArtifact]
-    // (i.e. the arguments to the first command).
+    // The result will be passed as an input to [extractArguments]
+    // (i.e. the arguments to the [PipelineCommand]).
     return new List<String>.from(sharedOptions)..addAll(args);
   }
 
@@ -309,26 +353,113 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
   }
 
   static ComposedCompilerConfiguration createRastaPConfiguration(
-      {bool isHostChecked, String arch, bool useBlobs, bool isAndroid}) {
-    var nested = [
-        new RastaCompilerConfiguration(isHostChecked: isHostChecked),
+      {bool isHostChecked, String arch, bool useBlobs, bool isAndroid,
+       List<String> transformations}) {
+    var nested = [];
+
+    // Compile with rasta.
+    nested.add(new PipelineCommand.runWithGlobalArguments(
+        new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
+
+    // Run zero or more transformations.
+    addKernelTransformations(nested, transformations);
+
+    // Run the normal precompiler.
+    nested.add(new PipelineCommand.runWithPreviousDilOutput(
         new PrecompilerCompilerConfiguration(
-            arch: arch, useBlobs: useBlobs, isAndroid: isAndroid),
-    ];
-    var argFuns = [
-        (List<String> globalArguments, String previousOutput) {
-          assert(previousOutput == null);
-          return globalArguments;
-        },
-        (List<String> globalArguments, String previousOutput) {
-          // TODO(kustermann): Maybe we should add more of the
-          // [globalArguments] here?
-          assert(previousOutput.endsWith('.dill'));
-          return [previousOutput];
-        },
-    ];
-    return new ComposedCompilerConfiguration(
-        nested, argFuns, isHostChecked: isHostChecked);
+          arch: arch, useBlobs: useBlobs, isAndroid: isAndroid)));
+
+    return new ComposedCompilerConfiguration(nested);
+  }
+
+  static ComposedCompilerConfiguration createRastaConfiguration(
+      {bool isHostChecked, List<String> transformations}) {
+    var nested = [];
+
+    // Compile with rasta.
+    nested.add(new PipelineCommand.runWithGlobalArguments(
+        new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
+
+    // Run zero or more transformations.
+    addKernelTransformations(nested, transformations);
+
+    return new ComposedCompilerConfiguration(nested);
+  }
+
+  static ComposedCompilerConfiguration createIr2IrConfiguration(
+      List<String> transformations) {
+    assert(transformations != null && !transformations.isEmpty);
+
+    var nested = [];
+
+    // Run zero or more transformations.
+    addKernelTransformations(nested, transformations);
+
+    return new ComposedCompilerConfiguration(nested);
+  }
+
+  static void addKernelTransformations(List<PipelineCommand> nested,
+                                       List<String> names) {
+    if (names != null) {
+      for (var name in names) {
+        var transformation = new KernelTransformation(name);
+        nested.add(nested.isEmpty
+            ? new PipelineCommand.runWithDartOrDillFile(transformation)
+            : new PipelineCommand.runWithPreviousDilOutput(transformation));
+      }
+    }
+  }
+}
+
+class KernelTransformation extends CompilerConfiguration {
+  final String transformation;
+
+  KernelTransformation(this.transformation) : super._subclass();
+
+  CommandArtifact computeCompilationArtifact(
+      String buildDir,
+      String tempDir,
+      CommandBuilder commandBuilder,
+      List arguments,
+      Map<String, String> environmentOverrides) {
+    assert(arguments.length == 1);
+    assert(arguments.last.contains('/'));
+    assert(arguments.last.endsWith('.dill'));
+
+    // The --kernel-transformers=a,b can be specified as
+    //    a = <name>
+    //    a = <name>:<path-to-transformer-executable>
+    int colonIndex = transformation.indexOf(':');
+    String transformationName = transformation;
+    String executable;
+    if (colonIndex > 0) {
+      executable = transformation.substring(colonIndex + 1);
+      transformationName = transformation.substring(0, colonIndex);
+    }
+
+    // The transformed output will be always written to a new file in the
+    // test-specific temporary directory.
+    var inputFile = arguments.last;
+    var baseInputFilename = inputFile.substring(
+        inputFile.lastIndexOf('/') + 1, inputFile.length - '.dill'.length);
+    var outputFile = '$tempDir/$baseInputFilename.$transformationName.dill';
+
+    // Use the user-supplied transformer or fall back to `transformer.dart`.
+    List<String> transformerArguments;
+    if (executable == null) {
+      executable = 'third_party/kernel/bin/transform.dart';
+      transformerArguments =
+          ['-f', 'bin', '-t', transformation, '-o', outputFile, inputFile];
+    } else {
+      transformerArguments = [inputFile, outputFile];
+    }
+
+    var command = commandBuilder.getKernelTransformationCommand(
+        transformationName, executable, transformerArguments, outputFile,
+        environmentOverrides);
+
+    return new CommandArtifact(
+        <Command>[ command ], outputFile, 'application/dart');
   }
 }
 

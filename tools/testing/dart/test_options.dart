@@ -78,7 +78,7 @@ class TestOptionsParser {
           (only valid with the following runtimes: dart_app)''',
           ['-c', '--compiler'],
           ['none', 'precompiler', 'dart2js', 'dart2analyzer', 'dart2app',
-           'dart2appjit', 'rasta', 'rastap'],
+           'dart2appjit', 'rasta', 'rastap', 'ir2ir'],
           'none'),
       // TODO(antonm): fix the option drt.
       new _TestOptionSpecification(
@@ -156,6 +156,16 @@ class TestOptionsParser {
             'simdbc64',
           ],
           'x64'),
+      new _TestOptionSpecification(
+          'kernel_transformers',
+          'The kernel transformations to apply in order (separated by comma). '
+          'A transformer can either be just a "name" (in which case it must be '
+          'available in kernel/bin/tansform.dart) or a "name:path" pair '
+          '(in which case "path" must point to an executable script which takes'
+          ' `input-file` and `output-file` as arguments).',
+          ['--kernel_transformers'],
+          [],
+          null),
       new _TestOptionSpecification(
           'system',
           'The operating system to run tests on',
@@ -659,6 +669,9 @@ Note: currently only implemented for dart2js.''',
       case 'dart2appjit':
         validRuntimes = const ['dart_app'];
         break;
+      case 'ir2ir':
+        validRuntimes = const ['vm'];
+        break;
       case 'precompiler':
         validRuntimes = const ['dart_precompiled'];
         break;
@@ -677,6 +690,14 @@ Note: currently only implemented for dart2js.''',
           'DartiumOnAndroid'
         ];
         break;
+    }
+    if (config['compiler'] != 'rasta' &&
+        config['compiler'] != 'rastap' &&
+        config['compiler'] != 'ir2ir' &&
+        config['kernel_transformers'] != null) {
+      isValid = false;
+      print("Warning: The `--kernel_transformers` option can only be used in "
+            "combination with the `rasta` and `rastap` compilers.");
     }
     if (!validRuntimes.contains(config['runtime'])) {
       isValid = false;
@@ -823,6 +844,14 @@ Note: currently only implemented for dart2js.''',
       if (updater != null) {
         updater.update();
       }
+    }
+
+    var kernelTransformations = configuration['kernel_transformers'];
+    if (kernelTransformations != null) {
+      configuration['kernel_transformers'] =
+          kernelTransformations.split(',');
+    } else if (configuration['compiler'] == 'ir2ir') {
+      throw "Cannot use --compiler=ir2ir without --kernel_transformers=...!";
     }
 
     // Adjust default timeout based on mode, compiler, and sometimes runtime.

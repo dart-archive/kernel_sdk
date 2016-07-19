@@ -235,6 +235,21 @@ class RastaCompilationCommand extends CompilationCommand {
                 environmentOverrides);
 }
 
+class KernelTransformationCommand extends CompilationCommand {
+  KernelTransformationCommand._(
+      String displayName,
+      String outputFile,
+      bool neverSkipCompilation,
+      List<Uri> bootstrapDependencies,
+      String executable,
+      List<String> arguments,
+      Map<String, String> environmentOverrides)
+      : super._(displayName, outputFile, neverSkipCompilation,
+                bootstrapDependencies, executable, arguments,
+                environmentOverrides);
+}
+
+
 /// This is just a Pair(String, Map) class with hashCode and operator ==
 class AddFlagsKey {
   final String flags;
@@ -677,6 +692,23 @@ class CommandBuilder {
         outputFile,
         neverSkipCompilation,
         bootstrapDependencies,
+        executable,
+        arguments,
+        environment);
+    return _getUniqueCommand(command);
+  }
+
+  CompilationCommand getKernelTransformationCommand(
+      String transformation,
+      String executable,
+      List<String> arguments,
+      String outputFile,
+      Map<String, String> environment) {
+    var command = new KernelTransformationCommand._(
+        "kernel_transformation_$transformation",
+        outputFile,
+        false,
+        const [],
         executable,
         arguments,
         environment);
@@ -1667,6 +1699,21 @@ class RastaCompilationCommandOutputImpl extends CompilationCommandOutputImpl {
   bool get successful => canRunDependendCommands;
 }
 
+class KernelTransformationCommandOutputImpl extends CompilationCommandOutputImpl {
+  KernelTransformationCommandOutputImpl(
+      Command command, int exitCode, bool timedOut,
+      List<int> stdout, List<int> stderr,
+      Duration time, bool compilationSkipped)
+      : super(command, exitCode, timedOut, stdout, stderr, time,
+              compilationSkipped);
+
+  bool get canRunDependendCommands {
+    return !hasCrashed && !timedOut && exitCode == 0;
+  }
+
+  bool get successful => canRunDependendCommands;
+}
+
 class JsCommandlineOutputImpl extends CommandOutputImpl
     with UnittestSuiteMessagesMixin {
   JsCommandlineOutputImpl(Command command, int exitCode, bool timedOut,
@@ -1743,6 +1790,9 @@ CommandOutput createCommandOutput(Command command, int exitCode, bool timedOut,
         command, exitCode, timedOut, stdout, stderr, time, pid);
   } else if (command is RastaCompilationCommand) {
     return new RastaCompilationCommandOutputImpl(
+        command, exitCode, timedOut, stdout, stderr, time, compilationSkipped);
+  } else if (command is KernelTransformationCommand) {
+    return new KernelTransformationCommandOutputImpl(
         command, exitCode, timedOut, stdout, stderr, time, compilationSkipped);
   } else if (command is AdbPrecompilationCommand) {
     return new VmCommandOutputImpl(
@@ -2577,6 +2627,8 @@ class CommandExecutorImpl implements CommandExecutor {
 
     if (command is BrowserTestCommand) {
       return _startBrowserControllerTest(command, timeout);
+    } else if (command is KernelTransformationCommand) {
+      return new RunningProcess(command, timeout).run();
     } else if (command is CompilationCommand && isRasta) {
       // For now, we always run the Rasta compiler in batch mode.
       return _getBatchRunner("rastak")
