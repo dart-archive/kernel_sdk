@@ -654,10 +654,9 @@ Instruction* Instruction::AppendInstruction(Instruction* tail) {
 BlockEntryInstr* Instruction::GetBlock() {
   // TODO(fschneider): Implement a faster way to get the block of an
   // instruction.
-  ASSERT(previous() != NULL);
   Instruction* result = previous();
-  while (!result->IsBlockEntry()) result = result->previous();
-  return result->AsBlockEntry();
+  while (result != NULL && !result->IsBlockEntry()) result = result->previous();
+  return result == NULL ? NULL : result->AsBlockEntry();
 }
 
 

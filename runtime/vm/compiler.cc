@@ -87,7 +87,7 @@ DECLARE_FLAG(bool, trace_irregexp);
 #ifndef DART_PRECOMPILED_RUNTIME
 
 
-static bool UseDilFrontEndFor(ParsedFunction* parsed_function) {
+bool UseDilFrontEndFor(ParsedFunction* parsed_function) {
   const Function& function = parsed_function->function();
   return (function.dil_function() != 0) ||
          (function.kind() == RawFunction::kNoSuchMethodDispatcher) ||
@@ -111,7 +111,8 @@ FlowGraph* DartCompilationPipeline::BuildFlowGraph(
   if (UseDilFrontEndFor(parsed_function)) {
     dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(
         parsed_function->function().dil_function());
-    dil::FlowGraphBuilder builder(node, parsed_function, ic_data_array, osr_id);
+    dil::FlowGraphBuilder builder(
+        node, parsed_function, ic_data_array, NULL, osr_id);
     FlowGraph* graph = builder.BuildGraph();
     if (graph != NULL) return graph;
   }
@@ -1043,7 +1044,7 @@ bool CompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         // the deoptimization path.
         AllocationSinking* sinking = NULL;
         if (FLAG_allocation_sinking &&
-            (flow_graph->graph_entry()->SuccessorCount()  == 1)) {
+            (flow_graph->graph_entry()->SuccessorCount() == 1)) {
           NOT_IN_PRODUCT(TimelineDurationScope tds2(
               thread(), compiler_timeline, "AllocationSinking::Optimize"));
           // TODO(fschneider): Support allocation sinking with try-catch.
@@ -2065,6 +2066,12 @@ void BackgroundCompiler::EnsureInit(Thread* thread) {
 
 
 #else  // DART_PRECOMPILED_RUNTIME
+
+
+bool UseDilFrontEndFor(ParsedFunction* parsed_function) {
+  UNREACHABLE();
+  return false;
+}
 
 
 CompilationPipeline* CompilationPipeline::New(Zone* zone,

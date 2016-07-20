@@ -1517,6 +1517,7 @@ FlowGraphBuilder::FlowGraphBuilder(
     TreeNode* node,
     ParsedFunction* parsed_function,
     const ZoneGrowableArray<const ICData*>& ic_data_array,
+    InlineExitCollector* exit_collector,
     intptr_t osr_id,
     intptr_t first_block_id)
   : zone_(Thread::Current()->zone()),
@@ -1525,6 +1526,7 @@ FlowGraphBuilder::FlowGraphBuilder(
     parsed_function_(parsed_function),
     osr_id_(osr_id),
     ic_data_array_(ic_data_array),
+    exit_collector_(exit_collector),
     next_block_id_(first_block_id),
     next_function_id_(0),
     context_depth_(0),
@@ -2037,7 +2039,10 @@ Fragment FlowGraphBuilder::PushArgument() {
 Fragment FlowGraphBuilder::Return() {
   Value* value = Pop();
   ASSERT(stack_ == NULL);
-  return Fragment(new(Z) ReturnInstr(TokenPosition::kNoSource, value)).closed();
+  ReturnInstr* return_instr =
+      new(Z) ReturnInstr(TokenPosition::kNoSource, value);
+  if (exit_collector_ != NULL) exit_collector_->AddExit(return_instr);
+  return Fragment(return_instr).closed();
 }
 
 
@@ -2352,6 +2357,15 @@ Token::Kind FlowGraphBuilder::MethodKind(const dart::String& name) {
     return Token::kNEGATE;
   }
   return Token::kILLEGAL;
+}
+
+
+void FlowGraphBuilder::InlineBailout(const char* reason) {
+  bool is_inlining = exit_collector_ != NULL;
+  if (is_inlining) {
+    parsed_function_->function().set_is_inlinable(false);
+    parsed_function_->Bailout("dil::FlowGraphBuilder", reason);
+  }
 }
 
 
@@ -4698,6 +4712,8 @@ void FlowGraphBuilder::VisitAssertStatement(AssertStatement* node) {
 
 
 void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
+  InlineBailout("dil::FlowgraphBuilder::VisitTryFinally()");
+
   // There are 5 different cases where we need to execute the finally block:
   //
   //  a) 1/2/3th case: Special control flow going out of `node->body()`:
@@ -4767,6 +4783,8 @@ void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
 
 
 void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
+  InlineBailout("dil::FlowgraphBuilder::VisitTryCatch()");
+
   intptr_t try_handler_index = AllocateTryIndex();
   Fragment try_body = TryCatch(try_handler_index);
   JoinEntryInstr* after_try = BuildJoinEntry();

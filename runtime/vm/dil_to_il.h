@@ -10,6 +10,7 @@
 
 #include "vm/dil.h"
 #include "vm/flow_graph.h"
+#include "vm/flow_graph_builder.h"
 #include "vm/intermediate_language.h"
 
 namespace dart {
@@ -495,6 +496,7 @@ class FlowGraphBuilder : public TreeVisitor {
   FlowGraphBuilder(TreeNode* node,
                    ParsedFunction* parsed_function,
                    const ZoneGrowableArray<const ICData*>& ic_data_array,
+                   InlineExitCollector* exit_collector,
                    intptr_t osr_id,
                    intptr_t first_block_id = 1);
   virtual ~FlowGraphBuilder();
@@ -677,6 +679,8 @@ class FlowGraphBuilder : public TreeVisitor {
 
   Token::Kind MethodKind(const dart::String& name);
 
+  void InlineBailout(const char* reason);
+
   Zone* zone_;
   TranslationHelper translation_helper_;
 
@@ -687,6 +691,7 @@ class FlowGraphBuilder : public TreeVisitor {
   ParsedFunction* parsed_function_;
   intptr_t osr_id_;
   const ZoneGrowableArray<const ICData*>& ic_data_array_;
+  InlineExitCollector* exit_collector_;
 
   intptr_t next_block_id_;
   intptr_t AllocateBlockId() { return next_block_id_++; }

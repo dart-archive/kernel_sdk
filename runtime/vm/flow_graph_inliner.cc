@@ -622,7 +622,6 @@ class CallSiteInliner : public ValueObject {
   bool TryInlining(const Function& function,
                    const Array& argument_names,
                    InlinedCallData* call_data) {
-    return false;
     TRACE_INLINING(THR_Print("  => %s (deopt count %d)\n",
                              function.ToCString(),
                              function.deoptimization_counter()));
@@ -721,18 +720,6 @@ class CallSiteInliner : public ValueObject {
         // Makes sure no classes are loaded during parsing in background.
         const intptr_t loading_invalidation_gen_at_start =
             isolate->loading_invalidation_gen();
-        // Parse the callee function.
-        bool in_cache;
-        ParsedFunction* parsed_function;
-       {
-          CSTAT_TIMER_SCOPE(thread(), graphinliner_parse_timer);
-          parsed_function = GetParsedFunction(function, &in_cache);
-        }
-
-        // Do not inline functions compiled from binary IR (yet).  The
-        // translation is not yet implemented, and it makes testing a bit more
-        // difficult when it's enabled.
-        if (parsed_function->function().dil_function() != 0) return false;
 
         if (Compiler::IsBackgroundCompilation()) {
           if (isolate->IsTopLevelParsing() ||
@@ -756,18 +743,42 @@ class CallSiteInliner : public ValueObject {
               "ICData cleared while inlining");
         }
 
+        // Parse the callee function.
+        bool in_cache;
+        ParsedFunction* parsed_function;
+        {
+          CSTAT_TIMER_SCOPE(thread(), graphinliner_parse_timer);
+          parsed_function = GetParsedFunction(function, &in_cache);
+        }
+
         // Build the callee graph.
         InlineExitCollector* exit_collector =
             new(Z) InlineExitCollector(caller_graph_, call);
-        FlowGraphBuilder builder(*parsed_function,
-                                 *ic_data_array,
-                                 exit_collector,
-                                 Compiler::kNoOSRDeoptId);
-        builder.SetInitialBlockId(caller_graph_->max_block_id());
         FlowGraph* callee_graph;
-        {
-          CSTAT_TIMER_SCOPE(thread(), graphinliner_build_timer);
-          callee_graph = builder.BuildGraph();
+        if (UseDilFrontEndFor(parsed_function)) {
+          dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(
+              parsed_function->function().dil_function());
+
+          dil::FlowGraphBuilder builder(node,
+                                        parsed_function,
+                                        *ic_data_array,
+                                        exit_collector,
+                                        Compiler::kNoOSRDeoptId,
+                                        caller_graph_->max_block_id() + 1);
+          {
+            CSTAT_TIMER_SCOPE(thread(), graphinliner_build_timer);
+            callee_graph = builder.BuildGraph();
+          }
+        } else {
+          FlowGraphBuilder builder(*parsed_function,
+                                   *ic_data_array,
+                                   exit_collector,
+                                   Compiler::kNoOSRDeoptId);
+          builder.SetInitialBlockId(caller_graph_->max_block_id());
+          {
+            CSTAT_TIMER_SCOPE(thread(), graphinliner_build_timer);
+            callee_graph = builder.BuildGraph();
+          }
         }
 
         // The parameter stubs are a copy of the actual arguments providing
@@ -1138,8 +1149,10 @@ class CallSiteInliner : public ValueObject {
     *in_cache = false;
     ParsedFunction* parsed_function =
         new(Z) ParsedFunction(thread(), function);
-    Parser::ParseFunction(parsed_function);
-    parsed_function->AllocateVariables();
+    if (!UseDilFrontEndFor(parsed_function)) {
+      Parser::ParseFunction(parsed_function);
+      parsed_function->AllocateVariables();
+    }
     return parsed_function;
   }
 

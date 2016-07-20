@@ -27,6 +27,7 @@ class RawInstance;
 class Script;
 class SequenceNode;
 
+bool UseDilFrontEndFor(ParsedFunction* parsed_function);
 
 class CompilationPipeline : public ZoneAllocated {
  public:
