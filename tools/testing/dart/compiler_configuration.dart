@@ -91,25 +91,25 @@ abstract class CompilerConfiguration {
       case 'rasta':
         return ComposedCompilerConfiguration.createRastaConfiguration(
             isHostChecked: isHostChecked,
-            transformations: configuration['kernel_transformers']);
+            kernel_transformers: configuration['kernel_transformers']);
       case 'rastap':
         return ComposedCompilerConfiguration.createRastaPConfiguration(
             isHostChecked: isHostChecked,
             arch: configuration['arch'],
             useBlobs: useBlobs,
             isAndroid: configuration['system'] == 'android',
-            transformations: configuration['kernel_transformers']);
+            kernel_transformers: configuration['kernel_transformers']);
       case 'dartk':
         return ComposedCompilerConfiguration.createDartKConfiguration(
             isHostChecked: isHostChecked,
-            transformations: configuration['kernel_transformers']);
+            kernel_transformers: configuration['kernel_transformers']);
       case 'dartkp':
         return ComposedCompilerConfiguration.createDartKPConfiguration(
             isHostChecked: isHostChecked,
             arch: configuration['arch'],
             useBlobs: useBlobs,
             isAndroid: configuration['system'] == 'android',
-            transformations: configuration['kernel_transformers']);
+            kernel_transformers: configuration['kernel_transformers']);
       case 'none':
         return new NoneCompilerConfiguration(
             isDebug: isDebug,
@@ -409,7 +409,7 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
 
   static ComposedCompilerConfiguration createRastaPConfiguration(
       {bool isHostChecked, String arch, bool useBlobs, bool isAndroid,
-       List<String> transformations}) {
+       String kernel_transformers}) {
     var nested = [];
 
     // Compile with rasta.
@@ -417,7 +417,7 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
         new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
 
     // Run zero or more transformations.
-    addKernelTransformations(nested, transformations);
+    addKernelTransformations(nested, kernel_transformers);
 
     // Run the normal precompiler.
     nested.add(new PipelineCommand.runWithPreviousDilOutput(
@@ -428,7 +428,7 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
   }
 
   static ComposedCompilerConfiguration createRastaConfiguration(
-      {bool isHostChecked, List<String> transformations}) {
+      {bool isHostChecked, String kernel_transformers}) {
     var nested = [];
 
     // Compile with rasta.
@@ -436,14 +436,14 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
         new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
 
     // Run zero or more transformations.
-    addKernelTransformations(nested, transformations);
+    addKernelTransformations(nested, kernel_transformers);
 
     return new ComposedCompilerConfiguration(nested);
   }
 
   static ComposedCompilerConfiguration createDartKPConfiguration(
       {bool isHostChecked, String arch, bool useBlobs, bool isAndroid,
-       List<String> transformations}) {
+       String kernel_transformers}) {
     var nested = [];
 
     // Compile with dartk.
@@ -451,7 +451,7 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
         new DartKCompilerConfiguration(isHostChecked: isHostChecked)));
 
     // Run zero or more transformations.
-    addKernelTransformations(nested, transformations);
+    addKernelTransformations(nested, kernel_transformers);
 
     // Run the normal precompiler.
     nested.add(new PipelineCommand.runWithPreviousDilOutput(
@@ -462,7 +462,7 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
   }
 
   static ComposedCompilerConfiguration createDartKConfiguration(
-      {bool isHostChecked, List<String> transformations}) {
+      {bool isHostChecked, String kernel_transformers}) {
     var nested = [];
 
     // Compile with dartk.
@@ -470,26 +470,27 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
         new DartKCompilerConfiguration(isHostChecked: isHostChecked)));
 
     // Run zero or more transformations.
-    addKernelTransformations(nested, transformations);
+    addKernelTransformations(nested, kernel_transformers);
 
     return new ComposedCompilerConfiguration(nested);
   }
 
   static ComposedCompilerConfiguration createIr2IrConfiguration(
-      List<String> transformations) {
-    assert(transformations != null && !transformations.isEmpty);
+      String kernel_transformers) {
+    assert(kernel_transformers != null && kernel_transformers.length > 0);
 
     var nested = [];
 
     // Run zero or more transformations.
-    addKernelTransformations(nested, transformations);
+    addKernelTransformations(nested, kernel_transformers);
 
     return new ComposedCompilerConfiguration(nested);
   }
 
   static void addKernelTransformations(List<PipelineCommand> nested,
-                                       List<String> names) {
-    if (names != null) {
+                                       String kernel_transformers) {
+    if (kernel_transformers != null && kernel_transformers.length > 0) {
+      List<String> names = kernel_transformers.split(',');
       for (var name in names) {
         var transformation = new KernelTransformation(name);
         nested.add(nested.isEmpty

@@ -165,7 +165,7 @@ class TestOptionsParser {
           ' `input-file` and `output-file` as arguments).',
           ['--kernel_transformers'],
           [],
-          null),
+          ''),
       new _TestOptionSpecification(
           'system',
           'The operating system to run tests on',
@@ -694,7 +694,7 @@ Note: currently only implemented for dart2js.''',
         break;
     }
     var kernelCompilers = const ['rasta', 'rastap', 'dartk', 'dartkp', 'ir2ir'];
-    if (config['kernel_transformers'] != null &&
+    if (config['kernel_transformers']?.length > 0 &&
         !kernelCompilers.contains(config['compiler'])) {
       isValid = false;
       print("Warning: The `--kernel_transformers` option can only be used in "
@@ -847,11 +847,8 @@ Note: currently only implemented for dart2js.''',
       }
     }
 
-    var kernelTransformations = configuration['kernel_transformers'];
-    if (kernelTransformations != null) {
-      configuration['kernel_transformers'] =
-          kernelTransformations.split(',');
-    } else if (configuration['compiler'] == 'ir2ir') {
+    if (configuration['compiler'] == 'ir2ir' &&
+        configuration['kernel_transformers'] == '') {
       throw "Cannot use --compiler=ir2ir without --kernel_transformers=...!";
     }
 
