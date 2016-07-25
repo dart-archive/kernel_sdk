@@ -99,6 +99,17 @@ abstract class CompilerConfiguration {
             useBlobs: useBlobs,
             isAndroid: configuration['system'] == 'android',
             transformations: configuration['kernel_transformers']);
+      case 'dartk':
+        return ComposedCompilerConfiguration.createDartKConfiguration(
+            isHostChecked: isHostChecked,
+            transformations: configuration['kernel_transformers']);
+      case 'dartkp':
+        return ComposedCompilerConfiguration.createDartKPConfiguration(
+            isHostChecked: isHostChecked,
+            arch: configuration['arch'],
+            useBlobs: useBlobs,
+            isAndroid: configuration['system'] == 'android',
+            transformations: configuration['kernel_transformers']);
       case 'none':
         return new NoneCompilerConfiguration(
             isDebug: isDebug,
@@ -230,13 +241,57 @@ class RastaCompilerConfiguration extends CompilerConfiguration {
     // TODO(kasperl): We may need to forward more arguments to the compiler.
     // For now, we ignore everything but the input and output.
     arguments = [arguments[2], outputFileName];
-    return commandBuilder.getRastaCompilationCommand(
+    return commandBuilder.getKernelCompilationCommand(
         'rasta',
         outputFileName,
         true,
         bootstrapDependencies(buildDir),
         computeCompilerPath(buildDir),
         arguments,
+        environmentOverrides);
+  }
+
+  CommandArtifact computeCompilationArtifact(
+      String buildDir,
+      String tempDir,
+      CommandBuilder commandBuilder,
+      List arguments,
+      Map<String, String> environmentOverrides) {
+    return new CommandArtifact(<Command>[
+      this.computeCompilationCommand('$tempDir/out.dill', buildDir,
+          CommandBuilder.instance, arguments, environmentOverrides)
+    ], '$tempDir/out.dill', 'application/dart');
+  }
+}
+
+/// The "dartk" compiler.
+class DartKCompilerConfiguration extends CompilerConfiguration {
+  DartKCompilerConfiguration({bool isHostChecked})
+      : super._subclass(isHostChecked: isHostChecked);
+
+  @override
+  String computeCompilerPath(String buildDir) {
+    return 'third_party/kernel/bin/dartk.dart';
+  }
+
+  CompilationCommand computeCompilationCommand(
+      String outputFileName,
+      String buildDir,
+      CommandBuilder commandBuilder,
+      List arguments,
+      Map<String, String> environmentOverrides) {
+    var extraArguments = [
+      '--link',
+      '--out',
+      outputFileName
+    ];
+    return commandBuilder.getKernelCompilationCommand(
+        'dartk',
+        outputFileName,
+        true,
+        bootstrapDependencies(buildDir),
+        computeCompilerPath(buildDir),
+        []..addAll(arguments)..addAll(extraArguments),
         environmentOverrides);
   }
 
@@ -379,6 +434,40 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
     // Compile with rasta.
     nested.add(new PipelineCommand.runWithGlobalArguments(
         new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
+
+    // Run zero or more transformations.
+    addKernelTransformations(nested, transformations);
+
+    return new ComposedCompilerConfiguration(nested);
+  }
+
+  static ComposedCompilerConfiguration createDartKPConfiguration(
+      {bool isHostChecked, String arch, bool useBlobs, bool isAndroid,
+       List<String> transformations}) {
+    var nested = [];
+
+    // Compile with dartk.
+    nested.add(new PipelineCommand.runWithGlobalArguments(
+        new DartKCompilerConfiguration(isHostChecked: isHostChecked)));
+
+    // Run zero or more transformations.
+    addKernelTransformations(nested, transformations);
+
+    // Run the normal precompiler.
+    nested.add(new PipelineCommand.runWithPreviousDilOutput(
+        new PrecompilerCompilerConfiguration(
+          arch: arch, useBlobs: useBlobs, isAndroid: isAndroid)));
+
+    return new ComposedCompilerConfiguration(nested);
+  }
+
+  static ComposedCompilerConfiguration createDartKConfiguration(
+      {bool isHostChecked, List<String> transformations}) {
+    var nested = [];
+
+    // Compile with dartk.
+    nested.add(new PipelineCommand.runWithGlobalArguments(
+        new DartKCompilerConfiguration(isHostChecked: isHostChecked)));
 
     // Run zero or more transformations.
     addKernelTransformations(nested, transformations);

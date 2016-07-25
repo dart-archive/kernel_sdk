@@ -59,7 +59,7 @@ vars = {
   "dev_compiler_rev": "@7e9708eb5e9f3fcdc68b9af039d78cf39ce502b7",
   "fixnum_tag": "@0.10.5",
   "func_rev": "@8d4aea75c21be2179cb00dc2b94a71414653094e",
-  "kernel_rev": "@84c625c0d7d3e02b518f4407cfc1c2da92268a60",
+  "kernel_rev": "@c9244b4604856a28cc269b935404a8ee8c4d74aa",
   "rasta_rev": "@834d3cceda10f35eafb5d1f704d0c32686cd80ed",
   "glob_rev": "@704cf75e4f26b417505c5c611bdaacd8808467dd",
   "html_tag" : "@0.12.1+1",

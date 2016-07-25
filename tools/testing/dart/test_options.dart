@@ -78,7 +78,7 @@ class TestOptionsParser {
           (only valid with the following runtimes: dart_app)''',
           ['-c', '--compiler'],
           ['none', 'precompiler', 'dart2js', 'dart2analyzer', 'dart2app',
-           'dart2appjit', 'rasta', 'rastap', 'ir2ir'],
+           'dart2appjit', 'dartk', 'dartkp', 'rasta', 'rastap', 'ir2ir'],
           'none'),
       // TODO(antonm): fix the option drt.
       new _TestOptionSpecification(
@@ -676,9 +676,11 @@ Note: currently only implemented for dart2js.''',
         validRuntimes = const ['dart_precompiled'];
         break;
       case 'rasta':
+      case 'dartk':
         validRuntimes = const ['vm'];
         break;
       case 'rastap':
+      case 'dartkp':
         validRuntimes = const ['dart_precompiled'];
         break;
       case 'none':
@@ -691,13 +693,12 @@ Note: currently only implemented for dart2js.''',
         ];
         break;
     }
-    if (config['compiler'] != 'rasta' &&
-        config['compiler'] != 'rastap' &&
-        config['compiler'] != 'ir2ir' &&
-        config['kernel_transformers'] != null) {
+    var kernelCompilers = const ['rasta', 'rastap', 'dartk', 'dartkp', 'ir2ir'];
+    if (config['kernel_transformers'] != null &&
+        !kernelCompilers.contains(config['compiler'])) {
       isValid = false;
       print("Warning: The `--kernel_transformers` option can only be used in "
-            "combination with the `rasta` and `rastap` compilers.");
+            "combination with the ${kernelCompilers.join(', ')} compilers.");
     }
     if (!validRuntimes.contains(config['runtime'])) {
       isValid = false;

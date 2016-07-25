@@ -221,8 +221,8 @@ class CompilationCommand extends ProcessCommand {
       deepJsonCompare(_bootstrapDependencies, other._bootstrapDependencies);
 }
 
-class RastaCompilationCommand extends CompilationCommand {
-  RastaCompilationCommand._(
+class KernelCompilationCommand extends CompilationCommand {
+  KernelCompilationCommand._(
       String displayName,
       String outputFile,
       bool neverSkipCompilation,
@@ -679,7 +679,7 @@ class CommandBuilder {
     return _getUniqueCommand(command);
   }
 
-  CompilationCommand getRastaCompilationCommand(
+  CompilationCommand getKernelCompilationCommand(
       String displayName,
       outputFile,
       neverSkipCompilation,
@@ -687,7 +687,7 @@ class CommandBuilder {
       String executable,
       List<String> arguments,
       Map<String, String> environment) {
-    var command = new RastaCompilationCommand._(
+    var command = new KernelCompilationCommand._(
         displayName,
         outputFile,
         neverSkipCompilation,
@@ -1675,8 +1675,8 @@ class CompilationCommandOutputImpl extends CommandOutputImpl {
   }
 }
 
-class RastaCompilationCommandOutputImpl extends CompilationCommandOutputImpl {
-  RastaCompilationCommandOutputImpl(
+class KernelCompilationCommandOutputImpl extends CompilationCommandOutputImpl {
+  KernelCompilationCommandOutputImpl(
       Command command, int exitCode, bool timedOut,
       List<int> stdout, List<int> stderr,
       Duration time, bool compilationSkipped)
@@ -1692,8 +1692,8 @@ class RastaCompilationCommandOutputImpl extends CompilationCommandOutputImpl {
   }
 
   // If the compiler was able to produce a Kernel IR file we want to run the
-  // result on the Dart VM.  We therefore mark the [RastaCompilationCommand] as
-  // successfull.
+  // result on the Dart VM.  We therefore mark the [KernelCompilationCommand] as
+  // successful.
   // => This ensures we test that the DartVM produces correct CompileTime errors
   //    as it is supposed to for our test suites.
   bool get successful => canRunDependendCommands;
@@ -1788,8 +1788,8 @@ CommandOutput createCommandOutput(Command command, int exitCode, bool timedOut,
   } else if (command is VmCommand) {
     return new VmCommandOutputImpl(
         command, exitCode, timedOut, stdout, stderr, time, pid);
-  } else if (command is RastaCompilationCommand) {
-    return new RastaCompilationCommandOutputImpl(
+  } else if (command is KernelCompilationCommand) {
+    return new KernelCompilationCommandOutputImpl(
         command, exitCode, timedOut, stdout, stderr, time, compilationSkipped);
   } else if (command is KernelTransformationCommand) {
     return new KernelTransformationCommandOutputImpl(
@@ -2624,6 +2624,7 @@ class CommandExecutorImpl implements CommandExecutor {
     var batchMode = !globalConfiguration['noBatch'];
     var dart2jsBatchMode = globalConfiguration['dart2js_batch'];
     var isRasta = globalConfiguration['compiler'] == 'rasta';
+    var isDartK = globalConfiguration['compiler'] == 'dartk';
 
     if (command is BrowserTestCommand) {
       return _startBrowserControllerTest(command, timeout);
@@ -2633,6 +2634,10 @@ class CommandExecutorImpl implements CommandExecutor {
       // For now, we always run the Rasta compiler in batch mode.
       return _getBatchRunner("rastak")
           .runCommand("rastak", command, timeout, command.arguments);
+    } else if (command is CompilationCommand && isDartK) {
+      // For now, we always run the DartK compiler in batch mode.
+      return _getBatchRunner("dartk")
+          .runCommand("dartk", command, timeout, command.arguments);
     } else if (command is CompilationCommand && dart2jsBatchMode) {
       return _getBatchRunner("dart2js")
           .runCommand("dart2js", command, timeout, command.arguments);

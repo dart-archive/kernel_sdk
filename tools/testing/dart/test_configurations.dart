@@ -224,14 +224,14 @@ Future testConfigurations(List<Map> configurations) async {
         }
       }
 
-      bool isRasta =
-          conf['compiler'] == 'rasta' || conf['compiler'] == 'rastap';
+      bool useCheckedInDillFiles =
+          conf['compiler'] == 'none' || conf['compiler'] == 'ir2ir';
       for (final testSuiteDir in DILL_TEST_SUITE_DIRECTORIES) {
         final name = testSuiteDir.filename;
         if (selectors.containsKey(name)) {
-          StandardTestSuite suite = isRasta
-              ? new StandardTestSuite.forDirectory(conf, testSuiteDir)
-              : new StandardTestSuite.forDillDirectory(conf, testSuiteDir);
+          StandardTestSuite suite = useCheckedInDillFiles
+              ? new StandardTestSuite.forDillDirectory(conf, testSuiteDir)
+              : new StandardTestSuite.forDirectory(conf, testSuiteDir);
           testSuites.add(suite);
         }
       }
