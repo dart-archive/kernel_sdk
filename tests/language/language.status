@@ -255,3 +255,11 @@ issue23244_test: Skip # Issue #26373
 deferred_load_inval_code_test: RuntimeError
 regress_26453_test: Pass, Fail, Crash
 vm/regress_16873_test: Pass, Crash
+
+# These tests currently take too long. Remove when they are fixed.
+[ $compiler == dartk || $compiler == rasta ]
+switch_label_test: Skip # Issue https://github.com/dart-lang/kernel_sdk/issues/13
+nested_switch_label_test: Skip # Issue https://github.com/dart-lang/kernel_sdk/issues/13
+large_class_declaration_test: Skip
+large_implicit_getter_test: Skip
+larger_implicit_getter_test: Skip
