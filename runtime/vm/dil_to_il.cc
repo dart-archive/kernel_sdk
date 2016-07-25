@@ -651,22 +651,25 @@ class TryFinallyBlock {
       : builder_(builder),
         outer_(builder->try_finally_block_),
         finalizer_(finalizer),
-        context_depth_(builder->context_depth_) {
+        context_depth_(builder->context_depth_),
+        try_depth_(builder->try_depth_ - 1) {
     builder_->try_finally_block_ = this;
   }
   ~TryFinallyBlock() {
     builder_->try_finally_block_ = outer_;
   }
 
-  Statement* finalizer() { return finalizer_; }
-  intptr_t context_depth() { return context_depth_; }
-  TryFinallyBlock* outer() { return outer_; }
+  Statement* finalizer() const { return finalizer_; }
+  intptr_t context_depth() const { return context_depth_; }
+  intptr_t try_depth() const { return try_depth_; }
+  TryFinallyBlock* outer() const { return outer_; }
 
  private:
-  FlowGraphBuilder* builder_;
-  TryFinallyBlock* outer_;
-  Statement* finalizer_;
-  intptr_t context_depth_;
+  FlowGraphBuilder* const builder_;
+  TryFinallyBlock* const outer_;
+  Statement* const finalizer_;
+  const intptr_t context_depth_;
+  const intptr_t try_depth_;
 };
 
 
@@ -1554,14 +1557,18 @@ FlowGraphBuilder::~FlowGraphBuilder() { }
 Fragment FlowGraphBuilder::TranslateFinallyFinalizers(
     TryFinallyBlock* outer_finally,
     intptr_t target_context_depth) {
-  TryFinallyBlock* saved_block = try_finally_block_;
-  intptr_t saved_depth = context_depth_;
+  TryFinallyBlock* const saved_block = try_finally_block_;
+  const intptr_t saved_depth = context_depth_;
+  const intptr_t saved_try_depth = try_depth_;
 
   Fragment instructions;
 
   // While translating the body of a finalizer we need to set the try-finally
   // block which is active when translating the body.
   while (try_finally_block_ != outer_finally) {
+    // Set correct try depth (in case there are nested try statements).
+    try_depth_ = try_finally_block_->try_depth();
+
     // Potentially restore the context to what is expected for the finally
     // block.
     instructions += AdjustContextTo(try_finally_block_->context_depth());
@@ -1587,6 +1594,7 @@ Fragment FlowGraphBuilder::TranslateFinallyFinalizers(
 
   try_finally_block_ = saved_block;
   context_depth_ = saved_depth;
+  try_depth_ = saved_try_depth;
 
   return instructions;
 }
