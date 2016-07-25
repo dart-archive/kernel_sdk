@@ -4842,12 +4842,14 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
                        try_handler_index);
 
       catch_handler_body += TranslateStatement(catch_clause->body());
+
+      // Note: ExitScope adjusts context_depth_ so even if catch_handler_body
+      // is closed we still need to execute ExitScope for its side effect.
+      catch_handler_body += ExitScope(catch_clause);
       if (catch_handler_body.is_open()) {
         catch_handler_body += Goto(after_try);
       }
     }
-
-    catch_handler_body += ExitScope(catch_clause);
 
     if (type_guard != NULL) {
       if (type_guard->IsMalformed()) {
