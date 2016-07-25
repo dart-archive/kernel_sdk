@@ -365,14 +365,6 @@ void DilReader::ReadProcedure(const dart::Library& library,
                           is_method,
                           false);  // is_closure
 
-  // In precompiled mode we need to eagerly generate method extractors.
-  if (!FLAG_lazy_dispatchers && is_method && !is_abstract) {
-    dart::String& getter_name =
-        dart::String::ZoneHandle(Z, dart::Field::GetterSymbol(name));
-    function = function.CreateMethodExtractor(getter_name);
-    owner.AddFunction(function);
-  }
-
   if (dil_klass == NULL) {
     library.AddObject(function, name);
     ASSERT(!Object::Handle(library.LookupObjectAllowPrivate(

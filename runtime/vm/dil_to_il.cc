@@ -2641,6 +2641,37 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
 }
 
 
+Fragment FlowGraphBuilder::BuildImplicitClosureCreation(
+    const Function& target) {
+  Fragment fragment;
+  const dart::Class& closure_class =
+      dart::Class::ZoneHandle(Z, I->object_store()->closure_class());
+  fragment += AllocateObject(closure_class, target);
+  LocalVariable* closure = MakeTemporary();
+
+  // Allocate a context that closes over `this`.
+  fragment += AllocateContext(1);
+  LocalVariable* context = MakeTemporary();
+
+  // Store the function and the context in the closure.
+  fragment += LoadLocal(closure);
+  fragment += Constant(target);
+  fragment += StoreInstanceField(Closure::function_offset());
+
+  fragment += LoadLocal(closure);
+  fragment += LoadLocal(context);
+  fragment += StoreInstanceField(Closure::context_offset());
+
+  // The context is on top of the operand stack.  Store `this`.  The context
+  // doesn't need a parent pointer because it doesn't close over anything
+  // else.
+  fragment += LoadLocal(scopes_->this_variable);
+  fragment += StoreInstanceField(Context::variable_offset(0));
+
+  return fragment;
+}
+
+
 FlowGraph* FlowGraphBuilder::BuildGraphOfMethodExtractor(
     const Function& method) {
   // A method extractor is the implicit getter for a method.
@@ -2653,32 +2684,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfMethodExtractor(
                                         Compiler::kNoOSRDeoptId);
   Fragment body(normal_entry);
   body += CheckStackOverflow();
-  // Allocate a closure.
-  const dart::Class& closure_class =
-      dart::Class::ZoneHandle(Z, I->object_store()->closure_class());
-  body += AllocateObject(closure_class, function);
-  LocalVariable* closure = MakeTemporary();
-
-  // Allocate a context that closes over `this`.
-  body += AllocateContext(1);
-  LocalVariable* context = MakeTemporary();
-
-  // Store the function and the context in the closure.
-  body += LoadLocal(closure);
-  body += Constant(function);
-  body += StoreInstanceField(Closure::function_offset());
-
-  body += LoadLocal(closure);
-  body += LoadLocal(context);
-  body += StoreInstanceField(Closure::context_offset());
-
-  // The context is on top of the operand stack.  Store `this`.  The context
-  // doesn't need a parent pointer because it doesn't close over anything
-  // else.
-  body += LoadLocal(scopes_->this_variable);
-  body += StoreInstanceField(Context::variable_offset(0));
-
-  // The closure is on top of the operand stack.
+  body += BuildImplicitClosureCreation(function);
   body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
@@ -3543,13 +3549,13 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
 void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
   Function& target = Function::ZoneHandle(Z);
   if (node->target()->IsProcedure()) {
-    // This will create a "method extractor" for the for the super method.
-    dart::Class& klass = dart::Class::Handle(Z,
-        H.LookupClassByDilClass(Class::Cast(node->target()->parent())));
-    const dart::String& getter_name = H.DartGetterName(
-        node->target()->name());
-    target = Resolver::ResolveDynamicAnyArgs(zone_, klass, getter_name);
+    const dart::String& method_name = H.DartMethodName(node->target()->name());
+    Function& target = Function::ZoneHandle(Z,
+        LookupMethodByMember(node->target(), method_name));
+    target = target.ImplicitClosureFunction();
     ASSERT(!target.IsNull());
+    fragment_ = BuildImplicitClosureCreation(target);
+    return;
   } else {
     ASSERT(node->target()->IsField());
     const dart::String& getter_name = H.DartGetterName(

@@ -655,6 +655,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment StringInterpolate();
   Fragment ThrowTypeError();
   Fragment ThrowNoSuchMethodError();
+  Fragment BuildImplicitClosureCreation(const Function& target);
 
   dart::RawFunction* LookupMethodByMember(
       Member* target, const dart::String& method_name);
