@@ -1784,37 +1784,36 @@ Fragment FlowGraphBuilder::StrictCompare() {
 }
 
 
-Fragment FlowGraphBuilder::Branch(TargetEntryInstr** then_entry,
-                                  TargetEntryInstr** otherwise_entry) {
+Fragment FlowGraphBuilder::BranchIfTrue(TargetEntryInstr** then_entry,
+                                        TargetEntryInstr** otherwise_entry,
+                                        bool negate) {
   Fragment instructions = Constant(Bool::True());
-  Value* constant_value = Pop();
-  StrictCompareInstr* compare =
-      new(Z) StrictCompareInstr(TokenPosition::kNoSource,
-                                Token::kEQ_STRICT,
-                                Pop(),
-                                constant_value,
-                                false);
-  BranchInstr* branch = new(Z) BranchInstr(compare);
-  *then_entry = *branch->true_successor_address() = BuildTargetEntry();
-  *otherwise_entry = *branch->false_successor_address() = BuildTargetEntry();
-  return (instructions << branch).closed();
+  return instructions + BranchIfEqual(then_entry, otherwise_entry, negate);
 }
 
 
 Fragment FlowGraphBuilder::BranchIfNull(TargetEntryInstr** then_entry,
-                                        TargetEntryInstr** otherwise_entry) {
+                                        TargetEntryInstr** otherwise_entry,
+                                        bool negate) {
   Fragment instructions = NullConstant();
-  Value* constant_value = Pop();
+  return instructions + BranchIfEqual(then_entry, otherwise_entry, negate);
+}
+
+Fragment FlowGraphBuilder::BranchIfEqual(TargetEntryInstr** then_entry,
+                                         TargetEntryInstr** otherwise_entry,
+                                         bool negate) {
+  Value* right_value = Pop();
+  Value* left_value = Pop();
   StrictCompareInstr* compare =
       new(Z) StrictCompareInstr(TokenPosition::kNoSource,
-                                Token::kEQ_STRICT,
-                                Pop(),
-                                constant_value,
+                                negate ? Token::kNE_STRICT : Token::kEQ_STRICT,
+                                left_value,
+                                right_value,
                                 false);
   BranchInstr* branch = new(Z) BranchInstr(compare);
   *then_entry = *branch->true_successor_address() = BuildTargetEntry();
   *otherwise_entry = *branch->false_successor_address() = BuildTargetEntry();
-  return (instructions << branch).closed();
+  return Fragment(branch).closed();
 }
 
 
@@ -3116,6 +3115,16 @@ Fragment FlowGraphBuilder::TranslateStatement(Statement* statement) {
 }
 
 
+Fragment FlowGraphBuilder::TranslateCondition(Expression* expression,
+                                              bool* negate) {
+  *negate = expression->IsNot();
+  if (*negate) {
+    return TranslateExpression(Not::Cast(expression)->expression());
+  }
+  return TranslateExpression(expression);
+}
+
+
 Fragment FlowGraphBuilder::TranslateExpression(Expression* expression)  {
   expression->AcceptExpressionVisitor(this);
   return fragment_;
@@ -3882,10 +3891,13 @@ void FlowGraphBuilder::VisitAsExpression(AsExpression* node) {
 
 
 void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
-  Fragment instructions = TranslateExpression(node->condition());
+  bool negate;
+  Fragment instructions =
+      TranslateCondition(node->condition(), &negate);
+
   TargetEntryInstr* then_entry;
   TargetEntryInstr* otherwise_entry;
-  instructions += Branch(&then_entry, &otherwise_entry);
+  instructions += BranchIfTrue(&then_entry, &otherwise_entry, negate);
 
   Value* top = stack_;
   Fragment then_fragment(then_entry);
@@ -3911,14 +3923,16 @@ void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
 void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
   if (node->op() == LogicalExpression::kAnd ||
       node->op() == LogicalExpression::kOr) {
-    Fragment instructions = TranslateExpression(node->left());
+    bool negate;
+    Fragment instructions =
+        TranslateCondition(node->left(), &negate);
     TargetEntryInstr* right_entry;
     TargetEntryInstr* constant_entry;
 
     if (node->op() == LogicalExpression::kAnd) {
-      instructions += Branch(&right_entry, &constant_entry);
+      instructions += BranchIfTrue(&right_entry, &constant_entry, negate);
     } else {
-      instructions += Branch(&constant_entry, &right_entry);
+      instructions += BranchIfTrue(&constant_entry, &right_entry, negate);
     }
 
     Value* top = stack_;
@@ -4240,10 +4254,11 @@ void FlowGraphBuilder::VisitFunctionDeclaration(FunctionDeclaration* node) {
 
 
 void FlowGraphBuilder::VisitIfStatement(IfStatement* node) {
-  Fragment instructions = TranslateExpression(node->condition());
+  bool negate;
+  Fragment instructions = TranslateCondition(node->condition(), &negate);
   TargetEntryInstr* then_entry;
   TargetEntryInstr* otherwise_entry;
-  instructions += Branch(&then_entry, &otherwise_entry);
+  instructions += BranchIfTrue(&then_entry, &otherwise_entry, negate);
 
   Fragment then_fragment(then_entry);
   then_fragment += TranslateStatement(node->then());
@@ -4270,10 +4285,11 @@ void FlowGraphBuilder::VisitIfStatement(IfStatement* node) {
 
 void FlowGraphBuilder::VisitWhileStatement(WhileStatement* node) {
   ++loop_depth_;
-  Fragment condition = TranslateExpression(node->condition());
+  bool negate;
+  Fragment condition = TranslateCondition(node->condition(), &negate);
   TargetEntryInstr* body_entry;
   TargetEntryInstr* loop_exit;
-  condition += Branch(&body_entry, &loop_exit);
+  condition += BranchIfTrue(&body_entry, &loop_exit, negate);
 
   Fragment body(body_entry);
   body += TranslateStatement(node->body());
@@ -4307,14 +4323,15 @@ void FlowGraphBuilder::VisitDoStatement(DoStatement* node) {
     return;
   }
 
+  bool negate;
   JoinEntryInstr* join = BuildJoinEntry();
   Fragment loop(join);
   loop += CheckStackOverflow();
   loop += body;
-  loop += TranslateExpression(node->condition());
+  loop += TranslateCondition(node->condition(), &negate);
   TargetEntryInstr* loop_repeat;
   TargetEntryInstr* loop_exit;
-  loop += Branch(&loop_repeat, &loop_exit);
+  loop += BranchIfTrue(&loop_repeat, &loop_exit, negate);
 
   Fragment repeat(loop_repeat);
   repeat += Goto(join);
@@ -4336,12 +4353,13 @@ void FlowGraphBuilder::VisitForStatement(ForStatement* node) {
   }
 
   ++loop_depth_;
+  bool negate = false;
   Fragment condition = node->condition() == NULL
       ? Constant(Bool::True())
-      : TranslateExpression(node->condition());
+      : TranslateCondition(node->condition(), &negate);
   TargetEntryInstr* body_entry;
   TargetEntryInstr* loop_exit;
-  condition += Branch(&body_entry, &loop_exit);
+  condition += BranchIfTrue(&body_entry, &loop_exit, negate);
 
   Fragment body(body_entry);
   body += TranslateStatement(node->body());
@@ -4397,7 +4415,7 @@ void FlowGraphBuilder::VisitForInStatement(ForInStatement* node) {
   condition += InstanceCall(Symbols::MoveNext(), Token::kILLEGAL, 1);
   TargetEntryInstr* body_entry;
   TargetEntryInstr* loop_exit;
-  condition += Branch(&body_entry, &loop_exit);
+  condition += BranchIfTrue(&body_entry, &loop_exit);
 
   Fragment body(body_entry);
   body += EnterScope(node);
@@ -4594,7 +4612,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         current_instructions += PushArgument();
         current_instructions +=
             InstanceCall(Symbols::EqualOperator(), Token::kILLEGAL, 2);
-        current_instructions += Branch(&then, &otherwise);
+        current_instructions += BranchIfTrue(&then, &otherwise);
 
         Fragment then_fragment(then);
 
@@ -4674,9 +4692,10 @@ void FlowGraphBuilder::VisitAssertStatement(AssertStatement* node) {
   TargetEntryInstr* then;
   TargetEntryInstr* otherwise;
 
+  bool negate;
   Fragment instructions;
-  instructions += TranslateExpression(node->condition());
-  instructions += Branch(&then, &otherwise);
+  instructions += TranslateCondition(node->condition(), &negate);
+  instructions += BranchIfTrue(&then, &otherwise, negate);
 
   const dart::Class& klass = dart::Class::ZoneHandle(Z,
       dart::Library::LookupCoreClass(Symbols::AssertionError()));
@@ -4879,7 +4898,7 @@ void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
 
         TargetEntryInstr* catch_entry;
         TargetEntryInstr* next_catch_entry;
-        catch_body += Branch(&catch_entry, &next_catch_entry);
+        catch_body += BranchIfTrue(&catch_entry, &next_catch_entry);
 
         Fragment(catch_entry) + catch_handler_body;
         catch_body = Fragment(next_catch_entry);

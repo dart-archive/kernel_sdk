@@ -584,6 +584,7 @@ class FlowGraphBuilder : public TreeVisitor {
                                  List<Initializer>* initialiers);
 
   Fragment TranslateStatement(Statement* statement);
+  Fragment TranslateCondition(Expression* expression, bool* negate);
   Fragment TranslateExpression(Expression* expression);
 
   Fragment TranslateFinallyFinalizers(TryFinallyBlock* outer_finally,
@@ -611,10 +612,15 @@ class FlowGraphBuilder : public TreeVisitor {
                           const Function& closure_function);
   Fragment BooleanNegate();
   Fragment StrictCompare();
-  Fragment Branch(TargetEntryInstr** then_entry,
-                  TargetEntryInstr** otherwise_entry);
+  Fragment BranchIfTrue(TargetEntryInstr** then_entry,
+                        TargetEntryInstr** otherwise_entry,
+                        bool negate = false);
   Fragment BranchIfNull(TargetEntryInstr** then_entry,
-                        TargetEntryInstr** otherwise_entry);
+                        TargetEntryInstr** otherwise_entry,
+                        bool negate = false);
+  Fragment BranchIfEqual(TargetEntryInstr** then_entry,
+                         TargetEntryInstr** otherwise_entry,
+                         bool negate = false);
   Fragment CatchBlockEntry(const Array& handler_types, intptr_t handler_index);
   Fragment TryCatch(int try_handler_index);
   Fragment CheckStackOverflow();
