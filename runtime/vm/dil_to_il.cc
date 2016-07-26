@@ -595,6 +595,7 @@ class SwitchBlock {
     while (true) {
       block->EnsureSwitchCaseMapping();
       if (block->Contains(label)) break;
+      block = block->outer_;
     }
 
     // Set the outer finally block.
