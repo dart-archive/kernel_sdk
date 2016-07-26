@@ -3567,13 +3567,17 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
 void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
   Function& target = Function::ZoneHandle(Z);
   if (node->target()->IsProcedure()) {
-    const dart::String& method_name = H.DartMethodName(node->target()->name());
-    Function& target = Function::ZoneHandle(Z,
-        LookupMethodByMember(node->target(), method_name));
-    target = target.ImplicitClosureFunction();
-    ASSERT(!target.IsNull());
-    fragment_ = BuildImplicitClosureCreation(target);
-    return;
+    Procedure* dil_procedure = Procedure::Cast(node->target());
+    Name* dil_name = dil_procedure->name();
+    if (dil_procedure->kind() == Procedure::kGetter) {
+      target = LookupMethodByMember(dil_procedure, H.DartGetterName(dil_name));
+    } else {
+      target = LookupMethodByMember(dil_procedure, H.DartMethodName(dil_name));
+      target = target.ImplicitClosureFunction();
+      ASSERT(!target.IsNull());
+      fragment_ = BuildImplicitClosureCreation(target);
+      return;
+    }
   } else {
     ASSERT(node->target()->IsField());
     const dart::String& getter_name = H.DartGetterName(
