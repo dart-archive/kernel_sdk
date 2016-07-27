@@ -4120,7 +4120,6 @@ void FlowGraphBuilder::VisitFunctionExpression(FunctionExpression* node) {
 
 void FlowGraphBuilder::VisitLet(Let* node) {
   Fragment instructions = TranslateStatement(node->variable());
-  ASSERT(instructions.is_open());
   instructions += TranslateExpression(node->body());
   fragment_ = instructions;
 }
