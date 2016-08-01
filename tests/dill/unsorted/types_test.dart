@@ -52,6 +52,7 @@ testConstantLiteralTypes() {
   Expect.isTrue(const <String, int>{"a": 1} is Map<String, int>);
   Expect.isTrue(!(const <String, int>{"a": 1} is Map<int, String>));
 }
+
 testNonConstantLiteralTypes() {
   Expect.isTrue([1] is List);
   Expect.isTrue([1] is List<int>);
@@ -166,6 +167,17 @@ num nan(double d, Pattern p) => double.NAN;
 
 typedef int FunctionType(num _, Pattern __);
 
+
+testLiteralTypeArguments() {
+  Expect.isTrue(new Foo<String, int>().foo() is List<String>);
+  Expect.isTrue(new Foo<int, String>().bar() is Map<int, String>);
+}
+
+class Foo<T1, T2> {
+  foo() => <T1>[];
+  bar() => <T1, T2>{};
+}
+
 main() {
   testConstantLiteralTypes();
   testNonConstantLiteralTypes();
@@ -176,5 +188,6 @@ main() {
   testNoBound();
   testSubtypeChecker();
   testFunctionTypes();
+  testLiteralTypeArguments();
 }
 

@@ -4049,7 +4049,7 @@ void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
       types, 1);
 
   // The type argument for the factory call.
-  Fragment instructions = Constant(type_arguments);
+  Fragment instructions = TranslateInstantiatedTypeArguments(type_arguments);
   instructions += PushArgument();
   // The type arguments for CreateArray.
   instructions += Constant(TypeArguments::ZoneHandle(Z));
@@ -4093,7 +4093,7 @@ void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
       types, 2);
 
   // The type argument for the factory call `new Map<K, V>._fromLiteral(List)`.
-  Fragment instructions = Constant(type_arguments);
+  Fragment instructions = TranslateInstantiatedTypeArguments(type_arguments);
   instructions += PushArgument();
 
   // The type arguments for `new List<X>(int len)`.
