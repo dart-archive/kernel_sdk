@@ -623,6 +623,7 @@ class FlowGraphBuilder : public TreeVisitor {
                          bool negate = false);
   Fragment CatchBlockEntry(const Array& handler_types, intptr_t handler_index);
   Fragment TryCatch(int try_handler_index);
+  Fragment CheckStackOverflowInPrologue();
   Fragment CheckStackOverflow();
   Fragment CloneContext();
   Fragment Constant(const Object& value);
@@ -683,6 +684,8 @@ class FlowGraphBuilder : public TreeVisitor {
   void Push(Definition* definition);
   Value* Pop();
   Fragment Drop();
+
+  bool IsInlining() { return exit_collector_ != NULL; }
 
   Token::Kind MethodKind(const dart::String& name);
 

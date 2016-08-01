@@ -1855,6 +1855,17 @@ Fragment FlowGraphBuilder::TryCatch(int try_handler_index) {
 }
 
 
+Fragment FlowGraphBuilder::CheckStackOverflowInPrologue() {
+  if (IsInlining()) {
+    // If we are inlining don't actually attach the stack check.  We must still
+    // create the stack check in order to allocate a deopt id.
+    CheckStackOverflow();
+    return Fragment();
+  }
+  return CheckStackOverflow();
+}
+
+
 Fragment FlowGraphBuilder::CheckStackOverflow() {
   return Fragment(new(Z) CheckStackOverflowInstr(TokenPosition::kNoSource,
                                                  loop_depth_));
@@ -2479,7 +2490,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
   SetupDefaultParameterValues(function);
 
   Fragment body(normal_entry);
-  body += CheckStackOverflow();
+  body += CheckStackOverflowInPrologue();
   intptr_t context_size =
       parsed_function_->node_sequence()->scope()->num_context_variables();
   if (context_size > 0) {
@@ -2691,7 +2702,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfMethodExtractor(
                                         normal_entry,
                                         Compiler::kNoOSRDeoptId);
   Fragment body(normal_entry);
-  body += CheckStackOverflow();
+  body += CheckStackOverflowInPrologue();
   body += BuildImplicitClosureCreation(function);
   body += Return();
 
@@ -2711,7 +2722,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfImplicitClosureFunction(
   SetupDefaultParameterValues(dil_function);
 
   Fragment body(normal_entry);
-  body += CheckStackOverflow();
+  body += CheckStackOverflowInPrologue();
 
   // Load all the arguments.
   if (!target.is_static()) {
@@ -2775,7 +2786,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfNoSuchMethodDispatcher(
   parsed_function_->set_default_parameter_values(default_values);
 
   Fragment body(normal_entry);
-  body += CheckStackOverflow();
+  body += CheckStackOverflowInPrologue();
 
   // The receiver is the first argument to noSuchMethod, and it is the first
   // argument passed to the dispatcher function.
@@ -2899,7 +2910,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfInvokeFieldDispatcher(
                                         Compiler::kNoOSRDeoptId);
 
   Fragment body(normal_entry);
-  body += CheckStackOverflow();
+  body += CheckStackOverflowInPrologue();
 
   LocalScope* scope = parsed_function_->node_sequence()->scope();
 
