@@ -358,6 +358,15 @@ hooks = [
     ],
   },
   {
+    'name': 'run_pub_get',
+    'pattern': '.',
+    'action': [
+      'python',
+      Var('dart_root') + '/tools/run_pub_get.py',
+      Var('dart_root') + '/third_party/kernel',
+    ],
+  },
+  {
     'name': 'd8_testing_binaries',
     'pattern': '.',
     'action': [
