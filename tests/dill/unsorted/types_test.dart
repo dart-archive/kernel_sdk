@@ -178,6 +178,14 @@ class Foo<T1, T2> {
   bar() => <T1, T2>{};
 }
 
+regressionTest1() {
+  Expect.isTrue(!StaticTypeTester.isInt('abc'));
+}
+
+class StaticTypeTester<T> {
+  static isInt(x) => x is int;
+}
+
 main() {
   testConstantLiteralTypes();
   testNonConstantLiteralTypes();
@@ -189,5 +197,6 @@ main() {
   testSubtypeChecker();
   testFunctionTypes();
   testLiteralTypeArguments();
+  regressionTest1();
 }
 
