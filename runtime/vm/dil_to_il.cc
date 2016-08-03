@@ -4526,6 +4526,12 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
     Fragment& body_fragment = body_fragments[i] =
         TranslateStatement(switch_case->body());
 
+    if (body_fragment.entry == NULL) {
+      // Make a NOP in order to ensure linking works properly.
+      body_fragment = NullConstant();
+      body_fragment += Drop();
+    }
+
     // The Dart language specification mandates fall-throughs in [SwitchCase]es
     // to be runtime errors.
     if (!switch_case->is_default() &&

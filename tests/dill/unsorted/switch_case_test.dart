@@ -146,6 +146,18 @@ regressionTest2() {
   return [1];
 }
 
+regressionTest3() {
+  f(x) {
+    switch (x) {
+      case 1:
+        return 2;
+      case 2:
+    }
+    throw new UnsupportedError("Unexpected constant kind.");
+  }
+  Expect.isTrue(f(1) == 2);
+}
+
 main() {
   testNormal();
   testDefault();
@@ -155,6 +167,7 @@ main() {
   testOnlyDefaultWithBreak();
   regressionTest();
   regressionTest2();
+  regressionTest3();
 
   var result = testReturn();
   Expect.isTrue(result == "good");
