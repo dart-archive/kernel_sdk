@@ -262,12 +262,25 @@ void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
   intptr_t interface_count = dil_klass->implemented_classes().length();
   const dart::Array& interfaces =
       dart::Array::Handle(Z, dart::Array::New(interface_count));
+  dart::Class& interface_class = dart::Class::Handle(Z);
   for (intptr_t i = 0; i < interface_count; i++) {
     InterfaceType* dil_interface_type = dil_klass->implemented_classes()[i];
     const AbstractType& type = T.TranslateTypeWithoutFinalization(
         dil_interface_type);
     if (type.IsMalformed()) H.ReportError("Malformed interface type.");
     interfaces.SetAt(i, type);
+
+    // NOTE: Normally the DartVM keeps a list of pending classes and iterates
+    // through them later on using `ClassFinalizer::ProcessPendingClasses()`.
+    // This involes calling `ClassFinalizer::ResolveSuperTypeAndInterfaces()`
+    // which does a lot of error validation (e.g. cycle checks) which we don't
+    // need here.  But we do need to do one thing which this resolving phase
+    // normally does for us: set the `is_implemented` boolean.
+
+    // TODO(kustermann): Maybe we can do this differently once we have
+    // "bootstrapping from dill"-support.
+    interface_class = type.type_class();
+    interface_class.set_is_implemented();
   }
   klass->set_interfaces(interfaces);
 
