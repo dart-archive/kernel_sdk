@@ -525,3 +525,7 @@ patch _genericNoSuchMethod(
 patch _malformedTypeError(String errorMessage) {
   return new _TypeError._create(null, null, null, errorMessage);
 }
+
+patch _fallThroughError() {
+  return new FallThroughError();
+}

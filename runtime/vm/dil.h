@@ -373,14 +373,25 @@ class Library : public TreeNode {
   List<Procedure>& procedures() { return procedures_; }
 
   bool IsCorelibrary() {
+    static const char* dart_library = "dart:";
+    static intptr_t dart_library_length = strlen(dart_library);
+    static const char* patch_library = "dart:_patch";
+    static intptr_t patch_library_length = strlen(patch_library);
+
     if (name_->size() < 5) return false;
-    uint8_t* buffer = import_uri_->buffer();
-    return
-        buffer[0] == 'd' &&
-        buffer[1] == 'a' &&
-        buffer[2] == 'r' &&
-        buffer[3] == 't' &&
-        buffer[4] == ':';
+
+    // Check for dart: prefix.
+    char* buffer = reinterpret_cast<char*>(import_uri_->buffer());
+    if (strncmp(buffer, dart_library, dart_library_length) != 0) {
+      return false;
+    }
+
+    // Rasta emits dart:_patch and we should treat it as a user library.
+    if (name_->size() == patch_library_length &&
+        strncmp(buffer, patch_library, patch_library_length) == 0) {
+      return false;
+    }
+    return true;
   }
 
  private:

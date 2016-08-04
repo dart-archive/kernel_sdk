@@ -650,3 +650,5 @@ external _genericNoSuchMethod(
     List existingArgumentNames);
 
 external _malformedTypeError(String errorMessage);
+
+external _fallThroughError();
