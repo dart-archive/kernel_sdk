@@ -238,16 +238,13 @@ class RastaCompilerConfiguration extends CompilerConfiguration {
       CommandBuilder commandBuilder,
       List arguments,
       Map<String, String> environmentOverrides) {
-    // TODO(kasperl): We may need to forward more arguments to the compiler.
-    // For now, we ignore everything but the input and output.
-    arguments = [arguments[2], outputFileName];
     return commandBuilder.getKernelCompilationCommand(
         'rasta',
         outputFileName,
         true,
         bootstrapDependencies(buildDir),
         computeCompilerPath(buildDir),
-        arguments,
+        []..addAll(arguments)..add(outputFileName),
         environmentOverrides);
   }
 
@@ -334,7 +331,7 @@ class PipelineCommand {
                                 name.endsWith('.dill'))
         .toList();
       assert(filtered.length == 1);
-      return [filtered[0]];
+      return filtered;
     });
   }
 
@@ -413,7 +410,7 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
     var nested = [];
 
     // Compile with rasta.
-    nested.add(new PipelineCommand.runWithGlobalArguments(
+    nested.add(new PipelineCommand.runWithDartOrDillFile(
         new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
 
     // Run zero or more transformations.
@@ -432,7 +429,7 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
     var nested = [];
 
     // Compile with rasta.
-    nested.add(new PipelineCommand.runWithGlobalArguments(
+    nested.add(new PipelineCommand.runWithDartOrDillFile(
         new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
 
     // Run zero or more transformations.
