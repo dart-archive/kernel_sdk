@@ -412,3 +412,6 @@ co19/Language/Statements/Yield_and_Yield_Each/Yield/execution_async_t04_test: Fa
 co19/Language/Statements/Yield_and_Yield_Each/Yield/execution_async_t05_test: Fail
 co19/Language/Statements/Yield_and_Yield_Each/Yield/execution_async_t06_test: Fail
 co19/Language/Statements/Yield_and_Yield_Each/Yield_Each/execution_async_t01_test: RuntimeError
+
+[ $compiler == rasta && $runtime == vm && $kernel_transformers == continuation ]
+unsorted/switch_case_test: RuntimeError  # https://github.com/dart-lang/rasta/issues/88

@@ -705,7 +705,8 @@ class StandardTestSuite extends TestSuite {
       '$directory/$name.status',
       '$directory/.status',
       '$directory/${name}_dart2js.status',
-      '$directory/${name}_analyzer2.status'
+      '$directory/${name}_analyzer2.status',
+      '$directory/${name}_kernel.status'
     ];
 
     return new StandardTestSuite(configuration, name, directory, status_paths,
