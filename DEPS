@@ -60,7 +60,7 @@ vars = {
   "fixnum_tag": "@0.10.5",
   "func_rev": "@8d4aea75c21be2179cb00dc2b94a71414653094e",
   "kernel_rev": "@086d42eeee967f1e826e969199bfd8c287c7741e",
-  "rasta_rev": "@a58172050a78751006cdcd24c0b1c4e55b77e41e",
+  "rasta_rev": "@7c51175baf597c8355caff3b2f18a3459bd19129",
   "glob_rev": "@704cf75e4f26b417505c5c611bdaacd8808467dd",
   "html_tag" : "@0.12.1+1",
   "http_multi_server_tag" : "@2.0.0",
