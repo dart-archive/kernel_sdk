@@ -278,6 +278,8 @@ class DartKCompilerConfiguration extends CompilerConfiguration {
       List arguments,
       Map<String, String> environmentOverrides) {
     var extraArguments = [
+      '--sdk',
+      '$buildDir/dart-sdk',
       '--link',
       '--out',
       outputFileName
