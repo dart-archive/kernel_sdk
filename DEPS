@@ -349,24 +349,6 @@ deps_os = {
 # without the runtime being available.
 hooks = [
   {
-    'name': 'sync_rasta_submodules',
-    'pattern': '.',
-    'action': [
-      'python',
-      Var('dart_root') + '/tools/git_submodules_sync.py',
-      Var('dart_root') + '/third_party/rasta',
-    ],
-  },
-  {
-    'name': 'run_pub_get',
-    'pattern': '.',
-    'action': [
-      'python',
-      Var('dart_root') + '/tools/run_pub_get.py',
-      Var('dart_root') + '/third_party/kernel',
-    ],
-  },
-  {
     'name': 'd8_testing_binaries',
     'pattern': '.',
     'action': [
@@ -503,5 +485,23 @@ hooks = [
   {
     "pattern": ".",
     "action": ["python", Var("dart_root") + "/tools/gyp_dart.py"],
+  },
+  {
+    'name': 'sync_rasta_submodules',
+    'pattern': '.',
+    'action': [
+      'python',
+      Var('dart_root') + '/tools/git_submodules_sync.py',
+      Var('dart_root') + '/third_party/rasta',
+    ],
+  },
+  {
+    'name': 'run_pub_get',
+    'pattern': '.',
+    'action': [
+      'python',
+      Var('dart_root') + '/tools/run_pub_get.py',
+      Var('dart_root') + '/third_party/kernel',
+    ],
   },
 ]
