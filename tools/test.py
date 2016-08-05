@@ -10,6 +10,9 @@ import sys
 
 import utils
 
+DART_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+BUILD_OS = utils.GuessOS()
+DART_BIN = os.path.join(DART_DIR, 'tools', 'sdks', BUILD_OS, 'dart-sdk', 'bin')
 
 def Main():
   args = sys.argv[1:]
@@ -26,7 +29,13 @@ def Main():
       '../third_party/android_tools/sdk/platform-tools'))
   if os.path.isdir(android_platform_tools):
     os.environ['PATH'] = '%s%s%s' % (
-            os.environ['PATH'], os.pathsep, android_platform_tools)
+        os.environ['PATH'], os.pathsep, android_platform_tools)
+
+  # We give the pinpointed version of the dart-sdk priority, so everybody
+  # (inlcuding the buildbot) is using the same dart binary.
+  # TODO(kustermann): For supporting windows we need to rewrite our
+  # shebang-using dart scripts to using shell/bat scripts.
+  os.environ['PATH'] = '%s%s%s' % (DART_BIN, os.pathsep, os.environ['PATH'])
 
   exit_code = subprocess.call(command)
   utils.DiagnoseExitCode(exit_code, command)
