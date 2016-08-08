@@ -102,14 +102,16 @@ abstract class CompilerConfiguration {
       case 'dartk':
         return ComposedCompilerConfiguration.createDartKConfiguration(
             isHostChecked: isHostChecked,
-            kernel_transformers: configuration['kernel_transformers']);
+            kernel_transformers: configuration['kernel_transformers'],
+            useSdk: useSdk);
       case 'dartkp':
         return ComposedCompilerConfiguration.createDartKPConfiguration(
             isHostChecked: isHostChecked,
             arch: configuration['arch'],
             useBlobs: useBlobs,
             isAndroid: configuration['system'] == 'android',
-            kernel_transformers: configuration['kernel_transformers']);
+            kernel_transformers: configuration['kernel_transformers'],
+            useSdk: useSdk);
       case 'none':
         return new NoneCompilerConfiguration(
             isDebug: isDebug,
@@ -263,8 +265,8 @@ class RastaCompilerConfiguration extends CompilerConfiguration {
 
 /// The "dartk" compiler.
 class DartKCompilerConfiguration extends CompilerConfiguration {
-  DartKCompilerConfiguration({bool isHostChecked})
-      : super._subclass(isHostChecked: isHostChecked);
+  DartKCompilerConfiguration({bool isHostChecked, bool useSdk})
+      : super._subclass(isHostChecked: isHostChecked, useSdk: useSdk);
 
   @override
   String computeCompilerPath(String buildDir) {
@@ -277,9 +279,12 @@ class DartKCompilerConfiguration extends CompilerConfiguration {
       CommandBuilder commandBuilder,
       List arguments,
       Map<String, String> environmentOverrides) {
+    String sdkDir = useSdk
+        ? '$buildDir/dart-sdk'
+        : 'sdk';
     var extraArguments = [
       '--sdk',
-      '$buildDir/dart-sdk',
+      sdkDir,
       '--link',
       '--out',
       outputFileName
@@ -442,12 +447,13 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
 
   static ComposedCompilerConfiguration createDartKPConfiguration(
       {bool isHostChecked, String arch, bool useBlobs, bool isAndroid,
-       String kernel_transformers}) {
+       String kernel_transformers, bool useSdk}) {
     var nested = [];
 
     // Compile with dartk.
     nested.add(new PipelineCommand.runWithGlobalArguments(
-        new DartKCompilerConfiguration(isHostChecked: isHostChecked)));
+        new DartKCompilerConfiguration(isHostChecked: isHostChecked,
+            useSdk: useSdk)));
 
     // Run zero or more transformations.
     addKernelTransformations(nested, kernel_transformers);
@@ -461,12 +467,13 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
   }
 
   static ComposedCompilerConfiguration createDartKConfiguration(
-      {bool isHostChecked, String kernel_transformers}) {
+      {bool isHostChecked, bool useSdk, String kernel_transformers}) {
     var nested = [];
 
     // Compile with dartk.
     nested.add(new PipelineCommand.runWithGlobalArguments(
-        new DartKCompilerConfiguration(isHostChecked: isHostChecked)));
+        new DartKCompilerConfiguration(isHostChecked: isHostChecked,
+            useSdk: useSdk)));
 
     // Run zero or more transformations.
     addKernelTransformations(nested, kernel_transformers);
