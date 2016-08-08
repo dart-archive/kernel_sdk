@@ -2623,21 +2623,17 @@ class CommandExecutorImpl implements CommandExecutor {
   Future<CommandOutput> _runCommand(Command command, int timeout) {
     var batchMode = !globalConfiguration['noBatch'];
     var dart2jsBatchMode = globalConfiguration['dart2js_batch'];
-    var isRasta = globalConfiguration['compiler'] == 'rasta';
-    var isDartK = globalConfiguration['compiler'] == 'dartk';
 
     if (command is BrowserTestCommand) {
       return _startBrowserControllerTest(command, timeout);
     } else if (command is KernelTransformationCommand) {
       return new RunningProcess(command, timeout).run();
-    } else if (command is CompilationCommand && isRasta) {
-      // For now, we always run the Rasta compiler in batch mode.
-      return _getBatchRunner("rastak")
-          .runCommand("rastak", command, timeout, command.arguments);
-    } else if (command is CompilationCommand && isDartK) {
-      // For now, we always run the DartK compiler in batch mode.
-      return _getBatchRunner("dartk")
-          .runCommand("dartk", command, timeout, command.arguments);
+    } else if (command is KernelCompilationCommand) {
+      // For now, we always run rastak/dartk in batch mode.
+      var name = command.displayName;
+      assert(name == 'rasta' || name == 'dartk');
+      return _getBatchRunner(name)
+          .runCommand(name, command, timeout, command.arguments);
     } else if (command is CompilationCommand && dart2jsBatchMode) {
       return _getBatchRunner("dart2js")
           .runCommand("dart2js", command, timeout, command.arguments);
