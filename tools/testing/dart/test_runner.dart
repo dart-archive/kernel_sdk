@@ -236,6 +236,8 @@ class KernelCompilationCommand extends CompilationCommand {
 }
 
 class KernelTransformationCommand extends CompilationCommand {
+  final bool useBatchMode;
+
   KernelTransformationCommand._(
       String displayName,
       String outputFile,
@@ -243,7 +245,8 @@ class KernelTransformationCommand extends CompilationCommand {
       List<Uri> bootstrapDependencies,
       String executable,
       List<String> arguments,
-      Map<String, String> environmentOverrides)
+      Map<String, String> environmentOverrides,
+      this.useBatchMode)
       : super._(displayName, outputFile, neverSkipCompilation,
                 bootstrapDependencies, executable, arguments,
                 environmentOverrides);
@@ -703,7 +706,8 @@ class CommandBuilder {
       String executable,
       List<String> arguments,
       String outputFile,
-      Map<String, String> environment) {
+      Map<String, String> environment,
+      bool useBatchMode) {
     var command = new KernelTransformationCommand._(
         "kernel_transformation_$transformation",
         outputFile,
@@ -711,7 +715,8 @@ class CommandBuilder {
         const [],
         executable,
         arguments,
-        environment);
+        environment,
+        useBatchMode);
     return _getUniqueCommand(command);
   }
 
@@ -2627,7 +2632,14 @@ class CommandExecutorImpl implements CommandExecutor {
     if (command is BrowserTestCommand) {
       return _startBrowserControllerTest(command, timeout);
     } else if (command is KernelTransformationCommand) {
-      return new RunningProcess(command, timeout).run();
+      if (command.useBatchMode) {
+        // For now, we always run transform.dart in batch mode (if we can).
+        var name = command.displayName;
+        return _getBatchRunner(name)
+            .runCommand(name, command, timeout, command.arguments);
+      } else {
+        return new RunningProcess(command, timeout).run();
+      }
     } else if (command is KernelCompilationCommand) {
       // For now, we always run rastak/dartk in batch mode.
       var name = command.displayName;

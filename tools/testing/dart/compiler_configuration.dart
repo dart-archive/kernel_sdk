@@ -542,17 +542,19 @@ class KernelTransformation extends CompilerConfiguration {
 
     // Use the user-supplied transformer or fall back to `transformer.dart`.
     List<String> transformerArguments;
+    bool useBatchMode = false;
     if (executable == null) {
       executable = 'third_party/kernel/bin/transform.dart';
       transformerArguments =
           ['-f', 'bin', '-t', transformation, '-o', outputFile, inputFile];
+      useBatchMode = true;
     } else {
       transformerArguments = [inputFile, outputFile];
     }
 
     var command = commandBuilder.getKernelTransformationCommand(
         transformationName, executable, transformerArguments, outputFile,
-        environmentOverrides);
+        environmentOverrides, useBatchMode);
 
     return new CommandArtifact(
         <Command>[ command ], outputFile, 'application/dart');
