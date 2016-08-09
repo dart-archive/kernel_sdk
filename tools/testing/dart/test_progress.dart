@@ -487,7 +487,7 @@ class LeftOverTempDirPrinter extends EventListener {
     }
   }
 
-  static Stream<Directory> getLeftOverTemporaryDirectories() {
+  static Stream<FileSystemEntity> getLeftOverTemporaryDirectories() {
     var regExp = _getTemporaryDirectoryRegexp();
     return Directory.systemTemp.list().where((FileSystemEntity fse) {
       if (fse is Directory) {
