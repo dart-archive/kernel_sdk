@@ -23,6 +23,10 @@
 
 namespace dart {
 
+DEFINE_FLAG(bool, dump_instructions_sizes, false,
+            "Dump per-symbol information about the size of the "
+            "generated code written into the instructions snapshot");
+
 static RawObject* AllocateUninitialized(PageSpace* old_space, intptr_t size) {
   ASSERT(Utils::IsAligned(size, kObjectAlignment));
   uword address = old_space->TryAllocateDataBumpLocked(size,
@@ -4945,12 +4949,21 @@ void FullSnapshotWriter::WriteFullSnapshot() {
 
     OS::Print("VMIsolate(CodeSize): %" Pd "\n", VmIsolateSnapshotSize());
     OS::Print("Isolate(CodeSize): %" Pd "\n", IsolateSnapshotSize());
-    OS::Print("Instructions(CodeSize): %" Pd "\n",
-              instructions_writer_->binary_size());
+    OS::Print("Instructions(Count): %" Pd "\n",
+              instructions_writer_->instructions_count());
+    OS::Print("InstructionsRX(CodeSize): %" Pd "\n",
+              instructions_writer_->read_execute_binary_size());
+    OS::Print("InstructionsRO(CodeSize): %" Pd "\n",
+              instructions_writer_->read_only_binary_size());
+
     intptr_t total = VmIsolateSnapshotSize() +
                      IsolateSnapshotSize() +
                      instructions_writer_->binary_size();
     OS::Print("Total(CodeSize): %" Pd "\n", total);
+
+    if (FLAG_dump_instructions_sizes) {
+      instructions_writer_->DumpInstructionsSizes();
+    }
   }
 }
 

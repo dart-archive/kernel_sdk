@@ -10,7 +10,7 @@
 
 namespace dart {
 
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
 
 class MIPSDecoder : public ValueObject {
  public:

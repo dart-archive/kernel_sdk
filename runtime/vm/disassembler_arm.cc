@@ -12,7 +12,7 @@
 
 namespace dart {
 
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
 
 class ARMDecoder : public ValueObject {
  public:

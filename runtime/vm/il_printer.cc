@@ -11,7 +11,7 @@
 
 namespace dart {
 
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
 
 DEFINE_FLAG(bool, display_sorted_ic_data, false,
     "Calls display a unary, sorted-by count form of ICData");
@@ -40,11 +40,34 @@ void BufferFormatter::VPrint(const char* format, va_list args) {
 }
 
 
+static bool EqualsIgnoringPrivateKey(const char* mangled_name,
+                                     const char* name) {
+  const char* p = mangled_name;
+  const char* q = name;
+  char ch;
+  while ((ch = *p++) != '\0') {
+    if (ch == Library::kPrivateKeySeparator) {
+      while (*p != '\0' && *p != '.') {
+        p++;
+      }
+      continue;
+    }
+
+    if (ch != *q++) {
+      return false;
+    }
+  }
+
+  return *q == '\0';
+}
+
+
 // Checks whether function's name matches the given filter, which is
 // a comma-separated list of strings.
 bool FlowGraphPrinter::PassesFilter(const char* filter,
                                     const Function& function) {
-  if (filter == NULL) {
+  if (filter == NULL ||
+      EqualsIgnoringPrivateKey(function.ToQualifiedCString(), filter)) {
     return true;
   }
 

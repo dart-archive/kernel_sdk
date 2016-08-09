@@ -15,7 +15,7 @@
 
 namespace dart {
 
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
 
 // Tables used for decoding of x86 instructions.
 enum OperandOrder {

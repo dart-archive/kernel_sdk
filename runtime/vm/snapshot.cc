@@ -1123,6 +1123,34 @@ int32_t InstructionsWriter::GetObjectOffsetFor(RawObject* raw_object) {
 }
 
 
+void InstructionsWriter::DumpInstructionsSizes() const {
+  String& str = String::Handle();
+  Object& owner = Object::Handle();
+
+  for (intptr_t i = 0; i < instructions_.length(); i++) {
+    const Instructions &insns = *instructions_[i].insns_;
+    const Code &code = *instructions_[i].code_;
+
+    owner = code.owner();
+    const char* name = NULL;
+    if (owner.IsNull()) {
+      name = StubCode::NameOfStub(insns.EntryPoint());
+    } else if (owner.IsClass()) {
+      str = Class::Cast(owner).Name();
+      name = str.ToCString();
+    } else if (owner.IsFunction()) {
+      name = Function::Cast(owner).ToQualifiedCString();
+    } else {
+      UNREACHABLE();
+    }
+
+    printf("%s: %" Pd "\n",
+           name,
+           Utils::RoundUp(insns.size(), OS::PreferredCodeAlignment()));
+  }
+}
+
+
 static void EnsureIdentifier(char* label) {
   for (char c = *label; c != '\0'; c = *++label) {
     if (((c >= 'a') && (c <= 'z')) ||
@@ -1154,6 +1182,7 @@ void AssemblyInstructionsWriter::Write() {
     data.obj_ = &Object::Handle(zone, data.raw_obj_);
   }
 
+  SetSection(AssemblyInstructionsWriter::kRXSection);
   assembly_stream_.Print(".text\n");
   assembly_stream_.Print(".globl _kInstructionsSnapshot\n");
   // Start snapshot at page boundary.
@@ -1243,6 +1272,8 @@ void AssemblyInstructionsWriter::Write() {
       }
     }
   }
+
+  SetSection(AssemblyInstructionsWriter::kROSection);
 #if defined(TARGET_OS_LINUX)
   assembly_stream_.Print(".section .rodata\n");
 #elif defined(TARGET_OS_MACOS)

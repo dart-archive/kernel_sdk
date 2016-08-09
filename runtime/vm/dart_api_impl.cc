@@ -6349,8 +6349,8 @@ DART_EXPORT Dart_Handle Dart_CreatePrecompiledSnapshotBlob(
   writer.WriteFullSnapshot();
   *vm_isolate_snapshot_size = writer.VmIsolateSnapshotSize();
   *isolate_snapshot_size = writer.IsolateSnapshotSize();
-  *instructions_blob_size = instructions_writer.InstructionsBlobSize();
-  *rodata_blob_size = instructions_writer.RodataBlobSize();
+  *instructions_blob_size = instructions_writer.read_execute_binary_size();
+  *rodata_blob_size = instructions_writer.read_only_binary_size();
 
   return Api::Success();
 #endif
@@ -6454,8 +6454,8 @@ DART_EXPORT Dart_Handle Dart_CreateAppJITSnapshot(
   writer.WriteFullSnapshot();
   *vm_isolate_snapshot_size = writer.VmIsolateSnapshotSize();
   *isolate_snapshot_size = writer.IsolateSnapshotSize();
-  *instructions_blob_size = instructions_writer.InstructionsBlobSize();
-  *rodata_blob_size = instructions_writer.RodataBlobSize();
+  *instructions_blob_size = instructions_writer.read_execute_binary_size();
+  *rodata_blob_size = instructions_writer.read_only_binary_size();
 
   return Api::Success();
 #endif

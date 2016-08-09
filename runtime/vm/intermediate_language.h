@@ -600,14 +600,14 @@ FOR_EACH_ABSTRACT_INSTRUCTION(FORWARD_DECLARATION)
   DECLARE_INSTRUCTION_NO_BACKEND(type)                                         \
   DECLARE_INSTRUCTION_BACKEND()                                                \
 
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
 #define PRINT_TO_SUPPORT                                                       \
     virtual void PrintTo(BufferFormatter* f) const;
 #else
 #define PRINT_TO_SUPPORT
 #endif  // !PRODUCT
 
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
 #define PRINT_OPERANDS_TO_SUPPORT                                              \
     virtual void PrintOperandsTo(BufferFormatter* f) const;
 #else
@@ -729,7 +729,7 @@ class Instruction : public ZoneAllocated {
 
   // Printing support.
   const char* ToCString() const;
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
   virtual void PrintTo(BufferFormatter* f) const;
   virtual void PrintOperandsTo(BufferFormatter* f) const;
 #endif

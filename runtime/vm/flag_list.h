@@ -59,9 +59,9 @@ C(deoptimize_every, 0, 0, int, 0,                                              \
   "Deoptimize on every N stack overflow checks")                               \
 R(disable_alloc_stubs_after_gc, false, bool, false,                            \
   "Stress testing flag.")                                                      \
-R(disassemble, false, bool, false,                                             \
+P(disassemble, bool, false,                                             \
   "Disassemble dart code.")                                                    \
-R(disassemble_optimized, false, bool, false,                                   \
+P(disassemble_optimized, bool, false,                                   \
   "Disassemble optimized code.")                                               \
 R(dump_megamorphic_stats, false, bool, false,                                  \
   "Dump megamorphic cache statistics")                                         \
@@ -148,9 +148,9 @@ R(support_compiler_stats, false, bool, true,                                   \
   "Support compiler stats.")                                                   \
 R(support_debugger, false, bool, true,                                         \
   "Support the debugger.")                                                     \
-R(support_disassembler, false, bool, true,                                     \
+R(support_disassembler, true, bool, true,                                     \
   "Support the disassembler.")                                                 \
-R(support_il_printer, false, bool, true,                                       \
+R(support_il_printer, true, bool, true,                                       \
   "Support the IL printer.")                                                   \
 R(support_reload, false, bool, true,                                           \
   "Support isolate reload.")                                                   \

@@ -15,7 +15,7 @@
 
 namespace dart {
 
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
 
 enum OperandType {
   UNSET_OP_ORDER = 0,
