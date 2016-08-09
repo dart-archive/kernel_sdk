@@ -2561,17 +2561,11 @@ class Function : public Object {
   }
 
   intptr_t dil_function() const {
-#ifndef PRODUCT
     return raw_ptr()->dil_function_;
-#else
-    return 0;
-#endif
   }
 
   void set_dil_function(intptr_t dil_function) const {
-#ifndef PRODUCT
     StoreNonPointer(&raw_ptr()->dil_function_, dil_function);
-#endif
   }
 
   bool IsOptimizable() const;
@@ -3083,17 +3077,11 @@ class Field : public Object {
   }
 
   intptr_t dil_field() const {
-#ifndef PRODUCT
     return raw_ptr()->dil_field_;
-#else
-    return 0;
-#endif
   }
 
   void set_dil_field(intptr_t dil_field) const {
-#ifndef PRODUCT
     StoreNonPointer(&raw_ptr()->dil_field_, dil_field);
-#endif
   }
 
 
