@@ -228,6 +228,7 @@ enum Tag {
   kSimpleInterfaceType = 96,
   kSimpleFunctionType = 97,
 
+  kNullClassReference = 99,
   kNormalClassReference = 100,
   kMixinClassReference = 101,
 
@@ -1082,11 +1083,18 @@ void Reference::WriteMemberTo(Writer* writer, Member* member) {
   }
 }
 
-Class* Reference::ReadClassFrom(Reader* reader) {
+Class* Reference::ReadClassFrom(Reader* reader, bool allow_null) {
   TRACE_READ_OFFSET();
   Program* program = reader->helper()->program();
 
   Tag klass_member_tag = reader->ReadTag();
+  if (klass_member_tag == kNullClassReference) {
+    if (allow_null) {
+      return NULL;
+    } else {
+      FATAL("Expected a valid class reference but got `null`.");
+    }
+  }
   int library_idx = reader->ReadUInt();
   int class_idx = reader->ReadUInt();
 
@@ -1101,8 +1109,16 @@ Class* Reference::ReadClassFrom(Reader* reader) {
   return klass;
 }
 
-void Reference::WriteClassTo(Writer* writer, Class* klass) {
+void Reference::WriteClassTo(Writer* writer, Class* klass, bool allow_null) {
   TRACE_WRITE_OFFSET();
+  if (klass == NULL) {
+    if (allow_null) {
+      writer->WriteTag(kNullClassReference);
+      return;
+    } else {
+      FATAL("Expected a valid class reference but got `null`.");
+    }
+  }
   if (klass->IsNormalClass()) {
     writer->WriteTag(kNormalClassReference);
   } else {
@@ -1133,6 +1149,7 @@ Field* Field::ReadFrom(Reader* reader) {
   flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
   type_ = DartType::ReadFrom(reader);
+  inferred_value_ = reader->ReadOptional<InferredValue>();
   initializer_ = reader->ReadOptional<Expression>();
   return this;
 }
@@ -1143,6 +1160,7 @@ void Field::WriteTo(Writer* writer) {
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
   type_->WriteTo(writer);
+  writer->WriteOptional<InferredValue>(inferred_value_);
   writer->WriteOptional<Expression>(initializer_);
 }
 
@@ -2350,6 +2368,7 @@ VariableDeclaration* VariableDeclaration::ReadFromImpl(Reader* reader) {
   decl->flags_ = reader->ReadFlags();
   decl->name_ = Reference::ReadStringFrom(reader);
   decl->type_ = DartType::ReadFrom(reader);
+  decl->inferred_value_ = reader->ReadOptional<InferredValue>();
   decl->initializer_ = reader->ReadOptional<Expression>();
   reader->helper()->variables().Push(decl);
   return decl;
@@ -2366,6 +2385,7 @@ void VariableDeclaration::WriteToImpl(Writer* writer) {
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
   type_->WriteTo(writer);
+  writer->WriteOptional<InferredValue>(inferred_value_);
   writer->WriteOptional<Expression>(initializer_);
   writer->helper()->variables().Push(this);
 }
@@ -2406,6 +2426,20 @@ void Name::WriteTo(Writer* writer) {
   if (is_private) {
     writer->WriteUInt(writer->helper()->libraries().Lookup(library_));
   }
+}
+
+InferredValue* InferredValue::ReadFrom(Reader* reader) {
+  InferredValue* type = new InferredValue();
+  type->klass_ = Reference::ReadClassFrom(reader, true);
+  type->kind_ = static_cast<BaseClassKind>(reader->ReadByte());
+  type->value_bits_ = reader->ReadByte();
+  return type;
+}
+
+void InferredValue::WriteTo(Writer* writer) {
+  Reference::WriteClassTo(writer, klass_, true);
+  writer->WriteByte(static_cast<uint8_t>(kind_));
+  writer->WriteByte(value_bits_);
 }
 
 DartType* DartType::ReadFrom(Reader* reader) {
@@ -2598,6 +2632,7 @@ FunctionNode* FunctionNode::ReadFrom(Reader* reader) {
   function->positional_parameters().ReadFromStatic<VariableDeclarationImpl>(reader);
   function->named_parameters().ReadFromStatic<VariableDeclarationImpl>(reader);
   function->return_type_ = DartType::ReadFrom(reader);
+  function->inferred_return_value_ = reader->ReadOptional<InferredValue>();
 
   VariableScope<ReaderHelper> vars(reader->helper());
   function->body_ = reader->ReadOptional<Statement>();
@@ -2614,6 +2649,7 @@ void FunctionNode::WriteTo(Writer* writer) {
   positional_parameters().WriteToStatic<VariableDeclarationImpl>(writer);
   named_parameters().WriteToStatic<VariableDeclarationImpl>(writer);
   return_type_->WriteTo(writer);
+  writer->WriteOptional<InferredValue>(inferred_return_value_);
 
   VariableScope<WriterHelper> vars(writer->helper());
   writer->WriteOptional<Statement>(body_);

@@ -682,6 +682,12 @@ void Name::AcceptVisitor(Visitor* visitor) {
 }
 void Name::VisitChildren(Visitor* visitor) {}
 
+InferredValue::~InferredValue() {}
+void InferredValue::AcceptVisitor(Visitor* visitor) {
+  visitor->VisitInferredValue(this);
+}
+void InferredValue::VisitChildren(Visitor* visitor) {}
+
 DartType::~DartType() {}
 void DartType::AcceptVisitor(Visitor* visitor) {
   AcceptDartTypeVisitor(visitor);

@@ -12,6 +12,7 @@
 
 #define DIL_NODES_DO(M) \
   M(Name) \
+  M(InferredValue) \
   M(DartType) \
   M(InvalidType) \
   M(DynamicType) \
@@ -566,6 +567,7 @@ class Field : public Member {
   bool IsStatic() { return (flags_ & kFlagStatic) == kFlagStatic; }
 
   DartType* type() { return type_; }
+  InferredValue* inferred_value() { return inferred_value_; }
   Expression* initializer() { return initializer_; }
 
  private:
@@ -577,6 +579,7 @@ class Field : public Member {
 
   word flags_;
   Child<DartType> type_;
+  Child<InferredValue> inferred_value_;
   Child<Expression> initializer_;
 };
 
@@ -801,6 +804,7 @@ class FunctionNode : public TreeNode {
   List<VariableDeclaration>& positional_parameters() { return positional_parameters_; }
   List<VariableDeclaration>& named_parameters() { return named_parameters_; }
   DartType* return_type() { return return_type_; }
+  InferredValue* inferred_return_value() { return inferred_return_value_; }
   Statement* body() { return body_; }
 
  private:
@@ -813,6 +817,7 @@ class FunctionNode : public TreeNode {
   List<VariableDeclaration> positional_parameters_;
   List<VariableDeclaration> named_parameters_;
   Child<DartType> return_type_;
+  Child<InferredValue> inferred_return_value_;
   Child<Statement> body_;
 };
 
@@ -2190,6 +2195,7 @@ class VariableDeclaration : public Statement {
 
   String* name() { return name_; }
   DartType* type() { return type_; }
+  InferredValue* inferred_value() { return inferred_value_; }
   Expression* initializer() { return initializer_; }
 
  private:
@@ -2202,6 +2208,7 @@ class VariableDeclaration : public Statement {
   word flags_;
   Ref<String> name_;
   Child<DartType> type_;
+  Child<InferredValue> inferred_value_;
   Child<Expression> initializer_;
 };
 
@@ -2251,6 +2258,56 @@ class Name : public Node {
 };
 
 // TODO: _PrivateName/_PublicName : Name
+
+class InferredValue : public Node {
+ public:
+  static const uint8_t kNull = 1 << 0;
+  static const uint8_t kInteger = 1 << 1;
+  static const uint8_t kDouble = 1 << 2;
+  static const uint8_t kString = 1 << 3;
+  static const uint8_t kOther = 1 << 4;
+
+  enum BaseClassKind {
+    kNone,
+    kExact,
+    kSubclass,
+    kSubtype,
+  };
+
+  static InferredValue* ReadFrom(Reader* reader);
+  void WriteTo(Writer* writer);
+
+  virtual ~InferredValue();
+
+  DEFINE_CASTING_OPERATIONS(InferredValue);
+
+  virtual void AcceptVisitor(Visitor* visitor);
+  virtual void VisitChildren(Visitor* visitor);
+
+  bool IsInterfaceType() { return kind_ == kSubtype; }
+  bool IsExactClass() { return kind_ == kExact; }
+  bool IsSubclass() { return kind_ == kSubclass; }
+
+  bool CanBeNull() { return (value_bits_ & kNull) != 0; }
+  bool CanBeInteger() { return (value_bits_ & kInteger) != 0; }
+  bool CanBeDouble() { return (value_bits_ & kDouble) != 0; }
+  bool CanBeString() { return (value_bits_ & kString) != 0; }
+
+  bool IsAlwaysNull() { return value_bits_ == kNull; }
+  bool IsAlwaysInteger() { return value_bits_ == kInteger; }
+  bool IsAlwaysDouble() { return value_bits_ == kDouble; }
+  bool IsAlwaysString() { return value_bits_ == kString; }
+
+  Class* klass() { return klass_; }
+  BaseClassKind kind() { return kind_; }
+  uint8_t value_bits() { return value_bits_; }
+
+ private:
+  Ref<Class> klass_;
+  BaseClassKind kind_;
+  uint8_t value_bits_;
+};
+
 
 class DartType : public Node {
  public:
@@ -2437,8 +2494,8 @@ class Reference {
   static Member* ReadMemberFrom(Reader* reader);
   static void WriteMemberTo(Writer* writer, Member* member);
 
-  static Class* ReadClassFrom(Reader* reader);
-  static void WriteClassTo(Writer* writer, Class* klass);
+  static Class* ReadClassFrom(Reader* reader, bool allow_null = false);
+  static void WriteClassTo(Writer* writer, Class* klass, bool allow_null = false);
 
   static String* ReadStringFrom(Reader* reader);
   static void WriteStringTo(Writer* writer, String* string);
@@ -2612,6 +2669,7 @@ class Visitor : public TreeVisitor,
   virtual ~Visitor() {}
 
   virtual void VisitDefaultNode(Node* node) = 0;
+  virtual void VisitInferredValue(InferredValue* node) { VisitDefaultNode(node); }
   virtual void VisitDefaultTreeNode(TreeNode* node) { VisitDefaultNode(node); }
   virtual void VisitDefaultDartType(DartType* node) { VisitDefaultNode(node); }
   virtual void VisitName(Name* node) { VisitDefaultNode(node); }
