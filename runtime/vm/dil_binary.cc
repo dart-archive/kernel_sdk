@@ -827,7 +827,7 @@ class StringImpl {
   }
 
   static void WriteTo(Writer* writer, String* string) {
-    TRACE_READ_OFFSET();
+    TRACE_WRITE_OFFSET();
     string->WriteToImpl(writer);
   }
 };
@@ -840,7 +840,7 @@ class VariableDeclarationImpl {
   }
 
   static void WriteTo(Writer* writer, VariableDeclaration* d) {
-    TRACE_READ_OFFSET();
+    TRACE_WRITE_OFFSET();
     d->WriteToImpl(writer);
   }
 };
@@ -930,6 +930,7 @@ Class* Class::ReadFrom(Reader* reader) {
 
   is_abstract_ = reader->ReadBool();
   name_ = Reference::ReadStringFrom(reader);
+  annotations_.ReadFromStatic<Expression>(reader);
 
   return this;
 }
@@ -938,6 +939,7 @@ void Class::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteBool(is_abstract_);
   name_->WriteTo(writer);
+  annotations_.WriteTo(writer);
 }
 
 NormalClass* NormalClass::ReadFrom(Reader* reader) {
@@ -975,8 +977,7 @@ MixinClass* MixinClass::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   TypeParameterScope<ReaderHelper> scope(reader->helper());
 
-  is_abstract_ = reader->ReadBool();
-  name_ = Reference::ReadStringFrom(reader);
+  Class::ReadFrom(reader);
   type_parameters_.ReadFrom(reader);
   first_ = InterfaceType::Cast(DartType::ReadFrom(reader));
   second_ = InterfaceType::Cast(DartType::ReadFrom(reader));
@@ -990,8 +991,7 @@ void MixinClass::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   TypeParameterScope<WriterHelper> scope(writer->helper());
 
-  writer->WriteBool(is_abstract_);
-  name_->WriteTo(writer);
+  Class::WriteTo(writer);
   type_parameters_.WriteTo(writer);
   first_->WriteTo(writer);
   second_->WriteTo(writer);
@@ -1148,6 +1148,7 @@ Field* Field::ReadFrom(Reader* reader) {
   // TODO: Do we need a variable scope here?
   flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
+  annotations_.ReadFromStatic<Expression>(reader);
   type_ = DartType::ReadFrom(reader);
   inferred_value_ = reader->ReadOptional<InferredValue>();
   initializer_ = reader->ReadOptional<Expression>();
@@ -1159,6 +1160,7 @@ void Field::WriteTo(Writer* writer) {
   writer->WriteTag(kField);
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
+  annotations_.WriteTo(writer);
   type_->WriteTo(writer);
   writer->WriteOptional<InferredValue>(inferred_value_);
   writer->WriteOptional<Expression>(initializer_);
@@ -1172,6 +1174,7 @@ Constructor* Constructor::ReadFrom(Reader* reader) {
   VariableScope<ReaderHelper> parameters(reader->helper());
   flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
+  annotations_.ReadFromStatic<Expression>(reader);
   function_ = FunctionNode::ReadFrom(reader);
   initializers_.ReadFromStatic<Initializer>(reader);
   return this;
@@ -1184,6 +1187,7 @@ void Constructor::WriteTo(Writer* writer) {
   VariableScope<WriterHelper> parameters(writer->helper());
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
+  annotations_.WriteTo(writer);
   function_->WriteTo(writer);
   initializers_.WriteTo(writer);
 }
@@ -1197,6 +1201,7 @@ Procedure* Procedure::ReadFrom(Reader* reader) {
   kind_ = static_cast<ProcedureKind>(reader->ReadByte());
   flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
+  annotations_.ReadFromStatic<Expression>(reader);
   function_ = reader->ReadOptional<FunctionNode>();
   return this;
 }
@@ -1209,6 +1214,7 @@ void Procedure::WriteTo(Writer* writer) {
   writer->WriteByte(kind_);
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
+  annotations_.WriteTo(writer);
   writer->WriteOptional<FunctionNode>(function_);
 }
 
@@ -1461,7 +1467,7 @@ void VariableSet::WriteTo(Writer* writer) {
     writer->WriteTag(kVariableSet);
     writer->WriteUInt(index);
   }
-  expression_->WriteTo(writer); 
+  expression_->WriteTo(writer);
 }
 
 PropertyGet* PropertyGet::ReadFrom(Reader* reader) {

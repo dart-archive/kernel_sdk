@@ -425,6 +425,7 @@ class Class : public TreeNode {
   Library* parent() { return parent_; }
   String* name() { return name_; }
   bool is_abstract() { return is_abstract_; }
+  List<Expression>& annotations() { return annotations_; }
 
   virtual List<TypeParameter>& type_parameters() = 0;
   virtual List<InterfaceType>& implemented_classes() = 0;
@@ -444,6 +445,7 @@ class Class : public TreeNode {
   Ref<Library> parent_;
   Ref<String> name_;
   bool is_abstract_;
+  List<Expression> annotations_;
 };
 
 class NormalClass : public Class {
@@ -534,6 +536,7 @@ class Member : public TreeNode {
 
   TreeNode* parent() { return parent_; }
   Name* name() { return name_; }
+  List<Expression>& annotations() { return annotations_; }
 
  protected:
   template<typename T>
@@ -541,6 +544,7 @@ class Member : public TreeNode {
 
   Ref<TreeNode> parent_;
   Child<Name> name_;
+  List<Expression> annotations_;
 };
 
 class Field : public Member {
