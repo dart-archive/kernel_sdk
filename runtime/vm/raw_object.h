@@ -852,7 +852,9 @@ class RawFunction : public RawObject {
   uint32_t kind_tag_;  // See Function::KindTagBits.
   uint16_t optimized_instruction_count_;
   uint16_t optimized_call_site_count_;
+#ifndef PRODUCT
   intptr_t dil_function_;
+#endif
 };
 
 
@@ -944,6 +946,9 @@ class RawField : public RawObject {
   int8_t guarded_list_length_in_object_offset_;
 
   uint8_t kind_bits_;  // static, final, const, has initializer....
+#ifndef PRODUCT
+  intptr_t dil_field_;
+#endif
 };
 
 

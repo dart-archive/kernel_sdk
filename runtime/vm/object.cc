@@ -7446,6 +7446,7 @@ void Field::InitializeNew(const Field& result,
   result.set_token_pos(token_pos);
   result.set_has_initializer(false);
   result.set_is_unboxing_candidate(true);
+  result.set_dil_field(0);
   Isolate* isolate = Isolate::Current();
 
   // Use field guards if they are enabled and the isolate has never reloaded.
@@ -7535,6 +7536,7 @@ RawField* Field::Clone(const Field& original) const {
   Field& clone = Field::Handle();
   clone ^= Object::Clone(*this, Heap::kOld);
   clone.SetOriginal(original);
+  clone.set_dil_field(original.dil_field());
   return clone.raw();
 }
 

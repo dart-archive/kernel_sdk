@@ -165,6 +165,7 @@ void DilReader::ReadLibrary(Library* dil_library) {
             dil_field->IsStatic(),
             toplevel_class,
             TokenPosition::kNoSource));
+      field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
       GenerateStaticFieldInitializer(field, dil_field);
       GenerateFieldAccessors(toplevel_class, field, dil_field);
       toplevel_class.AddField(field);
@@ -309,6 +310,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
                    klass,
                    type,
                    pos));
+    field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
 
     if (dil_field->IsStatic()) {
       GenerateStaticFieldInitializer(field, dil_field);
