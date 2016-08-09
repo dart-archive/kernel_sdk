@@ -6,6 +6,8 @@
 
 #include "vm/cha.h"
 #include "vm/bit_vector.h"
+#include "vm/dil.h"
+#include "vm/dil_to_il.h"
 #include "vm/il_printer.h"
 #include "vm/regexp_assembler.h"
 #include "vm/timeline.h"
@@ -17,6 +19,39 @@ DEFINE_FLAG(bool, trace_type_propagation, false,
 
 DECLARE_FLAG(bool, propagate_types);
 
+static CompileType TranslateInferredValue(dil::InferredValue* inferred_value) {
+  // TODO(kustermann): Avoid the cost of creating a [dil::TranslationHelper].
+  Thread* thread = Thread::Current();
+  dil::TranslationHelper H(thread, thread->zone(), thread->isolate());
+
+  const bool nullable = inferred_value->CanBeNull()
+      ? CompileType::kNullable
+      : CompileType::kNonNullable;
+  switch (inferred_value->kind()) {
+    case dil::InferredValue::kExact: {
+      const dart::Class& klass = dart::Class::Handle(H.zone(),
+          H.LookupClassByDilClass(inferred_value->klass()));
+      return CompileType::CreateNullable(nullable, klass.id());
+    }
+    case dil::InferredValue::kSubclass:
+    // TODO(kustermann): Teach the VM to take advantage of base classes.
+    case dil::InferredValue::kSubtype: {
+      const dart::Class& klass = dart::Class::Handle(H.zone(),
+          H.LookupClassByDilClass(inferred_value->klass()));
+      const dart::Type& abstract_type = dart::Type::ZoneHandle(H.zone(),
+          dart::Type::NewNonParameterizedType(klass));
+      return CompileType::FromAbstractType(abstract_type, nullable);
+    }
+    case dil::InferredValue::kNone: {
+      // TODO(kustermann): We cannot represent [InferredValue::kNone] in the
+      // [CompileType] class.
+      ASSERT(inferred_value->klass() == NULL);
+      return CompileType::None();
+    }
+  }
+  UNREACHABLE();
+  return CompileType::None();
+}
 
 void FlowGraphTypePropagator::Propagate(FlowGraph* flow_graph) {
 #ifndef PRODUCT
@@ -697,7 +732,9 @@ CompileType ParameterInstr::ComputeType() const {
   // However there are parameters that are known to match their declared type:
   // for example receiver.
   GraphEntryInstr* graph_entry = block_->AsGraphEntry();
+  bool is_catch_entry = false;
   if (graph_entry == NULL) {
+    is_catch_entry = true;
     graph_entry = block_->AsCatchBlockEntry()->graph_entry();
   }
   // Parameters at OSR entries have type dynamic.
@@ -766,6 +803,41 @@ CompileType ParameterInstr::ComputeType() const {
     }
 
     return CompileType(CompileType::kNonNullable, cid, &type);
+  }
+
+  // If we have an [InferredValue] for the parameter, use it!
+  if (!is_catch_entry && function.dil_function() != 0) {
+    dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(
+        function.dil_function());
+
+    // TODO(kustermann): Support not just [dil::Procedure]s!
+    if (node->IsProcedure()) {
+      dil::FunctionNode* dil_function = dil::Procedure::Cast(node)->function();
+
+      // We don't have [InferredValue]s for receiver / type arguments array
+      // (used in factory constructors).
+      const intptr_t offset = function.NumImplicitParameters();
+
+      const intptr_t parameter_index = index() - offset;
+      if (parameter_index >= 0) {
+        dil::List<dil::VariableDeclaration>& positional =
+            dil_function->positional_parameters();
+        dil::List<dil::VariableDeclaration>& named =
+            dil_function->named_parameters();
+
+        dil::VariableDeclaration* variable;
+        if (parameter_index < positional.length()) {
+          variable = positional[parameter_index];
+        } else {
+          variable = named[parameter_index - positional.length()];
+        }
+
+        dil::InferredValue* inferred_value = variable->inferred_value();
+        if (inferred_value != NULL) {
+          return TranslateInferredValue(inferred_value);
+        }
+      }
+    }
   }
 
   return CompileType::Dynamic();
@@ -1016,6 +1088,15 @@ CompileType LoadFieldInstr::ComputeType() const {
   // mode, since misuse of the type would remain undetected.
   if (type().IsNull()) {
     return CompileType::Dynamic();
+  }
+
+  if (field_ != NULL && field_->dil_field() != 0) {
+    dil::InferredValue* inferred_value =
+        reinterpret_cast<dil::Field*>(field_->dil_field())->inferred_value();
+
+    if (inferred_value != NULL) {
+      return TranslateInferredValue(inferred_value);
+    }
   }
 
   const AbstractType* abstract_type = NULL;
