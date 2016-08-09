@@ -511,8 +511,6 @@ class MixinClass : public Class {
   template<typename T>
   friend class List;
 
-  bool is_abstract_;
-  Ref<String> name_;
   TypeParameterList type_parameters_;
   Child<InterfaceType> first_;
   Child<InterfaceType> second_;

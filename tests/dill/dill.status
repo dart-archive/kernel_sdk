@@ -415,3 +415,6 @@ co19/Language/Statements/Yield_and_Yield_Each/Yield_Each/execution_async_t01_tes
 
 [ $compiler == rasta && $runtime == vm && $kernel_transformers == continuation ]
 unsorted/switch_case_test: RuntimeError  # https://github.com/dart-lang/rasta/issues/88
+
+[ ($compiler == dartk && $runtime == vm) || ($compiler == dartkp && $runtime == dart_precompiled) ]
+unsorted/mixin_test: Crash
