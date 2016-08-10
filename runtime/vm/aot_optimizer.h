@@ -67,6 +67,8 @@ class AotOptimizer : public FlowGraphVisitor {
   bool TryReplaceWithBinaryOp(InstanceCallInstr* call, Token::Kind op_kind);
   bool TryReplaceWithUnaryOp(InstanceCallInstr* call, Token::Kind op_kind);
 
+  bool TryReplaceWithNullEqualityOp(InstanceCallInstr* call,
+                                    Token::Kind op_kind);
   bool TryReplaceWithEqualityOp(InstanceCallInstr* call, Token::Kind op_kind);
   bool TryReplaceWithRelationalOp(InstanceCallInstr* call, Token::Kind op_kind);
 

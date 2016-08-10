@@ -2494,6 +2494,22 @@ Token::Kind FlowGraphBuilder::MethodKind(const dart::String& name) {
     return Token::kBIT_NOT;
   } else if (name.raw() == Symbols::UnaryMinus().raw()) {
     return Token::kNEGATE;
+  } else if (name.raw() == Symbols::EqualOperator().raw()) {
+    return Token::kEQ;
+  } else if (name.raw() == Symbols::Token(Token::kNE).raw()) {
+    return Token::kNE;
+  } else if (name.raw() == Symbols::LAngleBracket().raw()) {
+    return Token::kLT;
+  } else if (name.raw() == Symbols::RAngleBracket().raw()) {
+    return Token::kGT;
+  } else if (name.raw() == Symbols::LessEqualOperator().raw()) {
+    return Token::kLTE;
+  } else if (name.raw() == Symbols::GreaterEqualOperator().raw()) {
+    return Token::kGTE;
+  } else if (dart::Field::IsGetterName(name)) {
+    return Token::kGET;
+  } else if (dart::Field::IsSetterName(name)) {
+    return Token::kSET;
   }
   return Token::kILLEGAL;
 }

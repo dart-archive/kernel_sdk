@@ -860,8 +860,37 @@ bool AotOptimizer::TryStringLengthOneEquality(InstanceCallInstr* call,
 
 static bool SmiFitsInDouble() { return kSmiBits < 53; }
 
+
+bool AotOptimizer::TryReplaceWithNullEqualityOp(InstanceCallInstr* call,
+                                                Token::Kind op_kind) {
+  Definition* left = call->ArgumentAt(0);
+  Definition* right = call->ArgumentAt(1);
+
+  // Shortcut for equality with null.
+  ConstantInstr* right_const = right->AsConstant();
+  ConstantInstr* left_const = left->AsConstant();
+  if ((right_const != NULL && right_const->value().IsNull()) ||
+      (left_const != NULL && left_const->value().IsNull())) {
+    StrictCompareInstr* comp =
+        new(Z) StrictCompareInstr(call->token_pos(),
+                                  op_kind == Token::kEQ ? Token::kEQ_STRICT :
+                                                          Token::kNE_STRICT,
+                                  new(Z) Value(left),
+                                  new(Z) Value(right),
+                                  false);  // No number check.
+    ReplaceCall(call, comp);
+    return true;
+  }
+  return false;
+}
+
+
 bool AotOptimizer::TryReplaceWithEqualityOp(InstanceCallInstr* call,
                                             Token::Kind op_kind) {
+  if (TryReplaceWithNullEqualityOp(call, op_kind)) {
+    return true;
+  }
+
   const ICData& ic_data = *call->ic_data();
   ASSERT(ic_data.NumArgsTested() == 2);
 
@@ -871,11 +900,7 @@ bool AotOptimizer::TryReplaceWithEqualityOp(InstanceCallInstr* call,
 
   intptr_t cid = kIllegalCid;
   if (HasOnlyTwoOf(ic_data, kOneByteStringCid)) {
-    if (TryStringLengthOneEquality(call, op_kind)) {
-      return true;
-    } else {
-      return false;
-    }
+    return TryStringLengthOneEquality(call, op_kind);
   } else if (HasOnlyTwoOf(ic_data, kSmiCid)) {
     InsertBefore(call,
                  new(Z) CheckSmiInstr(new(Z) Value(left),
@@ -940,20 +965,6 @@ bool AotOptimizer::TryReplaceWithEqualityOp(InstanceCallInstr* call,
                     call);
       cid = kSmiCid;
     } else {
-      // Shortcut for equality with null.
-      ConstantInstr* right_const = right->AsConstant();
-      ConstantInstr* left_const = left->AsConstant();
-      if ((right_const != NULL && right_const->value().IsNull()) ||
-          (left_const != NULL && left_const->value().IsNull())) {
-        StrictCompareInstr* comp =
-            new(Z) StrictCompareInstr(call->token_pos(),
-                                      Token::kEQ_STRICT,
-                                      new(Z) Value(left),
-                                      new(Z) Value(right),
-                                      false);  // No number check.
-        ReplaceCall(call, comp);
-        return true;
-      }
       return false;
     }
   }
@@ -2258,6 +2269,11 @@ void AotOptimizer::VisitInstanceCall(InstanceCallInstr* instr) {
     return;
   }
 
+  if (((op_kind == Token::kEQ) || (op_kind == Token::kNE)) &&
+      TryReplaceWithNullEqualityOp(instr, op_kind)) {
+    return;
+  }
+
   const ICData& unary_checks =
       ICData::ZoneHandle(Z, instr->ic_data()->AsUnaryClassChecks());
   if (IsAllowedForInlining(instr->deopt_id()) &&
@@ -2268,7 +2284,8 @@ void AotOptimizer::VisitInstanceCall(InstanceCallInstr* instr) {
     if ((op_kind == Token::kASSIGN_INDEX) && TryReplaceWithIndexedOp(instr)) {
       return;
     }
-    if ((op_kind == Token::kEQ) && TryReplaceWithEqualityOp(instr, op_kind)) {
+    if (((op_kind == Token::kEQ) || (op_kind == Token::kNE)) &&
+        TryReplaceWithEqualityOp(instr, op_kind)) {
       return;
     }
 

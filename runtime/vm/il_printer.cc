@@ -481,7 +481,21 @@ void ClosureCallInstr::PrintOperandsTo(BufferFormatter* f) const {
 
 
 void InstanceCallInstr::PrintOperandsTo(BufferFormatter* f) const {
-  f->Print(" %s", function_name().ToCString());
+  const char* name = function_name().ToCString();
+  if (token_kind() != Token::kILLEGAL) {
+    const char* tok = Token::Str(token_kind());
+    // If we have Token::Kind attached to the call then its string
+    // representation usually matches the name but not always:
+    // for example getter calls have token kind Token::kGET but different names.
+    // Check if name matches string representation of the token
+    // and avoid printing the same string twice.
+    if (strcmp(tok, name) != 0) {
+      f->Print(" %s", name);
+    }
+    f->Print(" `%s`", tok);
+  } else {
+    f->Print(" %s", name);
+  }
   for (intptr_t i = 0; i < ArgumentCount(); ++i) {
     f->Print(", ");
     PushArgumentAt(i)->value()->PrintTo(f);

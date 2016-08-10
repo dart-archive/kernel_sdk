@@ -24,6 +24,10 @@ static CompileType TranslateInferredValue(dil::InferredValue* inferred_value) {
   Thread* thread = Thread::Current();
   dil::TranslationHelper H(thread, thread->zone(), thread->isolate());
 
+  if (inferred_value->IsAlwaysNull()) {
+    return CompileType::Null();
+  }
+
   const bool nullable = inferred_value->CanBeNull()
       ? CompileType::kNullable
       : CompileType::kNonNullable;
