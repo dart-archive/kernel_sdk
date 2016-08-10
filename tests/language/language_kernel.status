@@ -3191,7 +3191,7 @@ try_catch_on_syntax_test/03: MissingCompileTimeError
 try_catch_on_syntax_test/04: MissingCompileTimeError
 try_catch_on_syntax_test/05: MissingCompileTimeError
 try_catch_on_syntax_test/06: MissingCompileTimeError
-try_catch_optimized1_test: RuntimeError
+try_catch_optimized1_test: Pass, RuntimeError
 try_catch_syntax_test/01: MissingCompileTimeError
 try_catch_syntax_test/02: MissingCompileTimeError
 try_catch_syntax_test/03: MissingCompileTimeError
