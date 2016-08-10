@@ -5503,6 +5503,8 @@ Language/Metadata/syntax_t07: MissingCompileTimeError
 Language/Metadata/syntax_t08: MissingCompileTimeError
 Language/Mixins/Mixin_Application/deferred_t01: MissingCompileTimeError
 Language/Mixins/Mixin_Application/deferred_t02: MissingCompileTimeError
+Language/Mixins/Mixin_Application/error_t02: Crash
+Language/Mixins/Mixin_Application/error_t01: Crash
 Language/Mixins/Mixin_Application/syntax_t04: RuntimeError
 Language/Mixins/Mixin_Application/syntax_t15: MissingCompileTimeError
 Language/Mixins/Mixin_Application/wrong_mixin_type_t01: MissingCompileTimeError
@@ -5523,6 +5525,8 @@ Language/Mixins/declaring_constructor_t01: MissingCompileTimeError
 Language/Mixins/declaring_constructor_t02: MissingCompileTimeError
 Language/Mixins/declaring_constructor_t03: MissingCompileTimeError
 Language/Mixins/declaring_constructor_t04: MissingCompileTimeError
+Language/Mixins/declaring_constructor_t05: Crash
+Language/Mixins/declaring_constructor_t06: Crash
 Language/Mixins/declaring_constructor_t07: MissingCompileTimeError
 Language/Mixins/declaring_constructor_t08: MissingCompileTimeError
 Language/Mixins/declaring_constructor_t09: MissingCompileTimeError
