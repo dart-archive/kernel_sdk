@@ -14,6 +14,7 @@ LibTest/isolate/*: Skip # No support for isolates ATM.
 Language/Expressions/Await_Expressions/*: Skip
 Language/Expressions/Function_Invocation/async_*: Skip
 Language/Expressions/Function_Invocation/sync_generator_*: Skip
+Language/Expressions/Identifier_Reference/async_*: Skip
 Language/Statements/Break/async_*: Skip
 Language/Statements/Continue/async_*: Skip
 Language/Statements/For/Asynchronous_For_in/*: Skip
