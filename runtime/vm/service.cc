@@ -1339,12 +1339,13 @@ static const MethodParameter* get_stack_params[] = {
 
 
 static bool GetStack(Thread* thread, JSONStream* js) {
-  if (!thread->isolate()->compilation_allowed()) {
+  Isolate* isolate = thread->isolate();
+  if (isolate->debugger() == NULL) {
     js->PrintError(kFeatureDisabled,
-        "Cannot get stack when running a precompiled program.");
+                   "Cannot get stack when debugger disabled.");
     return true;
   }
-  Isolate* isolate = thread->isolate();
+  ASSERT(isolate->compilation_allowed());
   DebuggerStackTrace* stack = isolate->debugger()->StackTrace();
   // Do we want the complete script object and complete local variable objects?
   // This is true for dump requests.
@@ -2456,6 +2457,7 @@ static bool GetSourceReport(Thread* thread, JSONStream* js) {
 
 static const MethodParameter* reload_sources_params[] = {
   RUNNABLE_ISOLATE_PARAMETER,
+  new BoolParameter("force", false),
   NULL,
 };
 
@@ -2488,19 +2490,11 @@ static bool ReloadSources(Thread* thread, JSONStream* js) {
                    "This isolate cannot reload sources right now.");
     return true;
   }
+  const bool force_reload =
+      BoolParameter::Parse(js->LookupParam("force"), false);
 
-  isolate->ReloadSources();
+  isolate->ReloadSources(js, force_reload);
 
-  const Error& error = Error::Handle(isolate->sticky_reload_error());
-
-  if (error.IsNull()) {
-    PrintSuccess(js);
-  } else {
-    // Clear the sticky error.
-    isolate->clear_sticky_reload_error();
-    js->PrintError(kIsolateReloadFailed,
-                   "Isolate reload failed: %s", error.ToErrorCString());
-  }
   return true;
 }
 

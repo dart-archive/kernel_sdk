@@ -16,8 +16,8 @@ import '../resolution/operators.dart';
 import '../resolution/semantic_visitor.dart';
 import '../resolution/tree_elements.dart' show TreeElements;
 import '../tree/tree.dart';
-import '../types/types.dart' show TypeMask;
 import '../types/constants.dart' show computeTypeMask;
+import '../types/types.dart' show TypeMask;
 import '../universe/call_structure.dart' show CallStructure;
 import '../universe/selector.dart' show Selector;
 import '../util/util.dart';
@@ -313,10 +313,6 @@ class ArgumentsTypes<T> extends IterableMixin<T> {
   int get hashCode => throw new UnsupportedError('ArgumentsTypes.hashCode');
 
   bool hasNoArguments() => positional.isEmpty && named.isEmpty;
-
-  bool hasOnePositionalArgumentThatMatches(bool f(T type)) {
-    return named.isEmpty && positional.length == 1 && f(positional[0]);
-  }
 
   void forEach(void f(T type)) {
     positional.forEach(f);

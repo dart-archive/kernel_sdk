@@ -2,6 +2,12 @@
 # for details. All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 
+# These tests currently take too long. Remove when they are fixed.
+[ $compiler == dartk || $compiler == rasta ]
+large_class_declaration_test: Skip
+large_implicit_getter_test: Skip
+larger_implicit_getter_test: Skip
+
 [ $compiler == rasta && $runtime == vm && $kernel_transformers == continuation ]
 
 super_operator_index4_test: RuntimeError

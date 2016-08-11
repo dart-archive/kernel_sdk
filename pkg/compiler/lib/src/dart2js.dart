@@ -11,9 +11,8 @@ import 'dart:io' show exit, File, FileMode, Platform, stdin, stderr;
 import 'package:package_config/discovery.dart' show findPackages;
 
 import '../compiler_new.dart' as api;
-import 'apiimpl.dart';
-import 'common/names.dart' show Uris;
 import 'commandline_options.dart';
+import 'common/names.dart' show Uris;
 import 'filenames.dart';
 import 'io/source_file.dart';
 import 'null_compiler_output.dart';
@@ -115,8 +114,6 @@ Future<api.CompilationResult> compile(List<String> argv) {
   List<String> explicitOutputArguments = <String>[];
   bool wantHelp = false;
   bool wantVersion = false;
-  String outputLanguage = 'JavaScript';
-  bool stripArgumentSet = false;
   bool analyzeOnly = false;
   bool analyzeAll = false;
   bool resolveOnly = false;
@@ -173,20 +170,10 @@ Future<api.CompilationResult> compile(List<String> argv) {
     optionsImplyCompilation.add(argument);
     if (argument == '--output-type=dart' ||
         argument == '--output-type=dart-multi') {
-      outputLanguage = OUTPUT_LANGUAGE_DART;
-      if (explicitOutputArguments.isNotEmpty) {
-        out = currentDirectory.resolve('out.dart');
-        sourceMapOut = currentDirectory.resolve('out.dart.map');
-      }
-      diagnosticHandler(
-          null,
-          null,
-          null,
-          "--output-type=dart is deprecated. It will remain available "
-          "in Dart 1.11, but will be removed in Dart 1.12.",
-          api.Diagnostic.WARNING);
+      helpAndFail(
+          "--output-type=dart is no longer supported. It was deprecated "
+          "since Dart 1.11 and removed in Dart 1.19.");
     }
-    passThrough(argument);
   }
 
   void setResolutionInput(String argument) {
@@ -208,14 +195,14 @@ Future<api.CompilationResult> compile(List<String> argv) {
     return filenames.join("\n");
   }
 
-  void implyCompilation(String argument) {
+  implyCompilation(String argument) {
     optionsImplyCompilation.add(argument);
     passThrough(argument);
   }
 
-  void setStrip(String argument) {
-    stripArgumentSet = true;
-    implyCompilation(argument);
+  setStrip(String argument) {
+    helpAndFail("Option '--force-strip' is not in use now that"
+        "--output-type=dart is no longer supported.");
   }
 
   void setAnalyzeOnly(String argument) {
@@ -326,6 +313,7 @@ Future<api.CompilationResult> compile(List<String> argv) {
     new OptionHandler(Flags.fatalWarnings, passThrough),
     new OptionHandler(
         Flags.suppressHints, (_) => diagnosticHandler.showHints = false),
+    // TODO(sigmund): remove entirely after Dart 1.20
     new OptionHandler(
         '--output-type=dart|--output-type=dart-multi|--output-type=js',
         setOutputType),
@@ -370,7 +358,7 @@ Future<api.CompilationResult> compile(List<String> argv) {
     new OptionHandler(Flags.disableTypeInference, implyCompilation),
     new OptionHandler(Flags.terse, passThrough),
     new OptionHandler('--deferred-map=.+', implyCompilation),
-    new OptionHandler(Flags.dumpInfo, setDumpInfo),
+    new OptionHandler(Flags.dumpInfo, implyCompilation),
     new OptionHandler(
         '--disallow-unsafe-eval', (_) => hasDisallowUnsafeEval = true),
     new OptionHandler(Option.showPackageWarnings, passThrough),
@@ -429,10 +417,6 @@ Future<api.CompilationResult> compile(List<String> argv) {
         " '$precompiledName'.");
   }
 
-  if (outputLanguage != OUTPUT_LANGUAGE_DART && stripArgumentSet) {
-    helpAndFail("Option '--force-strip' may only be used with "
-        "'--output-type=dart'.");
-  }
   if (arguments.isEmpty) {
     helpAndFail('No Dart file specified.');
   }
@@ -487,10 +471,6 @@ Future<api.CompilationResult> compile(List<String> argv) {
           "in combination with the '${Flags.analyzeOnly}' option.");
     }
   }
-  if (dumpInfo && outputLanguage == OUTPUT_LANGUAGE_DART) {
-    helpAndFail("Option '${Flags.dumpInfo}' is not supported in "
-        "combination with the '--output-type=dart' option.");
-  }
 
   options.add('--out=$out');
   options.add('--source-map=$sourceMapOut');
@@ -511,11 +491,11 @@ Future<api.CompilationResult> compile(List<String> argv) {
     diagnosticHandler
         .info('Compiled ${inputProvider.dartCharactersRead} characters Dart '
             '-> ${outputProvider.totalCharactersWritten} characters '
-            '$outputLanguage in '
+            'JavaScript in '
             '${relativize(currentDirectory, out, Platform.isWindows)}');
     if (diagnosticHandler.verbose) {
       String input = uriPathToNative(arguments[0]);
-      print('Dart file ($input) compiled to $outputLanguage.');
+      print('Dart file ($input) compiled to JavaScript.');
       print('Wrote the following files:');
       for (String filename in outputProvider.allOutputFiles) {
         print("  $filename");
@@ -523,7 +503,7 @@ Future<api.CompilationResult> compile(List<String> argv) {
     } else if (explicitOutputArguments.isNotEmpty) {
       String input = uriPathToNative(arguments[0]);
       String output = relativize(currentDirectory, out, Platform.isWindows);
-      print('Dart file ($input) compiled to $outputLanguage: $output');
+      print('Dart file ($input) compiled to JavaScript: $output');
     }
     return result;
   }
@@ -672,9 +652,6 @@ Supported options:
 The following options are only used for compiler development and may
 be removed in a future version:
 
-  --output-type=dart
-    Output Dart code instead of JavaScript.
-
   --throw-on-error
     Throw an exception if a compile-time error is detected.
 
@@ -703,8 +680,6 @@ be removed in a future version:
     Generates an out.info.json file with information about the generated code.
     You can inspect the generated file with the viewer at:
         https://dart-lang.github.io/dump-info-visualizer/
-    This feature is currently not supported in combination with the
-    '--output-type=dart' option.
 
   --generate-code-with-compile-time-errors
     Generates output even if the program contains compile-time errors. Use the
@@ -878,7 +853,8 @@ void _useSerializedDataForDartCore(CompileFunc oldCompileFunc) {
           }
         }
       }
-      options = options.copy(resolutionInputs: resolutionInputs);
+      options =
+          CompilerOptions.copy(options, resolutionInputs: resolutionInputs);
     }
     return oldCompileFunc(options, input, compilerDiagnostics, compilerOutput);
   }
@@ -892,15 +868,12 @@ void _useSerializedDataForDartCore(CompileFunc oldCompileFunc) {
       api.CompilerDiagnostics compilerDiagnostics,
       api.CompilerOutput compilerOutput,
       [List<_SerializedData> serializedData]) {
-    CompilerOptions options = new CompilerOptions.parse(
+    CompilerOptions options = CompilerOptions.copy(compilerOptions,
         entryPoint: entryPoint,
-        libraryRoot: compilerOptions.libraryRoot,
-        packageRoot: compilerOptions.packageRoot,
-        packageConfig: compilerOptions.packageConfig,
-        packagesDiscoveryProvider: compilerOptions.packagesDiscoveryProvider,
-        environment: compilerOptions.environment,
         resolutionOutput: serializedUri,
-        options: [Flags.resolveOnly]);
+        analyzeAll: true,
+        analyzeOnly: true,
+        resolveOnly: true);
     return compileWithSerializedData(options, compilerInput,
         compilerDiagnostics, compilerOutput, serializedData);
   }

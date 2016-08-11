@@ -37,6 +37,8 @@ class Loader {
     return error_;
   }
 
+  static void InitOnce();
+
  private:
   // The port assigned to our native message handler.
   Dart_Port port_;
@@ -59,6 +61,7 @@ class Loader {
     intptr_t payload_length;
     char* library_uri;
     char* uri;
+    char* resolved_uri;
     int8_t tag;
 
     void Setup(Dart_CObject* message);
@@ -81,6 +84,10 @@ class Loader {
             const char* packages_file,
             const char* working_directory,
             const char* root_script_uri);
+
+  // Send a request for a dart-ext: import to the service isolate.
+  void SendImportExtensionRequest(Dart_Handle url,
+                                  Dart_Handle library_url);
 
   // Send a request from the tag handler to the service isolate.
   void SendRequest(Dart_LibraryTag tag,
@@ -120,7 +127,7 @@ class Loader {
   };
 
   // The map of active loaders.
-  static Mutex loader_infos_lock_;
+  static Mutex* loader_infos_lock_;
   static LoaderInfo* loader_infos_;
   static intptr_t loader_infos_length_;
   static intptr_t loader_infos_capacity_;

@@ -22,6 +22,7 @@
 #include "vm/flags.h"
 #include "vm/growable_array.h"
 #include "vm/lockers.h"
+#include "vm/isolate_reload.h"
 #include "vm/message.h"
 #include "vm/message_handler.h"
 #include "vm/native_entry.h"
@@ -1142,37 +1143,29 @@ DART_EXPORT const char* Dart_VersionString() {
   return Version::String();
 }
 
-DART_EXPORT char* Dart_Initialize(
-    const uint8_t* vm_isolate_snapshot,
-    const uint8_t* instructions_snapshot,
-    const uint8_t* data_snapshot,
-    Dart_IsolateCreateCallback create,
-    Dart_IsolateInterruptCallback interrupt,
-    Dart_IsolateUnhandledExceptionCallback unhandled,
-    Dart_IsolateShutdownCallback shutdown,
-    Dart_ThreadExitCallback thread_exit,
-    Dart_FileOpenCallback file_open,
-    Dart_FileReadCallback file_read,
-    Dart_FileWriteCallback file_write,
-    Dart_FileCloseCallback file_close,
-    Dart_EntropySource entropy_source,
-    Dart_GetVMServiceAssetsArchive get_service_assets) {
-  if (interrupt != NULL) {
+DART_EXPORT char* Dart_Initialize(Dart_InitializeParams* params) {
+  if (params == NULL) {
     return strdup("Dart_Initialize: "
-                  "Setting of interrupt callback is not supported.");
+                  "Dart_InitializeParams is null.");
   }
-  if (unhandled != NULL) {
+
+  if (params->version != DART_INITIALIZE_PARAMS_CURRENT_VERSION) {
     return strdup("Dart_Initialize: "
-                  "Setting of unhandled exception callback is not supported.");
+                  "Invalid Dart_InitializeParams version.");
   }
-  return Dart::InitOnce(vm_isolate_snapshot,
-                        instructions_snapshot,
-                        data_snapshot,
-                        create, shutdown,
-                        thread_exit,
-                        file_open, file_read, file_write, file_close,
-                        entropy_source,
-                        get_service_assets);
+
+  return Dart::InitOnce(params->vm_isolate_snapshot,
+                        params->instructions_snapshot,
+                        params->data_snapshot,
+                        params->create,
+                        params->shutdown,
+                        params->thread_exit,
+                        params->file_open,
+                        params->file_read,
+                        params->file_write,
+                        params->file_close,
+                        params->entropy_source,
+                        params->get_service_assets);
 }
 
 
@@ -1326,10 +1319,9 @@ DART_EXPORT void* Dart_CurrentIsolateData() {
 
 DART_EXPORT void* Dart_IsolateData(Dart_Isolate isolate) {
   if (isolate == NULL) {
-    FATAL1("%s expects argument 'isolate' to be non-null.",  CURRENT_FUNC);
+    FATAL1("%s expects argument 'isolate' to be non-null.", CURRENT_FUNC);
   }
   // TODO(16615): Validate isolate parameter.
-  NoSafepointScope no_safepoint_scope;
   Isolate* iso = reinterpret_cast<Isolate*>(isolate);
   return iso->init_callback_data();
 }
@@ -1346,11 +1338,10 @@ DART_EXPORT void Dart_EnterIsolate(Dart_Isolate isolate) {
   CHECK_NO_ISOLATE(Isolate::Current());
   // TODO(16615): Validate isolate parameter.
   Isolate* iso = reinterpret_cast<Isolate*>(isolate);
-  if (iso->HasMutatorThread()) {
-    FATAL("Multiple mutators within one isolate is not supported.");
-  }
   if (!Thread::EnterIsolate(iso)) {
-    FATAL("Unable to Enter Isolate as Dart VM is shutting down");
+    FATAL("Unable to Enter Isolate : "
+          "Multiple mutators entering an isolate / "
+          "Dart VM is shutting down");
   }
   // A Thread structure has been associated to the thread, we do the
   // safepoint transition explicity here instead of using the
@@ -1449,6 +1440,32 @@ DART_EXPORT void Dart_SetPausedOnExit(bool paused) {
   if (isolate->message_handler()->is_paused_on_exit() != paused) {
     isolate->message_handler()->PausedOnExit(paused);
   }
+}
+
+
+DART_EXPORT void Dart_SetStickyError(Dart_Handle error) {
+  Thread* thread = Thread::Current();
+  DARTSCOPE(thread);
+  Isolate* isolate = thread->isolate();
+  CHECK_ISOLATE(isolate);
+  NoSafepointScope no_safepoint_scope;
+  if (isolate->sticky_error() != Error::null()) {
+    FATAL1("%s expects there to be no sticky error.", CURRENT_FUNC);
+  }
+  if (!::Dart_IsUnhandledExceptionError(error)) {
+    FATAL1("%s expects the error to be an unhandled exception error.",
+            CURRENT_FUNC);
+  }
+  isolate->SetStickyError(
+      Api::UnwrapErrorHandle(Z, error).raw());
+}
+
+
+DART_EXPORT bool Dart_HasStickyError() {
+  Isolate* isolate = Isolate::Current();
+  CHECK_ISOLATE(isolate);
+  NoSafepointScope no_safepoint_scope;
+  return isolate->sticky_error() != Error::null();
 }
 
 
@@ -5223,6 +5240,7 @@ static void CompileSource(Thread* thread,
 
 
 DART_EXPORT Dart_Handle Dart_LoadScript(Dart_Handle url,
+                                        Dart_Handle resolved_url,
                                         Dart_Handle source,
                                         intptr_t line_offset,
                                         intptr_t column_offset) {
@@ -5232,6 +5250,13 @@ DART_EXPORT Dart_Handle Dart_LoadScript(Dart_Handle url,
   const String& url_str = Api::UnwrapStringHandle(Z, url);
   if (url_str.IsNull()) {
     RETURN_TYPE_ERROR(Z, url, String);
+  }
+  if (::Dart_IsNull(resolved_url)) {
+    resolved_url = url;
+  }
+  const String& resolved_url_str = Api::UnwrapStringHandle(Z, resolved_url);
+  if (resolved_url_str.IsNull()) {
+    RETURN_TYPE_ERROR(Z, resolved_url, String);
   }
   const String& source_str = Api::UnwrapStringHandle(Z, source);
   if (source_str.IsNull()) {
@@ -5261,8 +5286,9 @@ DART_EXPORT Dart_Handle Dart_LoadScript(Dart_Handle url,
   library.Register(T);
   I->object_store()->set_root_library(library);
 
-  const Script& script = Script::Handle(Z,
-      Script::New(url_str, source_str, RawScript::kScriptTag));
+  const Script& script =
+      Script::Handle(Z, Script::New(url_str, resolved_url_str, source_str,
+                                    RawScript::kScriptTag));
   script.SetLocationOffset(line_offset, column_offset);
   Dart_Handle result;
   CompileSource(T, library, script, &result);
@@ -5528,6 +5554,7 @@ DART_EXPORT Dart_Handle Dart_LibraryHandleError(Dart_Handle library_in,
 
 
 DART_EXPORT Dart_Handle Dart_LoadLibrary(Dart_Handle url,
+                                         Dart_Handle resolved_url,
                                          Dart_Handle source,
                                          intptr_t line_offset,
                                          intptr_t column_offset) {
@@ -5537,6 +5564,13 @@ DART_EXPORT Dart_Handle Dart_LoadLibrary(Dart_Handle url,
   const String& url_str = Api::UnwrapStringHandle(Z, url);
   if (url_str.IsNull()) {
     RETURN_TYPE_ERROR(Z, url, String);
+  }
+  if (::Dart_IsNull(resolved_url)) {
+    resolved_url = url;
+  }
+  const String& resolved_url_str = Api::UnwrapStringHandle(Z, resolved_url);
+  if (resolved_url_str.IsNull()) {
+    RETURN_TYPE_ERROR(Z, resolved_url, String);
   }
   const String& source_str = Api::UnwrapStringHandle(Z, source);
   if (source_str.IsNull()) {
@@ -5567,8 +5601,9 @@ DART_EXPORT Dart_Handle Dart_LoadLibrary(Dart_Handle url,
     return Api::NewError("%s: library '%s' has already been loaded.",
                          CURRENT_FUNC, url_str.ToCString());
   }
-  const Script& script = Script::Handle(Z,
-      Script::New(url_str, source_str, RawScript::kLibraryTag));
+  const Script& script =
+      Script::Handle(Z, Script::New(url_str, resolved_url_str, source_str,
+                                    RawScript::kLibraryTag));
   script.SetLocationOffset(line_offset, column_offset);
   Dart_Handle result;
   CompileSource(T, library, script, &result);
@@ -5634,6 +5669,7 @@ DART_EXPORT Dart_Handle Dart_LibraryImportLibrary(Dart_Handle library,
 
 DART_EXPORT Dart_Handle Dart_LoadSource(Dart_Handle library,
                                         Dart_Handle url,
+                                        Dart_Handle resolved_url,
                                         Dart_Handle source,
                                         intptr_t line_offset,
                                         intptr_t column_offset) {
@@ -5647,6 +5683,13 @@ DART_EXPORT Dart_Handle Dart_LoadSource(Dart_Handle library,
   const String& url_str = Api::UnwrapStringHandle(Z, url);
   if (url_str.IsNull()) {
     RETURN_TYPE_ERROR(Z, url, String);
+  }
+  if (::Dart_IsNull(resolved_url)) {
+    resolved_url = url;
+  }
+  const String& resolved_url_str = Api::UnwrapStringHandle(Z, resolved_url);
+  if (resolved_url_str.IsNull()) {
+    RETURN_TYPE_ERROR(Z, resolved_url, String);
   }
   const String& source_str = Api::UnwrapStringHandle(Z, source);
   if (source_str.IsNull()) {
@@ -5665,8 +5708,9 @@ DART_EXPORT Dart_Handle Dart_LoadSource(Dart_Handle library,
 
   NoHeapGrowthControlScope no_growth_control;
 
-  const Script& script = Script::Handle(Z,
-      Script::New(url_str, source_str, RawScript::kSourceTag));
+  const Script& script =
+      Script::Handle(Z, Script::New(url_str, resolved_url_str, source_str,
+                                    RawScript::kSourceTag));
   script.SetLocationOffset(line_offset, column_offset);
   Dart_Handle result;
   CompileSource(T, lib, script, &result);
@@ -5697,8 +5741,9 @@ DART_EXPORT Dart_Handle Dart_LibraryLoadPatch(Dart_Handle library,
 
   NoHeapGrowthControlScope no_growth_control;
 
-  const Script& script = Script::Handle(Z,
-      Script::New(url_str, source_str, RawScript::kPatchTag));
+  const Script& script =
+      Script::Handle(Z, Script::New(url_str, url_str, source_str,
+                                    RawScript::kPatchTag));
   Dart_Handle result;
   CompileSource(T, lib, script, &result);
   return result;
@@ -5837,6 +5882,77 @@ DART_EXPORT Dart_Port Dart_ServiceWaitForLoadPort() {
 }
 
 
+DART_EXPORT int64_t Dart_TimelineGetMicros() {
+  return OS::GetCurrentMonotonicMicros();
+}
+
+
+#if defined(PRODUCT)
+DART_EXPORT void Dart_RegisterIsolateServiceRequestCallback(
+    const char* name,
+    Dart_ServiceRequestCallback callback,
+    void* user_data) {
+  return;
+}
+
+
+DART_EXPORT void Dart_RegisterRootServiceRequestCallback(
+    const char* name,
+    Dart_ServiceRequestCallback callback,
+    void* user_data) {
+  return;
+}
+
+
+DART_EXPORT Dart_Handle Dart_SetServiceStreamCallbacks(
+    Dart_ServiceStreamListenCallback listen_callback,
+    Dart_ServiceStreamCancelCallback cancel_callback) {
+  return Api::Success();
+}
+
+
+DART_EXPORT Dart_Handle Dart_ServiceSendDataEvent(const char* stream_id,
+                                                  const char* event_kind,
+                                                  const uint8_t* bytes,
+                                                  intptr_t bytes_length) {
+  return Api::Success();
+}
+
+
+DART_EXPORT Dart_Handle Dart_SetFileModifiedCallback(
+    Dart_FileModifiedCallback file_mod_callback) {
+  return Api::Success();
+}
+
+
+DART_EXPORT void Dart_GlobalTimelineSetRecordedStreams(int64_t stream_mask) {
+  return;
+}
+
+
+DART_EXPORT void Dart_SetEmbedderTimelineCallbacks(
+    Dart_EmbedderTimelineStartRecording start_recording,
+    Dart_EmbedderTimelineStopRecording stop_recording) {
+  return;
+}
+
+
+DART_EXPORT bool Dart_GlobalTimelineGetTrace(Dart_StreamConsumer consumer,
+                                             void* user_data) {
+  return false;
+}
+
+
+DART_EXPORT void Dart_TimelineEvent(const char* label,
+                                    int64_t timestamp0,
+                                    int64_t timestamp1_or_async_id,
+                                    Dart_Timeline_Event_Type type,
+                                    intptr_t argument_count,
+                                    const char** argument_names,
+                                    const char** argument_values) {
+  return;
+}
+#else  // defined(PRODUCT)
 DART_EXPORT void Dart_RegisterIsolateServiceRequestCallback(
     const char* name,
     Dart_ServiceRequestCallback callback,
@@ -5900,9 +6016,6 @@ DART_EXPORT Dart_Handle Dart_ServiceSendDataEvent(const char* stream_id,
                                                   const char* event_kind,
                                                   const uint8_t* bytes,
                                                   intptr_t bytes_length) {
-#if defined(PRODUCT)
-  return Api::Success();
-#else  // defined(PRODUCT)
   DARTSCOPE(Thread::Current());
   Isolate* I = T->isolate();
   if (stream_id == NULL) {
@@ -5921,12 +6034,30 @@ DART_EXPORT Dart_Handle Dart_ServiceSendDataEvent(const char* stream_id,
   Service::SendEmbedderEvent(I, stream_id, event_kind,
                              bytes, bytes_length);
   return Api::Success();
-#endif  // defined(PRODUCT)
 }
 
 
-DART_EXPORT int64_t Dart_TimelineGetMicros() {
-  return OS::GetCurrentMonotonicMicros();
+DART_EXPORT Dart_Handle Dart_SetFileModifiedCallback(
+    Dart_FileModifiedCallback file_modified_callback) {
+  if (!FLAG_support_service) {
+    return Api::Success();
+  }
+  if (file_modified_callback != NULL) {
+    if (IsolateReloadContext::file_modified_callback() != NULL) {
+      return Api::NewError(
+          "%s permits only one callback to be registered, please "
+          "remove the existing callback and then add this callback",
+          CURRENT_FUNC);
+    }
+  } else {
+    if (IsolateReloadContext::file_modified_callback() == NULL) {
+      return Api::NewError(
+          "%s expects 'file_modified_callback' to be set before it is cleared.",
+          CURRENT_FUNC);
+    }
+  }
+  IsolateReloadContext::SetFileModifiedCallback(file_modified_callback);
+  return Api::Success();
 }
 
 
@@ -6154,6 +6285,7 @@ DART_EXPORT void Dart_TimelineEvent(const char* label,
   }
   event->Complete();
 }
+#endif  // defined(PRODUCT)
 
 
 DART_EXPORT void Dart_SetThreadName(const char* name) {
@@ -6210,6 +6342,8 @@ DART_EXPORT Dart_Handle Dart_Precompile(
     bool reset_fields) {
 #if defined(TARGET_ARCH_IA32)
   return Api::NewError("Precompilation is not supported on IA32.");
+#elif defined(TARGET_ARCH_DBC)
+  return Api::NewError("Precompilation is not supported on DBC.");
 #else
   API_TIMELINE_BEGIN_END;
   DARTSCOPE(Thread::Current());
@@ -6239,7 +6373,9 @@ DART_EXPORT Dart_Handle Dart_CreatePrecompiledSnapshotAssembly(
     uint8_t** assembly_buffer,
     intptr_t* assembly_size) {
 #if defined(TARGET_ARCH_IA32)
-  return Api::NewError("Snapshots with code are not supported on IA32.");
+  return Api::NewError("Precompilation is not supported on IA32.");
+#elif defined(TARGET_ARCH_DBC)
+  return Api::NewError("Precompilation is not supported on DBC.");
 #else
   API_TIMELINE_DURATION;
   DARTSCOPE(Thread::Current());
@@ -6299,7 +6435,9 @@ DART_EXPORT Dart_Handle Dart_CreatePrecompiledSnapshotBlob(
     uint8_t** rodata_blob_buffer,
     intptr_t* rodata_blob_size) {
 #if defined(TARGET_ARCH_IA32)
-  return Api::NewError("Snapshots with code are not supported on IA32.");
+  return Api::NewError("Precompilation is not supported on IA32.");
+#elif defined(TARGET_ARCH_DBC)
+  return Api::NewError("Precompilation is not supported on DBC.");
 #else
   API_TIMELINE_DURATION;
   DARTSCOPE(Thread::Current());
@@ -6401,6 +6539,8 @@ DART_EXPORT Dart_Handle Dart_CreateAppJITSnapshot(
     intptr_t* rodata_blob_size) {
 #if defined(TARGET_ARCH_IA32)
   return Api::NewError("Snapshots with code are not supported on IA32.");
+#elif defined(TARGET_ARCH_DBC)
+  return Api::NewError("Snapshots with code are not supported on DBC.");
 #else
   API_TIMELINE_DURATION;
   DARTSCOPE(Thread::Current());

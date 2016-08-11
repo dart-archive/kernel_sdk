@@ -113,6 +113,15 @@ test() {
 ''');
   }
 
+  void test_callMethodOnFunctions() {
+    checkFile(r'''
+void f(int x) => print(x);
+main() {
+  f.call(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi');
+}
+    ''');
+  }
+
   void test_castsInConditions() {
     checkFile('''
 main() {
@@ -264,7 +273,7 @@ foo() => new A();
 test() {
   int x = 0;
   x += 5;
-  /*error:STATIC_TYPE_ERROR*/x += 3.14;
+  /*error:STATIC_TYPE_ERROR*/x += /*error:INVALID_ASSIGNMENT*/3.14;
 
   double y = 0.0;
   y += 5;
@@ -690,14 +699,14 @@ dynamic x;
 
 foo1() async => x;
 Future foo2() async => x;
-Future<int> foo3() async => /*info:DYNAMIC_CAST*/x;
+Future<int> foo3() async => x;
 Future<int> foo4() async => new Future<int>.value(/*info:DYNAMIC_CAST*/x);
 Future<int> foo5() async =>
     /*error:RETURN_OF_INVALID_TYPE*/new Future<String>.value(/*info:DYNAMIC_CAST*/x);
 
 bar1() async { return x; }
 Future bar2() async { return x; }
-Future<int> bar3() async { return /*info:DYNAMIC_CAST*/x; }
+Future<int> bar3() async { return x; }
 Future<int> bar4() async { return new Future<int>.value(/*info:DYNAMIC_CAST*/x); }
 Future<int> bar5() async {
   return /*error:RETURN_OF_INVALID_TYPE*/new Future<String>.value(/*info:DYNAMIC_CAST*/x);
@@ -713,13 +722,18 @@ baz() async {
   String d = /*error:INVALID_ASSIGNMENT*/await z;
 }
 
-Future<bool> get issue_264 async {
+Future<bool> get issue_ddc_264 async {
   await 42;
   if (new Random().nextBool()) {
     return true;
   } else {
     return new Future<bool>.value(false);
   }
+}
+
+
+Future<String> issue_sdk_26404() async {
+  return (1 > 0) ? new Future<String>.value('hello') : "world";
 }
 ''');
   }
@@ -1917,6 +1931,23 @@ main() {
     check(implicitCasts: false);
   }
 
+  void test_implicitCasts_genericMethods() {
+    addFile('var x = <String>[].map((x) => "");');
+    check(implicitCasts: false);
+  }
+
+  void test_implicitCasts_numericOps() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/26912
+    addFile(r'''
+void f() {
+  int x = 0;
+  int y = 0;
+  x += y;
+}
+    ''');
+    check(implicitCasts: false);
+  }
+
   void test_implicitDynamic_field() {
     addFile(r'''
 class C {
@@ -2140,6 +2171,58 @@ dynamic y0;
 dynamic y1 = (<dynamic>[])[0];
     ''');
     check(implicitDynamic: false);
+  }
+
+  void test_constantGenericTypeArg_infer() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/26141
+    checkFile('''
+abstract class Equality<Q> {}
+abstract class EqualityBase<R> implements Equality<R> {
+  final C<R> c = /*info:INFERRED_TYPE_ALLOCATION*/const C();
+  const EqualityBase();
+}
+class DefaultEquality<S> extends EqualityBase<S> {
+  const DefaultEquality();
+}
+class SetEquality<T> implements Equality<T> {
+  final Equality<T> field = const DefaultEquality();
+  const SetEquality([Equality<T> inner = const DefaultEquality()]);
+}
+class C<Q> {
+  final List<Q> list = /*info:INFERRED_TYPE_LITERAL*/const [];
+  final Map<Q, Iterable<Q>> m =  /*info:INFERRED_TYPE_LITERAL*/const {};
+  const C();
+}
+main() {
+  const SetEquality<String>();
+}
+    ''');
+  }
+
+  void test_constantGenericTypeArg_explict() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/26141
+    checkFile('''
+abstract class Equality<R> {}
+abstract class EqualityBase<R> implements Equality<R> {
+  final C<R> c = const C<R>();
+  const EqualityBase();
+}
+class DefaultEquality<S> extends EqualityBase<S> {
+  const DefaultEquality();
+}
+class SetEquality<T> implements Equality<T> {
+  final Equality<T> field = const DefaultEquality<T>();
+  const SetEquality([Equality<T> inner = const DefaultEquality<T>()]);
+}
+class C<Q> {
+  final List<Q> list = const <Q>[];
+  final Map<Q, Iterable<Q>> m =  const <Q, Iterable<Q>>{};
+  const C();
+}
+main() {
+  const SetEquality<String>();
+}
+    ''');
   }
 
   void test_invalidOverrides_baseClassOverrideToChildInterface() {
@@ -2538,6 +2621,20 @@ class C {
 ''');
   }
 
+  void test_leastUpperBounds_fuzzyArrows() {
+    checkFile(r'''
+typedef String TakesA<T>(T item);
+
+void main() {
+  TakesA<int> f;
+  TakesA<dynamic> g;
+  TakesA<String> h;
+  g = h;
+  f = /*warning:DOWN_CAST_COMPOSITE*/f ?? g;
+}
+''');
+  }
+
   void test_loadLibrary() {
     addFile('''library lib1;''', name: '/lib1.dart');
     checkFile(r'''
@@ -2597,6 +2694,18 @@ class H implements F {
   void g(dynamic x) {}
 }
 ''');
+  }
+
+  void test_methodTearoffStrictArrow() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/26393
+    checkFile(r'''
+class A {
+  void foo(dynamic x) {}
+  void test(void f(int x)) {
+    test(foo);
+  }
+}
+    ''');
   }
 
   void test_mixinOverrideOfGrandInterface_interfaceOfAbstractSuperclass() {
@@ -2877,6 +2986,46 @@ main() {
 ''');
   }
 
+  void test_nullCoalescingStrictArrow() {
+    checkFile(r'''
+bool _alwaysTrue(x) => true;
+typedef bool TakesA<T>(T t);
+class C<T> {
+  TakesA<T> g;
+  C(TakesA<T> f)
+    : g = f ?? _alwaysTrue;
+  C.a() : g = _alwaysTrue;
+}
+    ''');
+  }
+
+  void test_optionalParams() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/26155
+    checkFile(r'''
+void takesF(void f(int x)) {
+  takesF(/*info:INFERRED_TYPE_CLOSURE,info:INFERRED_TYPE_CLOSURE*/([x]) { bool z = x.isEven; });
+  takesF(/*info:INFERRED_TYPE_CLOSURE*/(y) { bool z = y.isEven; });
+}
+    ''');
+  }
+
+  void test_overrideNarrowsType() {
+    addFile(r'''
+class A {}
+class B extends A {}
+
+abstract class C {
+  m(A a);
+  n(B b);
+}
+abstract class D extends C {
+  /*error:INVALID_METHOD_OVERRIDE*/m(/*error:INVALID_METHOD_OVERRIDE_NORMAL_PARAM_TYPE*/B b);
+  n(A a);
+}
+    ''');
+    check(implicitCasts: false);
+  }
+
   void test_privateOverride() {
     addFile(
         '''
@@ -2912,6 +3061,44 @@ class Child extends helper.Base {
   String _m1() => null;
 }
 ''');
+  }
+
+  void test_proxy() {
+    checkFile(r'''
+@proxy class C {}
+@proxy class D {
+  var f;
+  m() => null;
+  operator -() => null;
+  operator +(int other) => null;
+  operator [](int index) => null;
+  call() => null;
+}
+@proxy class F implements Function { noSuchMethod(i) => 42; }
+
+
+m() {
+  D d = new D();
+  d.m();
+  d.m;
+  d.f;
+  -d;
+  d + 7;
+  d[7];
+  d();
+
+  C c = new C();
+  /*info:DYNAMIC_INVOKE*/c.m();
+  /*info:DYNAMIC_INVOKE*/c.m;
+  /*info:DYNAMIC_INVOKE*/-c;
+  /*info:DYNAMIC_INVOKE*/c + 7;
+  /*info:DYNAMIC_INVOKE*/c[7];
+  /*error:INVOCATION_OF_NON_FUNCTION,info:DYNAMIC_INVOKE*/c();
+
+  F f = new F();
+  /*info:DYNAMIC_INVOKE*/f();
+}
+    ''');
   }
 
   void test_redirectingConstructor() {
@@ -3248,7 +3435,9 @@ class SplayTreeMap<K, V> {
                 bool isValidKey(potentialKey)])
     : _comparator = /*warning:DOWN_CAST_COMPOSITE*/(compare == null) ? Comparable.compare : compare,
       _validKey = (isValidKey != null) ? isValidKey : ((v) => true) {
-    _Predicate<Object> v = (isValidKey != null)
+
+    // NOTE: this is a down cast because isValidKey has fuzzy arrow type.
+    _Predicate<Object> v = /*warning:DOWN_CAST_COMPOSITE*/(isValidKey != null)
         ? isValidKey : (/*info:INFERRED_TYPE_CLOSURE*/(_) => true);
 
     v = (isValidKey != null)
@@ -3327,6 +3516,29 @@ g() {
   if (x is int) {
     int y = x;
     String z = /*error:INVALID_ASSIGNMENT*/x;
+  }
+}
+''');
+  }
+
+  void test_typePromotionFromTypeParameter() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/26965
+    checkFile(r'''
+void f/*<T>*/(/*=T*/ object) {
+  if (object is String) print(object.substring(1));
+}
+void g/*<T extends num>*/(/*=T*/ object) {
+  if (object is int) print(object.isEven);
+  if (object is String) print(/*info:DYNAMIC_INVOKE*/object.substring(1));
+}
+class Clonable<T> {}
+class SubClonable<T> extends Clonable<T> {
+  T m(T t) => t;
+}
+void h/*<T extends Clonable<T>>*/(/*=T*/ object) {
+  if (/*info:NON_GROUND_TYPE_CHECK_INFO*/object is SubClonable/*<T>*/) {
+    // Note we need to cast back to T, because promotion lost that type info.
+    print(object.m(object as dynamic/*=T*/));
   }
 }
 ''');

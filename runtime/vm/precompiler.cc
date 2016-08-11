@@ -242,8 +242,8 @@ void Precompiler::DoCompileAll(
       DropTypeArguments();
 
       // Clear these before dropping classes as they may hold onto otherwise
-      // dead instances of classes we will remove.
-      I->object_store()->set_compile_time_constants(Array::null_array());
+      // dead instances of classes we will remove or otherwise unused symbols.
+      DropScriptData();
       I->object_store()->set_unique_dynamic_targets(Array::null_array());
       Class& null_class = Class::Handle(Z);
       I->object_store()->set_future_class(null_class);
@@ -517,6 +517,70 @@ void Precompiler::Iterate() {
     CheckForNewDynamicFunctions();
     if (!changed_) {
       TraceConstFunctions();
+    }
+    CollectCallbackFields();
+  }
+}
+
+
+void Precompiler::CollectCallbackFields() {
+  Library& lib = Library::Handle(Z);
+  Class& cls = Class::Handle(Z);
+  Class& subcls = Class::Handle(Z);
+  Array& fields = Array::Handle(Z);
+  Field& field = Field::Handle(Z);
+  Function& function = Function::Handle(Z);
+  Function& dispatcher = Function::Handle(Z);
+  Array& args_desc = Array::Handle(Z);
+  AbstractType& field_type = AbstractType::Handle(Z);
+  String& field_name = String::Handle(Z);
+  GrowableArray<intptr_t> cids;
+
+  for (intptr_t i = 0; i < libraries_.Length(); i++) {
+    lib ^= libraries_.At(i);
+    ClassDictionaryIterator it(lib, ClassDictionaryIterator::kIteratePrivate);
+    while (it.HasNext()) {
+      cls = it.GetNextClass();
+
+      if (!cls.is_allocated()) continue;
+
+      fields = cls.fields();
+      for (intptr_t k = 0; k < fields.Length(); k++) {
+        field ^= fields.At(k);
+        if (field.is_static()) continue;
+        field_type = field.type();
+        if (!field_type.IsFunctionType()) continue;
+        field_name = field.name();
+        if (!IsSent(field_name)) continue;
+        // Create arguments descriptor with fixed parameters from
+        // signature of field_type.
+        function = Type::Cast(field_type).signature();
+        if (function.HasOptionalParameters()) continue;
+        if (FLAG_trace_precompiler) {
+          THR_Print("Found callback field %s\n", field_name.ToCString());
+        }
+        args_desc =
+            ArgumentsDescriptor::New(function.num_fixed_parameters());
+        cids.Clear();
+        if (T->cha()->ConcreteSubclasses(cls, &cids)) {
+          for (intptr_t j = 0; j < cids.length(); ++j) {
+            subcls ^= I->class_table()->At(cids[j]);
+            if (subcls.is_allocated()) {
+              // Add dispatcher to cls.
+              dispatcher = subcls.GetInvocationDispatcher(
+                  field_name,
+                  args_desc,
+                  RawFunction::kInvokeFieldDispatcher,
+                  /* create_if_absent = */ true);
+              if (FLAG_trace_precompiler) {
+                THR_Print("Added invoke-field-dispatcher for %s to %s\n",
+                          field_name.ToCString(), subcls.ToCString());
+              }
+              AddFunction(dispatcher);
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -1378,7 +1442,7 @@ void Precompiler::TraceForRetainedFunctions() {
       functions = cls.functions();
       for (intptr_t j = 0; j < functions.Length(); j++) {
         function ^= functions.At(j);
-        bool retain = function.HasCode();
+        bool retain = enqueued_functions_.Lookup(&function) != NULL;
         if (!retain && function.HasImplicitClosureFunction()) {
           // It can happen that all uses of an implicit closure inline their
           // target function, leaving the target function uncompiled. Keep
@@ -1398,7 +1462,7 @@ void Precompiler::TraceForRetainedFunctions() {
   closures = isolate()->object_store()->closure_functions();
   for (intptr_t j = 0; j < closures.Length(); j++) {
     function ^= closures.At(j);
-    bool retain = function.HasCode();
+    bool retain = enqueued_functions_.Lookup(&function) != NULL;
     if (retain) {
       AddTypesOf(function);
 
@@ -1616,6 +1680,24 @@ void Precompiler::DropTypeArguments() {
     ASSERT(!present);
   }
   object_store->set_canonical_type_arguments(typeargs_table.Release());
+}
+
+
+void Precompiler::DropScriptData() {
+  Library& lib = Library::Handle(Z);
+  Array& scripts = Array::Handle(Z);
+  Script& script = Script::Handle(Z);
+  const TokenStream& null_tokens = TokenStream::Handle(Z);
+  for (intptr_t i = 0; i < libraries_.Length(); i++) {
+    lib ^= libraries_.At(i);
+    scripts = lib.LoadedScripts();
+    for (intptr_t j = 0; j < scripts.Length(); j++) {
+      script ^= scripts.At(j);
+      script.set_compile_time_constants(Array::null_array());
+      script.set_source(String::null_string());
+      script.set_tokens(null_tokens);
+    }
+  }
 }
 
 
@@ -2717,6 +2799,9 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
           // them as part of a deoptimization environment.
           sinking->DetachMaterializations();
         }
+
+        // Replace bounds check instruction with a generic one.
+        optimizer.ReplaceArrayBoundChecks();
 
         // Compute and store graph informations (call & instruction counts)
         // to be later used by the inliner.

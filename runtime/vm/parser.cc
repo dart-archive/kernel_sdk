@@ -49,8 +49,11 @@ DEFINE_FLAG(bool, warn_mixin_typedef, true, "Warning on legacy mixin typedef.");
 // committed to the current version.
 DEFINE_FLAG(bool, conditional_directives, true,
     "Enable conditional directives");
+DEFINE_FLAG(bool, initializing_formal_access, false,
+    "Make initializing formal parameters visible in initializer list.");
 DEFINE_FLAG(bool, warn_super, false,
     "Warning if super initializer not last in initializer list.");
+DEFINE_FLAG(bool, warn_patch, false, "Warn on old-style patch syntax.");
 DEFINE_FLAG(bool, await_is_keyword, false,
     "await and yield are treated as proper keywords in synchronous code.");
 
@@ -711,8 +714,19 @@ struct ParamList {
     for (int i = 0; i < num_params; i++) {
       ParamDesc& param = (*parameters)[i];
       ASSERT(param.var != NULL);
-      if (!param.is_field_initializer) {
+      if (FLAG_initializing_formal_access || !param.is_field_initializer) {
         param.var->set_invisible(invisible);
+      }
+    }
+  }
+
+  void HideInitFormals() {
+    const intptr_t num_params = parameters->length();
+    for (int i = 0; i < num_params; i++) {
+      ParamDesc& param = (*parameters)[i];
+      if (param.is_field_initializer) {
+        ASSERT(param.var != NULL);
+        param.var->set_invisible(true);
       }
     }
   }
@@ -1560,18 +1574,13 @@ SequenceNode* Parser::ParseImplicitClosure(const Function& func) {
       &Symbols::ClosureParameter(),
       &Object::dynamic_type());
 
-  const Function& parent = Function::ZoneHandle(func.parent_function());
+  const Function& parent = Function::Handle(func.parent_function());
   if (parent.IsImplicitSetterFunction()) {
     const TokenPosition ident_pos = func.token_pos();
     ASSERT(IsIdentifier());
-    const String& field_name = *CurrentLiteral();
-    const Class& field_class = Class::ZoneHandle(Z, parent.Owner());
-    const Field& field =
-        Field::ZoneHandle(Z, field_class.LookupInstanceField(field_name));
-    const AbstractType& field_type = AbstractType::ZoneHandle(Z, field.type());
     params.AddFinalParameter(ident_pos,
                              &Symbols::Value(),
-                             &field_type);
+                             &Object::dynamic_type());
     ASSERT(func.num_fixed_parameters() == 2);  // closure, value.
   } else if (!parent.IsGetterFunction() && !parent.IsImplicitGetterFunction()) {
     // NOTE: For the `dil -> flowgraph` we don't use the parser.
@@ -1608,7 +1617,71 @@ SequenceNode* Parser::ParseImplicitClosure(const Function& func) {
     }
     func_args->set_names(arg_names);
   }
-  StaticCallNode* call = new StaticCallNode(token_pos, parent, func_args);
+
+  const String& func_name = String::ZoneHandle(parent.name());
+  const Class& owner = Class::Handle(parent.Owner());
+  Function& target = Function::ZoneHandle(owner.LookupFunction(func_name));
+  if (target.raw() != parent.raw()) {
+    ASSERT(Isolate::Current()->HasAttemptedReload());
+    if (target.IsNull() ||
+        (target.is_static() != parent.is_static()) ||
+        (target.kind() != parent.kind())) {
+      target = Function::null();
+    }
+  }
+
+  AstNode* call = NULL;
+  if (!target.IsNull()) {
+    call = new StaticCallNode(token_pos, target, func_args);
+  } else if (!parent.is_static()) {
+    ASSERT(Isolate::Current()->HasAttemptedReload());
+    // If a subsequent reload reintroduces the target in the middle of the
+    // Invocation object being constructed, we won't be able to successfully
+    // deopt because the generated AST will change.
+    current_function().SetIsOptimizable(false);
+
+    ArgumentListNode* arguments = BuildNoSuchMethodArguments(
+        token_pos, func_name, *func_args, NULL, false);
+    const intptr_t kNumArguments = 2;  // Receiver, InvocationMirror.
+    ArgumentsDescriptor args_desc(
+        Array::Handle(Z, ArgumentsDescriptor::New(kNumArguments)));
+    Function& no_such_method = Function::ZoneHandle(Z,
+    Resolver::ResolveDynamicForReceiverClass(owner,
+                                             Symbols::NoSuchMethod(),
+                                             args_desc));
+    if (no_such_method.IsNull()) {
+      // If noSuchMethod(i) is not found, call Object:noSuchMethod.
+      no_such_method ^= Resolver::ResolveDynamicForReceiverClass(
+          Class::Handle(Z, I->object_store()->object_class()),
+          Symbols::NoSuchMethod(),
+          args_desc);
+    }
+    call = new StaticCallNode(token_pos, no_such_method, arguments);
+  } else {
+    ASSERT(Isolate::Current()->HasAttemptedReload());
+    // If a subsequent reload reintroduces the target in the middle of the
+    // arguments array being constructed, we won't be able to successfully
+    // deopt because the generated AST will change.
+    current_function().SetIsOptimizable(false);
+
+    InvocationMirror::Type im_type;
+    if (parent.IsImplicitGetterFunction()) {
+      im_type = InvocationMirror::kGetter;
+    } else if (parent.IsImplicitSetterFunction()) {
+      im_type = InvocationMirror::kSetter;
+    } else {
+      im_type = InvocationMirror::kMethod;
+    }
+    call = ThrowNoSuchMethodError(TokenPos(),
+                                  owner,
+                                  func_name,
+                                  func_args,
+                                  InvocationMirror::kStatic,
+                                  im_type,
+                                  NULL);  // No existing function.
+  }
+
+  ASSERT(call != NULL);
   ReturnNode* return_node = new ReturnNode(token_pos, call);
   current_block_->statements->Add(return_node);
   return CloseBlock();
@@ -1906,6 +1979,7 @@ void Parser::ParseFormalParameter(bool allow_explicit_default_value,
   TRACE_PARSER("ParseFormalParameter");
   ParamDesc parameter;
   bool var_seen = false;
+  bool final_seen = false;
   bool this_seen = false;
 
   if (evaluate_metadata && (CurrentToken() == Token::kAT)) {
@@ -1916,6 +1990,7 @@ void Parser::ParseFormalParameter(bool allow_explicit_default_value,
 
   if (CurrentToken() == Token::kFINAL) {
     ConsumeToken();
+    final_seen = true;
     parameter.is_final = true;
   } else if (CurrentToken() == Token::kVAR) {
     ConsumeToken();
@@ -1930,6 +2005,9 @@ void Parser::ParseFormalParameter(bool allow_explicit_default_value,
     ExpectToken(Token::kPERIOD);
     this_seen = true;
     parameter.is_field_initializer = true;
+    if (FLAG_initializing_formal_access) {
+      parameter.is_final = true;
+    }
   }
   if ((parameter.type == NULL) && (CurrentToken() == Token::kVOID)) {
     ConsumeToken();
@@ -1971,6 +2049,9 @@ void Parser::ParseFormalParameter(bool allow_explicit_default_value,
     ExpectToken(Token::kPERIOD);
     this_seen = true;
     parameter.is_field_initializer = true;
+    if (FLAG_initializing_formal_access) {
+      parameter.is_final = true;
+    }
   }
 
   // At this point, we must see an identifier for the parameter name.
@@ -2000,7 +2081,11 @@ void Parser::ParseFormalParameter(bool allow_explicit_default_value,
     // This parameter is probably a closure. If we saw the keyword 'var'
     // or 'final', a closure is not legal here and we ignore the
     // opening parens.
-    if (!var_seen && !parameter.is_final) {
+    // TODO(hausner): The language spec appears to allow var and final
+    // in signature types when used with initializing formals:
+    // fieldFormalParameter:
+    // metadata finalConstVarOrType? this ‘.’ identifier formalParameterList? ;
+    if (!var_seen && !final_seen) {
       // The parsed parameter type is actually the function result type.
       const AbstractType& result_type =
           AbstractType::Handle(Z, parameter.type->raw());
@@ -2423,19 +2508,6 @@ ClosureNode* Parser::CreateImplicitClosureNode(const Function& func,
                                                AstNode* receiver) {
   Function& implicit_closure_function =
       Function::ZoneHandle(Z, func.ImplicitClosureFunction());
-  if (receiver != NULL) {
-    // If we create an implicit instance closure from inside a closure of a
-    // parameterized class, make sure that the receiver is captured as
-    // instantiator.
-    if (FunctionLevel() > 0) {
-      const Type& signature_type = Type::Handle(Z,
-          implicit_closure_function.SignatureType());
-      const Class& scope_class = Class::Handle(Z, signature_type.type_class());
-      if (scope_class.IsGeneric()) {
-        CaptureInstantiator();
-      }
-    }
-  }
   return new ClosureNode(token_pos, implicit_closure_function, receiver, NULL);
 }
 
@@ -3219,7 +3291,6 @@ SequenceNode* Parser::ParseConstructor(const Function& func) {
         // Thus, they are set to be invisible when added to the scope.
         LocalVariable* p = param.var;
         ASSERT(p != NULL);
-        ASSERT(p->is_invisible());
         AstNode* value = new LoadLocalNode(param.name_pos, p);
         EnsureExpressionTemp();
         AstNode* initializer =
@@ -3249,6 +3320,9 @@ SequenceNode* Parser::ParseConstructor(const Function& func) {
 
   // Parsing of initializers done. Now we parse the constructor body.
   OpenBlock();  // Block to collect constructor body nodes.
+  if (FLAG_initializing_formal_access) {
+    params.HideInitFormals();
+  }
   if (CurrentToken() == Token::kLBRACE) {
     // We checked in the top-level parse phase that a redirecting
     // constructor does not have a body.
@@ -3404,17 +3478,6 @@ SequenceNode* Parser::ParseFunc(const Function& func, bool check_semicolon) {
     ASSERT(AbstractType::Handle(Z, func.result_type()).IsResolved());
     ASSERT(func.NumParameters() == params.parameters->length());
 
-    // Check whether the function has any field initializer formal parameters,
-    // which are not allowed in non-constructor functions.
-    if (params.has_field_initializer) {
-      for (int i = 0; i < params.parameters->length(); i++) {
-        ParamDesc& param = (*params.parameters)[i];
-        if (param.is_field_initializer) {
-          ReportError(param.name_pos,
-                      "field initializer only allowed in constructors");
-        }
-      }
-    }
     // Populate function scope with the formal parameters.
     AddFormalParamsToScope(&params, current_block_->scope);
 
@@ -3988,6 +4051,12 @@ void Parser::ParseMethodOrConstructor(ClassDesc* members, MemberDesc* method) {
   if (library_.is_dart_scheme() && library_.IsPrivate(*method->name)) {
     func.set_is_reflectable(false);
   }
+  if (is_patch_source() && IsPatchAnnotation(method->metadata_pos)) {
+    // Currently, we just ignore the patch annotation. If the function
+    // name already exists in the patched class, this function will replace
+    // the one in the patched class.
+    method->metadata_pos = TokenPosition::kNoSource;
+  }
   if (FLAG_enable_mirrors && (method->metadata_pos.IsReal())) {
     library_.AddFunctionMetadata(func, method->metadata_pos);
   }
@@ -4088,6 +4157,11 @@ void Parser::ParseFieldDefinition(ClassDesc* members, MemberDesc* field) {
     class_field.set_has_initializer(has_initializer);
     members->AddField(class_field);
     field->field_ = &class_field;
+    if (is_patch_source() && IsPatchAnnotation(field->metadata_pos)) {
+      // Currently, we just ignore the patch annotation on fields.
+      // All fields in the patch class are added to the patched class.
+      field->metadata_pos = TokenPosition::kNoSource;
+    }
     if (FLAG_enable_mirrors && (field->metadata_pos.IsReal())) {
       library_.AddFieldMetadata(class_field, field->metadata_pos);
     }
@@ -4500,10 +4574,17 @@ void Parser::ParseClassDeclaration(const GrowableObjectArray& pending_classes,
   bool is_patch = false;
   bool is_abstract = false;
   TokenPosition declaration_pos =
-      metadata_pos.IsReal() ? metadata_pos : TokenPos();
-  if (is_patch_source() &&
+    metadata_pos.IsReal() ? metadata_pos : TokenPos();
+  if (is_patch_source() && IsPatchAnnotation(metadata_pos)) {
+    is_patch = true;
+    metadata_pos = TokenPosition::kNoSource;
+    declaration_pos = TokenPos();
+  } else if (is_patch_source() &&
       (CurrentToken() == Token::kIDENT) &&
       CurrentLiteral()->Equals("patch")) {
+    if (FLAG_warn_patch) {
+      ReportWarning("deprecated use of patch 'keyword'");
+    }
     ConsumeToken();
     is_patch = true;
   } else if (CurrentToken() == Token::kABSTRACT) {
@@ -4760,6 +4841,10 @@ void Parser::ParseEnumDefinition(const Class& cls) {
   TRACE_PARSER("ParseEnumDefinition");
   INC_STAT(thread(), num_classes_parsed, 1);
 
+  const Class& helper_class =
+      Class::Handle(Z, Library::LookupCoreClass(Symbols::_EnumHelper()));
+  ASSERT(!helper_class.IsNull());
+
   SkipMetadata();
   ExpectToken(Token::kENUM);
 
@@ -4771,9 +4856,9 @@ void Parser::ParseEnumDefinition(const Class& cls) {
   const Type& int_type = Type::Handle(Z, Type::IntType());
   index_field = Field::New(Symbols::Index(),
                            false,  // Not static.
-                           true,  // Field is final.
+                           true,   // Field is final.
                            false,  // Not const.
-                           true,  // Is reflectable.
+                           true,   // Is reflectable.
                            cls,
                            int_type,
                            cls.token_pos());
@@ -4799,18 +4884,12 @@ void Parser::ParseEnumDefinition(const Class& cls) {
   AddFormalParamsToFunction(&params, getter);
   enum_members.AddFunction(getter);
 
-  GrowableObjectArray& enum_names = GrowableObjectArray::Handle(Z,
-      GrowableObjectArray::New(8, Heap::kOld));
-  const String& name_prefix =
-      String::Handle(String::Concat(enum_name, Symbols::Dot()));
-
   ASSERT(IsIdentifier());
   ASSERT(CurrentLiteral()->raw() == cls.Name());
 
   ConsumeToken();  // Enum type name.
   ExpectToken(Token::kLBRACE);
   Field& enum_value = Field::Handle(Z);
-  String& enum_value_name = String::Handle(Z);
   intptr_t i = 0;
   GrowableArray<String*> declared_names(8);
 
@@ -4858,24 +4937,12 @@ void Parser::ParseEnumDefinition(const Class& cls) {
     enum_value.RecordStore(ordinal_value);
     i++;
 
-    // For the user-visible name of the enumeration value, we need to
-    // unmangle private names.
-    if (enum_ident->CharAt(0) == '_') {
-      *enum_ident = String::ScrubName(*enum_ident);
-    }
-    enum_value_name = Symbols::FromConcat(T, name_prefix, *enum_ident);
-    enum_names.Add(enum_value_name, Heap::kOld);
-
     ConsumeToken();  // Enum value name.
     if (CurrentToken() == Token::kCOMMA) {
       ConsumeToken();
     }
   }
   ExpectToken(Token::kRBRACE);
-
-  const Class& helper_class =
-      Class::Handle(Z, Library::LookupCoreClass(Symbols::_EnumHelper()));
-  ASSERT(!helper_class.IsNull());
 
   // Add static field 'const List values'.
   Field& values_field = Field::ZoneHandle(Z);
@@ -4895,16 +4962,35 @@ void Parser::ParseEnumDefinition(const Class& cls) {
   values_field.SetStaticValue(values_array, true);
   values_field.RecordStore(values_array);
 
-  // Create a static field that contains the list of enumeration names.
-  // Clone the _enum_names field from the helper class.
-  Field& names_field = Field::Handle(Z,
-      helper_class.LookupStaticFieldAllowPrivate(Symbols::_EnumNames()));
-  ASSERT(!names_field.IsNull());
-  names_field = names_field.Clone(cls);
-  enum_members.AddField(names_field);
-  const Array& names_array = Array::Handle(Array::MakeArray(enum_names));
-  names_field.SetStaticValue(names_array, true);
-  names_field.RecordStore(names_array);
+  // Clone the _name field from the helper class.
+  Field& _name_field = Field::Handle(Z,
+      helper_class.LookupInstanceFieldAllowPrivate(Symbols::_name()));
+  ASSERT(!_name_field.IsNull());
+  _name_field = _name_field.Clone(cls);
+  enum_members.AddField(_name_field);
+
+  // Add an implicit getter function for the _name field. We use the field's
+  // name directly here so that the private key matches those of the other
+  // cloned helper functions and fields.
+  const Type& string_type = Type::Handle(Z, Type::StringType());
+  const String& name_getter_name = String::Handle(Z,
+      Field::GetterSymbol(String::Handle(_name_field.name())));
+  Function& name_getter = Function::Handle(Z);
+  name_getter = Function::New(name_getter_name,
+                              RawFunction::kImplicitGetter,
+                              /* is_static = */ false,
+                              /* is_const = */ true,
+                              /* is_abstract = */ false,
+                              /* is_external = */ false,
+                              /* is_native = */ false,
+                              cls,
+                              cls.token_pos());
+  name_getter.set_result_type(string_type);
+  name_getter.set_is_debuggable(false);
+  ParamList name_params;
+  name_params.AddReceiver(&Object::dynamic_type(), cls.token_pos());
+  AddFormalParamsToFunction(&name_params, name_getter);
+  enum_members.AddFunction(name_getter);
 
   // Clone the toString() function from the helper class.
   Function& to_string_func = Function::Handle(Z,
@@ -5211,6 +5297,19 @@ void Parser::ConsumeRightAngleBracket() {
   } else {
     UNREACHABLE();
   }
+}
+
+
+bool Parser::IsPatchAnnotation(TokenPosition pos) {
+  if (pos == TokenPosition::kNoSource) {
+    return false;
+  }
+  TokenPosition saved_pos = TokenPos();
+  SetPosition(pos);
+  ExpectToken(Token::kAT);
+  bool is_patch = IsSymbol(Symbols::Patch());
+  SetPosition(saved_pos);
+  return is_patch;
 }
 
 
@@ -5556,10 +5655,16 @@ void Parser::ParseTopLevelFunction(TopLevel* top_level,
   const bool is_static = true;
   bool is_external = false;
   bool is_patch = false;
-  if (is_patch_source() &&
+  if (is_patch_source() && IsPatchAnnotation(metadata_pos)) {
+    is_patch = true;
+    metadata_pos = TokenPosition::kNoSource;
+  } else if (is_patch_source() &&
       (CurrentToken() == Token::kIDENT) &&
       CurrentLiteral()->Equals("patch") &&
       (LookaheadToken(1) != Token::kLPAREN)) {
+    if (FLAG_warn_patch) {
+      ReportWarning("deprecated use of patch 'keyword'");
+    }
     ConsumeToken();
     is_patch = true;
   } else if (CurrentToken() == Token::kEXTERNAL) {
@@ -5679,9 +5784,15 @@ void Parser::ParseTopLevelAccessor(TopLevel* top_level,
   bool is_external = false;
   bool is_patch = false;
   AbstractType& result_type = AbstractType::Handle(Z);
-  if (is_patch_source() &&
+  if (is_patch_source() && IsPatchAnnotation(metadata_pos)) {
+    is_patch = true;
+    metadata_pos = TokenPosition::kNoSource;
+  } else if (is_patch_source() &&
       (CurrentToken() == Token::kIDENT) &&
       CurrentLiteral()->Equals("patch")) {
+    if (FLAG_warn_patch) {
+      ReportWarning("deprecated use of patch 'keyword'");
+    }
     ConsumeToken();
     is_patch = true;
   } else if (CurrentToken() == Token::kEXTERNAL) {
@@ -7414,6 +7525,12 @@ void Parser::AddFormalParamsToFunction(const ParamList* params,
     ParamDesc& param_desc = (*params->parameters)[i];
     func.SetParameterTypeAt(i, *param_desc.type);
     func.SetParameterNameAt(i, *param_desc.name);
+    if (param_desc.is_field_initializer && !func.IsGenerativeConstructor()) {
+      // Redirecting constructors are detected later in ParseConstructor.
+      ReportError(param_desc.name_pos,
+                  "only generative constructors may have "
+                  "initializing formal parameters");
+    }
   }
 }
 
@@ -7439,7 +7556,10 @@ void Parser::AddFormalParamsToScope(const ParamList* params,
     if (param_desc.is_final) {
       parameter->set_is_final();
     }
-    if (param_desc.is_field_initializer) {
+    if (FLAG_initializing_formal_access) {
+      // Field initializer parameters are implicitly final.
+      ASSERT(!param_desc.is_field_initializer || param_desc.is_final);
+    } else if (param_desc.is_field_initializer) {
       parameter->set_invisible(true);
     }
   }
@@ -8741,15 +8861,19 @@ AstNode* Parser::ParseAwaitForStatement(String* label_name) {
 
   // Parse stream expression.
   ExpectToken(Token::kIN);
+
+  // Open a block for the iterator variable and the try-finally statement
+  // that contains the loop. Ensure that the block starts at a different
+  // token position than the following loop block. Both blocks can allocate
+  // contexts and if they have a matching token position range,
+  // it can be an issue (cf. bug 26941).
+  OpenBlock();
+  const Block* await_for_block = current_block_;
+
   const TokenPosition stream_expr_pos = TokenPos();
   AstNode* stream_expr =
       ParseAwaitableExpr(kAllowConst, kConsumeCascades, NULL);
   ExpectToken(Token::kRPAREN);
-
-  // Open a block for the iterator variable and the try-finally
-  // statement that contains the loop.
-  OpenBlock();
-  const Block* loop_block = current_block_;
 
   // Build creation of implicit StreamIterator.
   // var :for-in-iter = new StreamIterator(stream_expr).
@@ -9000,8 +9124,8 @@ AstNode* Parser::ParseAwaitForStatement(String* label_name) {
                          try_index,
                          finally_clause);
 
-  ASSERT(current_block_ == loop_block);
-  loop_block->statements->Add(try_catch_node);
+  ASSERT(current_block_ == await_for_block);
+  await_for_block->statements->Add(try_catch_node);
 
   return CloseBlock();  // Implicit block around while loop.
 }
@@ -9032,12 +9156,17 @@ AstNode* Parser::ParseForInStatement(TokenPosition forin_pos,
     loop_var_name = ExpectIdentifier("variable name expected");
   }
   ExpectToken(Token::kIN);
+
+  // Ensure that the block token range contains the call to moveNext and it
+  // also starts the block at a different token position than the following
+  // loop block. Both blocks can allocate contexts and if they have a matching
+  // token position range, it can be an issue (cf. bug 26941).
+  OpenBlock();  // Implicit block around while loop.
+
   const TokenPosition collection_pos = TokenPos();
   AstNode* collection_expr =
       ParseAwaitableExpr(kAllowConst, kConsumeCascades, NULL);
   ExpectToken(Token::kRPAREN);
-
-  OpenBlock();  // Implicit block around while loop.
 
   // Generate implicit iterator variable and add to scope.
   // We could set the type of the implicit iterator variable to Iterator<T>
@@ -9310,7 +9439,16 @@ SequenceNode* Parser::EnsureFinallyClause(
     LocalVariable* rethrow_stack_trace_var) {
   TRACE_PARSER("EnsureFinallyClause");
   ASSERT(parse || (is_async && (try_stack_ != NULL)));
-  OpenBlock();
+  // Increasing the loop level prevents the reuse of a parent context and forces
+  // the allocation of a local context to hold captured variables declared
+  // inside the finally clause. Otherwise, a captured variable gets allocated at
+  // different slots in the parent context each time the finally clause is
+  // reparsed, which is done to duplicate the ast. Since only one closure is
+  // kept due to canonicalization, it will access the correct slot in only one
+  // copy of the finally clause and the wrong slot in all others. By allocating
+  // a local context, all copies use the same slot in different local contexts.
+  // See issue #26948. This is a temporary fix until we eliminate reparsing.
+  OpenLoopBlock();
   if (parse) {
     ExpectToken(Token::kLBRACE);
   }
@@ -12151,21 +12289,21 @@ bool Parser::IsInstantiatorRequired() const {
 }
 
 
-void Parser::InsertCachedConstantValue(const String& url,
+void Parser::InsertCachedConstantValue(const Script& script,
                                        TokenPosition token_pos,
                                        const Instance& value) {
   ASSERT(Thread::Current()->IsMutatorThread());
-  Isolate* isolate = Isolate::Current();
-  ConstantPosKey key(url, token_pos);
-  if (isolate->object_store()->compile_time_constants() == Array::null()) {
-    const intptr_t kInitialConstMapSize = 16;
-    isolate->object_store()->set_compile_time_constants(
+  const intptr_t kInitialConstMapSize = 16;
+  ASSERT(!script.InVMHeap());
+  if (script.compile_time_constants() == Array::null()) {
+    const Array& array =
         Array::Handle(HashTables::New<ConstantsMap>(kInitialConstMapSize,
-                                                    Heap::kNew)));
+                                                    Heap::kNew));
+    script.set_compile_time_constants(array);
   }
-  ConstantsMap constants(isolate->object_store()->compile_time_constants());
-  constants.InsertNewOrGetValue(key, value);
-  isolate->object_store()->set_compile_time_constants(constants.Release());
+  ConstantsMap constants(script.compile_time_constants());
+  constants.InsertNewOrGetValue(token_pos, value);
+  script.set_compile_time_constants(constants.Release());
 }
 
 
@@ -12176,26 +12314,20 @@ void Parser::CacheConstantValue(TokenPosition token_pos,
     // evaluated only once.
     return;
   }
-  const String& url = String::Handle(Z, script_.url());
-  InsertCachedConstantValue(url, token_pos, value);
-  if (FLAG_compiler_stats) {
-    ConstantsMap constants(isolate()->object_store()->compile_time_constants());
-    thread_->compiler_stats()->num_cached_consts = constants.NumOccupied();
-    constants.Release();
-  }
+  InsertCachedConstantValue(script_, token_pos, value);
 }
 
 
 bool Parser::GetCachedConstant(TokenPosition token_pos, Instance* value) {
-  if (isolate()->object_store()->compile_time_constants() == Array::null()) {
+  bool is_present = false;
+  ASSERT(!script_.InVMHeap());
+  if (script_.compile_time_constants() == Array::null()) {
     return false;
   }
-  ConstantPosKey key(String::Handle(Z, script_.url()), token_pos);
-  ConstantsMap constants(isolate()->object_store()->compile_time_constants());
-  bool is_present = false;
-  *value ^= constants.GetOrNull(key, &is_present);
+  ConstantsMap constants(script_.compile_time_constants());
+  *value ^= constants.GetOrNull(token_pos, &is_present);
   // Mutator compiler thread may add constants while background compiler
-  // is running , and thus change the value of 'compile_time_constants';
+  // is running, and thus change the value of 'compile_time_constants';
   // do not assert that 'compile_time_constants' has not changed.
   constants.Release();
   if (FLAG_compiler_stats && is_present) {
@@ -12247,6 +12379,8 @@ StaticGetterNode* Parser::RunStaticFieldInitializer(
     // not been evaluated. If the field is const, call the static getter method
     // to evaluate the expression and canonicalize the value.
     if (field.is_const()) {
+      NoReloadScope no_reload_scope(isolate(), thread());
+      NoOOBMessageScope no_msg_scope(thread());
       field.SetStaticValue(Object::transition_sentinel());
       const int kNumArguments = 0;  // no arguments.
       const Function& func = Function::Handle(Z,
@@ -12304,6 +12438,8 @@ RawObject* Parser::EvaluateConstConstructorCall(
     const TypeArguments& type_arguments,
     const Function& constructor,
     ArgumentListNode* arguments) {
+  NoReloadScope no_reload_scope(isolate(), thread());
+  NoOOBMessageScope no_msg_scope(thread());
   // Factories have one extra argument: the type arguments.
   // Constructors have 1 extra arguments: receiver.
   const int kNumExtraArgs = 1;
@@ -13818,6 +13954,8 @@ AstNode* Parser::ParseNewOperator(Token::Kind op_kind) {
 
 
 String& Parser::Interpolate(const GrowableArray<AstNode*>& values) {
+  NoReloadScope no_reload_scope(isolate(), thread());
+  NoOOBMessageScope no_msg_scope(thread());
   const Class& cls = Class::Handle(
       Z, Library::LookupCoreClass(Symbols::StringBase()));
   ASSERT(!cls.IsNull());
@@ -14165,6 +14303,8 @@ AstNode* Parser::ParsePrimary() {
 // be a compile time constant.
 const Instance& Parser::EvaluateConstExpr(TokenPosition expr_pos,
                                           AstNode* expr) {
+  NoReloadScope no_reload_scope(isolate(), thread());
+  NoOOBMessageScope no_msg_scope(thread());
   if (expr->IsLiteralNode()) {
     return expr->AsLiteralNode()->literal();
   } else if (expr->IsLoadLocalNode() &&
@@ -14646,7 +14786,7 @@ ParsedFunction* Parser::ParseStaticFieldInitializer(const Field& field) {
 }
 
 
-void Parser::InsertCachedConstantValue(const String& url,
+void Parser::InsertCachedConstantValue(const Script& script,
                                        TokenPosition token_pos,
                                        const Instance& value) {
   UNREACHABLE();

@@ -314,6 +314,9 @@ class TestCase : TestCaseBase {
   // Helper function which reloads the current isolate using |script|.
   static Dart_Handle ReloadTestScript(const char* script);
 
+  static void AddTestLib(const char* url, const char* source);
+  static const char* GetTestLib(const char* url);
+
  private:
   static Dart_Isolate CreateIsolate(const uint8_t* buffer, const char* name);
 

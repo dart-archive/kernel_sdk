@@ -29,9 +29,10 @@ import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
 import 'package:analyzer/plugin/resolver_provider.dart';
-import 'package:analyzer/source/embedder.dart';
 import 'package:analyzer/source/pub_package_map_provider.dart';
+import 'package:analyzer/src/context/builder.dart';
 import 'package:analyzer/src/dart/ast/utilities.dart';
+import 'package:analyzer/src/dart/sdk/sdk.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/java_io.dart';
@@ -39,6 +40,7 @@ import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
 import 'package:analyzer/src/generated/utilities_general.dart';
+import 'package:analyzer/src/summary/pub_summary.dart';
 import 'package:analyzer/src/task/dart.dart';
 import 'package:analyzer/src/util/glob.dart';
 import 'package:analyzer/task/dart.dart';
@@ -298,6 +300,11 @@ class AnalysisServer {
   ResolverProvider fileResolverProvider;
 
   /**
+   * The manager of pub package summaries.
+   */
+  PubSummaryManager pubSummaryManager;
+
+  /**
    * Initialize a newly created server to receive requests from and send
    * responses to the given [channel].
    *
@@ -362,6 +369,8 @@ class AnalysisServer {
       });
     });
     _setupIndexInvalidation();
+    pubSummaryManager =
+        new PubSummaryManager(resourceProvider, '${io.pid}.temp');
     Notification notification =
         new ServerConnectedParams(VERSION, io.pid).toNotification();
     channel.sendNotification(notification);
@@ -699,23 +708,6 @@ class AnalysisServer {
     return nodes;
   }
 
-// TODO(brianwilkerson) Add the following method after 'prioritySources' has
-// been added to InternalAnalysisContext.
-//  /**
-//   * Return a list containing the full names of all of the sources that are
-//   * priority sources.
-//   */
-//  List<String> getPriorityFiles() {
-//    List<String> priorityFiles = new List<String>();
-//    folderMap.values.forEach((ContextDirectory directory) {
-//      InternalAnalysisContext context = directory.context;
-//      context.prioritySources.forEach((Source source) {
-//        priorityFiles.add(source.fullName);
-//      });
-//    });
-//    return priorityFiles;
-//  }
-
   /**
    * Returns resolved [CompilationUnit]s of the Dart file with the given [path].
    *
@@ -744,6 +736,23 @@ class AnalysisServer {
     // done
     return units;
   }
+
+// TODO(brianwilkerson) Add the following method after 'prioritySources' has
+// been added to InternalAnalysisContext.
+//  /**
+//   * Return a list containing the full names of all of the sources that are
+//   * priority sources.
+//   */
+//  List<String> getPriorityFiles() {
+//    List<String> priorityFiles = new List<String>();
+//    folderMap.values.forEach((ContextDirectory directory) {
+//      InternalAnalysisContext context = directory.context;
+//      context.prioritySources.forEach((Source source) {
+//        priorityFiles.add(source.fullName);
+//      });
+//    });
+//    return priorityFiles;
+//  }
 
   /**
    * Handle a [request] that was read from the communication channel.
@@ -926,6 +935,32 @@ class AnalysisServer {
     // Instruct the contextDirectoryManager to rebuild all contexts from
     // scratch.
     contextManager.refresh(roots);
+  }
+
+  /**
+   * Schedule cache consistency validation in [context].
+   * The most of the validation must be done asynchronously.
+   */
+  void scheduleCacheConsistencyValidation(AnalysisContext context) {
+    if (context is InternalAnalysisContext) {
+      CacheConsistencyValidator validator = context.cacheConsistencyValidator;
+      List<Source> sources = validator.getSourcesToComputeModificationTimes();
+      // Compute modification times and notify the validator asynchronously.
+      new Future(() async {
+        try {
+          List<int> modificationTimes =
+              await resourceProvider.getModificationTimes(sources);
+          bool cacheInconsistencyFixed = validator
+              .sourceModificationTimesComputed(sources, modificationTimes);
+          if (cacheInconsistencyFixed) {
+            scheduleOperation(new PerformAnalysisOperation(context, false));
+          }
+        } catch (exception, stackTrace) {
+          sendServerErrorNotification(
+              'Failed to check cache consistency', exception, stackTrace);
+        }
+      });
+    }
   }
 
   /**
@@ -1567,6 +1602,10 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
     context.sourceFactory =
         _createSourceFactory(context, options, disposition, folder);
     context.analysisOptions = options;
+
+    // TODO(scheglov) use linked bundles
+//    analysisServer.pubSummaryManager.getLinkedBundles(context);
+
     analysisServer._onContextsChangedController
         .add(new ContextsChangedEvent(added: [context]));
     analysisServer.schedulePerformAnalysisOperation(context);
@@ -1635,7 +1674,7 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
     EmbedderYamlLocator locator =
         disposition.getEmbedderLocator(resourceProvider);
     Map<Folder, YamlMap> embedderYamls = locator.embedderYamls;
-    EmbedderSdk embedderSdk = new EmbedderSdk(embedderYamls);
+    EmbedderSdk embedderSdk = new EmbedderSdk(resourceProvider, embedderYamls);
     if (embedderSdk.libraryMap.size() == 0) {
       // There was no embedder file, or the file was empty, so used the default
       // SDK.

@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of js_backend;
+part of js_backend.backend;
 
 /// For each class, stores the possible class subtype tests that could succeed.
 abstract class TypeChecks {
@@ -150,7 +150,7 @@ class _RuntimeTypes implements RuntimeTypes {
   @override
   void registerRtiDependency(Element element, Element dependency) {
     // We're not dealing with typedef for now.
-    if (!element.isClass || !dependency.isClass) return;
+    if (element == null || !element.isClass || !dependency.isClass) return;
     Set<ClassElement> classes =
         rtiDependencies.putIfAbsent(element, () => new Set<ClassElement>());
     classes.add(dependency);
@@ -1049,8 +1049,8 @@ class Substitution {
 class TypeCheck {
   final ClassElement cls;
   final Substitution substitution;
-  final int hashCode = (nextHash++) & 0x3fffffff;
-  static int nextHash = 49;
+  final int hashCode = _nextHash = (_nextHash + 100003).toUnsigned(30);
+  static int _nextHash = 0;
 
   TypeCheck(this.cls, this.substitution);
 }

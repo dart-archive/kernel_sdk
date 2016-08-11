@@ -443,7 +443,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
     if (result == null) {
       reporter.internalError(node, 'Type is null.');
     }
-    return _record(node, result);
+    return result;
   }
 
   void checkTypePromotion(Node node, TypePromotion typePromotion,
@@ -683,7 +683,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
       assert(invariant(
           node,
           element.isVariable ||
-              element.isParameter ||
+              element.isRegularParameter ||
               element.isField ||
               (element.isInitializingFormal &&
                   compiler.options.enableInitializingFormalAccess),
@@ -772,7 +772,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
     }
     if (receiverElement != null &&
         (receiverElement.isVariable ||
-            receiverElement.isParameter ||
+            receiverElement.isRegularParameter ||
             (receiverElement.isInitializingFormal &&
                 compiler.options.enableInitializingFormalAccess))) {
       Link<TypePromotion> typePromotions = typePromotionsMap[receiverElement];
@@ -1070,7 +1070,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
       // foo() where foo is a method in the same class.
       return createResolvedAccess(node, name, element);
     } else if (element.isVariable ||
-        element.isParameter ||
+        element.isRegularParameter ||
         element.isField ||
         element.isInitializingFormal) {
       // foo() where foo is a field in the same class.
@@ -1091,7 +1091,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
 
   ElementAccess createPromotedAccess(Element element) {
     if (element.isVariable ||
-        element.isParameter ||
+        element.isRegularParameter ||
         (element.isInitializingFormal &&
             compiler.options.enableInitializingFormalAccess)) {
       TypePromotion typePromotion = getKnownTypePromotion(element);
@@ -1149,24 +1149,6 @@ class TypeCheckerVisitor extends Visitor<DartType> {
       }
     }
     return null;
-  }
-
-  static bool _fyiShown = false;
-  DartType _record(Node node, DartType type) {
-    if (node is! Expression) return type;
-    if (const bool.fromEnvironment('send_stats') &&
-        executableContext != null &&
-        // TODO(sigmund): enable also in core libs.
-        !executableContext.library.isPlatformLibrary &&
-        !type.isDynamic) {
-      if (!_fyiShown) {
-        print('FYI experiment to collect send stats is on: '
-            'caching types of expressions');
-        _fyiShown = true;
-      }
-      elements.typesCache[node] = type;
-    }
-    return type;
   }
 
   DartType visitSend(Send node) {
@@ -1230,7 +1212,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
 
         if (variable != null &&
             (variable.isVariable ||
-                variable.isParameter ||
+                variable.isRegularParameter ||
                 (variable.isInitializingFormal &&
                     compiler.options.enableInitializingFormalAccess))) {
           DartType knownType = getKnownType(variable);
@@ -1742,7 +1724,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
 
   DartType visitAwait(Await node) {
     DartType expressionType = analyze(node.expression);
-    if (compiler.backend.supportsAsyncAwait) {
+    if (resolution.target.supportsAsyncAwait) {
       return types.flatten(expressionType);
     } else {
       return const DynamicType();
@@ -1869,7 +1851,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
   visitAsyncForIn(AsyncForIn node) {
     DartType elementType = computeForInElementType(node);
     DartType expressionType = analyze(node.expression);
-    if (compiler.backend.supportsAsyncAwait) {
+    if (resolution.target.supportsAsyncAwait) {
       DartType streamOfDynamic = coreTypes.streamType();
       if (!types.isAssignable(expressionType, streamOfDynamic)) {
         reportMessage(node.expression, MessageKind.NOT_ASSIGNABLE,

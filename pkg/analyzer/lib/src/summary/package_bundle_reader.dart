@@ -9,10 +9,14 @@ import 'package:analyzer/src/generated/java_io.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
+import 'package:analyzer/src/generated/utilities_dart.dart';
+import 'package:analyzer/src/summary/format.dart';
 import 'package:analyzer/src/summary/idl.dart';
 import 'package:analyzer/src/summary/resynthesize.dart';
 import 'package:analyzer/src/task/dart.dart';
+import 'package:analyzer/src/util/fast_uri.dart';
 import 'package:analyzer/task/dart.dart';
+import 'package:analyzer/task/general.dart';
 import 'package:analyzer/task/model.dart';
 import 'package:path/path.dart' as pathos;
 
@@ -182,6 +186,27 @@ abstract class ResynthesizerResultProvider extends ResultProvider {
           return true;
         }
         return false;
+      } else if (result == CONTAINING_LIBRARIES) {
+        List<String> libraryUriStrings =
+            _dataStore.getContainingLibraryUris(uriString);
+        if (libraryUriStrings != null) {
+          List<Source> librarySources = libraryUriStrings
+              .map((libraryUriString) =>
+                  context.sourceFactory.resolveUri(target, libraryUriString))
+              .toList(growable: false);
+          entry.setValue(result, librarySources, TargetedResult.EMPTY_LIST);
+          return true;
+        }
+        return false;
+      } else if (result == LINE_INFO) {
+        UnlinkedUnit unlinkedUnit = _dataStore.unlinkedMap[uriString];
+        List<int> lineStarts = unlinkedUnit.lineStarts;
+        if (lineStarts.isNotEmpty) {
+          LineInfo lineInfo = new LineInfo(lineStarts);
+          entry.setValue(result, lineInfo, TargetedResult.EMPTY_LIST);
+          return true;
+        }
+        return false;
       }
     } else if (target is LibrarySpecificUnit) {
       if (result == CREATED_RESOLVED_UNIT1 ||
@@ -259,6 +284,15 @@ class SummaryDataStore {
   final List<PackageBundle> bundles = <PackageBundle>[];
 
   /**
+   * List of dependency information for the package bundles in this
+   * [SummaryDataStore], in a form that is ready to store in a newly generated
+   * summary.  Computing this information has nonzero cost, so it is only
+   * recorded if the [SummaryDataStore] is constructed with the argument
+   * `recordDependencies`.  Otherwise `null`.
+   */
+  final List<PackageDependencyInfoBuilder> dependencies;
+
+  /**
    * Map from the URI of a compilation unit to the unlinked summary of that
    * compilation unit.
    */
@@ -274,7 +308,16 @@ class SummaryDataStore {
    */
   final Map<String, String> uriToSummaryPath = <String, String>{};
 
-  SummaryDataStore(Iterable<String> summaryPaths) {
+  /**
+   * Create a [SummaryDataStore] and populate it with the summaries in
+   * [summaryPaths].  If [recordDependencyInfo] is `true`, record
+   * [PackageDependencyInfo] for each summary, for later access via
+   * [dependencies].
+   */
+  SummaryDataStore(Iterable<String> summaryPaths,
+      {bool recordDependencyInfo: false})
+      : dependencies =
+            recordDependencyInfo ? <PackageDependencyInfoBuilder>[] : null {
     summaryPaths.forEach(_fillMaps);
   }
 
@@ -283,6 +326,29 @@ class SummaryDataStore {
    */
   void addBundle(String path, PackageBundle bundle) {
     bundles.add(bundle);
+    if (dependencies != null) {
+      Set<String> includedPackageNames = new Set<String>();
+      bool includesDartUris = false;
+      bool includesFileUris = false;
+      for (String uriString in bundle.unlinkedUnitUris) {
+        Uri uri = FastUri.parse(uriString);
+        String scheme = uri.scheme;
+        if (scheme == 'package') {
+          List<String> pathSegments = uri.pathSegments;
+          includedPackageNames.add(pathSegments.isEmpty ? '' : pathSegments[0]);
+        } else if (scheme == 'file') {
+          includesFileUris = true;
+        } else if (scheme == 'dart') {
+          includesDartUris = true;
+        }
+      }
+      dependencies.add(new PackageDependencyInfoBuilder(
+          includedPackageNames: includedPackageNames.toList()..sort(),
+          includesDartUris: includesDartUris,
+          includesFileUris: includesFileUris,
+          apiSignature: bundle.apiSignature,
+          summaryPath: path));
+    }
     for (int i = 0; i < bundle.unlinkedUnitUris.length; i++) {
       String uri = bundle.unlinkedUnitUris[i];
       uriToSummaryPath[uri] = path;
@@ -292,6 +358,31 @@ class SummaryDataStore {
       String uri = bundle.linkedLibraryUris[i];
       linkedMap[uri] = bundle.linkedLibraries[i];
     }
+  }
+
+  /**
+   * Return a list of absolute URIs of the libraries that contain the unit with
+   * the given [unitUriString], or `null` if no such library is in the store.
+   */
+  List<String> getContainingLibraryUris(String unitUriString) {
+    // The unit is the defining unit of a library.
+    if (linkedMap.containsKey(unitUriString)) {
+      return <String>[unitUriString];
+    }
+    // Check every unlinked unit whether it uses [unitUri] as a part.
+    List<String> libraryUriStrings = <String>[];
+    unlinkedMap.forEach((unlinkedUnitUriString, unlinkedUnit) {
+      Uri libraryUri = FastUri.parse(unlinkedUnitUriString);
+      for (String partUriString in unlinkedUnit.publicNamespace.parts) {
+        Uri partUri = FastUri.parse(partUriString);
+        String partAbsoluteUriString =
+            resolveRelativeUri(libraryUri, partUri).toString();
+        if (partAbsoluteUriString == unitUriString) {
+          libraryUriStrings.add(unlinkedUnitUriString);
+        }
+      }
+    });
+    return libraryUriStrings.isNotEmpty ? libraryUriStrings : null;
   }
 
   void _fillMaps(String path) {

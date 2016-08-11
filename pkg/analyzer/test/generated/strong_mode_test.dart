@@ -121,9 +121,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     check("f2", _isFutureOfDynamic);
 
     check("f3", _isFutureOfInt);
-    // This should be int when we handle the implicit Future<T> | T union
-    // https://github.com/dart-lang/sdk/issues/25322
-    check("f4", _isFutureOfDynamic);
+    check("f4", _isFutureOfInt);
     check("f5", _isFutureOfInt);
 
     check("g0", _isFutureOfDynamic);
@@ -131,9 +129,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     check("g2", _isFutureOfDynamic);
 
     check("g3", _isFutureOfInt);
-    // This should be int when we handle the implicit Future<T> | T union
-    // https://github.com/dart-lang/sdk/issues/25322
-    check("g4", _isFutureOfDynamic);
+    check("g4", _isFutureOfInt);
     check("g5", _isFutureOfInt);
   }
 
@@ -181,9 +177,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     check("f2", _isFutureOfDynamic);
 
     check("f3", _isFutureOfInt);
-    // This should be int when we handle the implicit Future<T> | T union
-    // https://github.com/dart-lang/sdk/issues/25322
-    check("f4", _isFutureOfDynamic);
+    check("f4", _isFutureOfInt);
     check("f5", _isFutureOfInt);
 
     check("g0", _isFutureOfDynamic);
@@ -191,9 +185,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     check("g2", _isFutureOfDynamic);
 
     check("g3", _isFutureOfInt);
-    // This should be int when we handle the implicit Future<T> | T union
-    // https://github.com/dart-lang/sdk/issues/25322
-    check("g4", _isFutureOfDynamic);
+    check("g4", _isFutureOfInt);
     check("g5", _isFutureOfInt);
   }
 
@@ -222,7 +214,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     check("g1", _isStreamOf([_isDynamic]));
 
     check("g2", _isListOf(_isInt));
-    check("g3", _isStreamOf([_isListOf(_isInt)]));
+    check("g3", _isStreamOf([(DartType type) => _isListOf(_isInt)(type)]));
   }
 
   void test_async_star_propagation() {
@@ -249,7 +241,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     check("g1", _isStreamOf([_isDynamic]));
 
     check("g2", _isListOf(_isInt));
-    check("g3", _isStreamOf([_isListOf(_isInt)]));
+    check("g3", _isStreamOf([(DartType type) => _isListOf(_isInt)(type)]));
   }
 
   void test_cascadeExpression() {
@@ -698,7 +690,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
 
     Asserter<InterfaceType> assertListOfInt = _isListOf(_isInt);
     Asserter<InterfaceType> assertMapOfIntToListOfInt =
-        _isMapOf(_isInt, assertListOfInt);
+        _isMapOf(_isInt, (DartType type) => assertListOfInt(type));
 
     VariableDeclaration mapB = AstFinder.getFieldInClass(unit, "B", "map");
     MethodDeclaration mapC = AstFinder.getMethodInClass(unit, "C", "map");
@@ -798,7 +790,6 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
         A<int, String> a1 = new D.named(3);
       }
       void test8() {
-        // Currently we only allow variable constraints.  Test that we reject.
         A<C<int>, String> a0 = new E("hello");
       }
       void test9() { // Check named and optional arguments
@@ -921,7 +912,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     {
       List<Statement> statements =
           AstFinder.getStatementsInTopLevelFunction(unit, "test8");
-      hasType(assertEOf([_isDynamic, _isDynamic]), rhs(statements[0]));
+      hasType(assertEOf([_isInt, _isString]), rhs(statements[0]));
     }
 
     {
@@ -956,7 +947,8 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     }
 
     Asserter<InterfaceType> assertListOfInt = _isListOf(_isInt);
-    Asserter<InterfaceType> assertListOfListOfInt = _isListOf(assertListOfInt);
+    Asserter<InterfaceType> assertListOfListOfInt =
+        _isListOf((DartType type) => assertListOfInt(type));
 
     assertListOfListOfInt(literal(0).staticType);
     assertListOfListOfInt(literal(1).staticType);
@@ -1096,7 +1088,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
 
     Asserter<InterfaceType> assertListOfString = _isListOf(_isString);
     Asserter<InterfaceType> assertMapOfIntToListOfString =
-        _isMapOf(_isInt, assertListOfString);
+        _isMapOf(_isInt, (DartType type) => assertListOfString(type));
 
     assertMapOfIntToListOfString(literal(0).staticType);
     assertMapOfIntToListOfString(literal(1).staticType);
@@ -1250,7 +1242,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     check("f1", _isListOf(_isDynamic));
 
     check("f2", _isListOf(_isInt));
-    check("f3", _isListOf(_isListOf(_isInt)));
+    check("f3", _isListOf((DartType type) => _isListOf(_isInt)(type)));
   }
 
   void test_sync_star_propagation() {
@@ -1277,7 +1269,7 @@ class StrongModeDownwardsInferenceTest extends ResolverTestCase {
     check("f1", _isListOf(_isDynamic));
 
     check("f2", _isListOf(_isInt));
-    check("f3", _isListOf(_isListOf(_isInt)));
+    check("f3", _isListOf((DartType type) => _isListOf(_isInt)(type)));
   }
 }
 
@@ -1745,7 +1737,7 @@ class C<T> {
 }
 ''');
     expectIdentifierType('f', '<S>(S) → S');
-    expectIdentifierType('g', '<S>(S) → dynamic');
+    expectIdentifierType('g', '<S>(S) → <S>(S) → S');
   }
 
   void test_genericMethod_override() {

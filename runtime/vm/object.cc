@@ -1845,6 +1845,7 @@ RawObject* Object::Allocate(intptr_t cls_id,
     Exceptions::Throw(thread, exception);
     UNREACHABLE();
   }
+#ifndef PRODUCT
   ClassTable* class_table = isolate->class_table();
   if (space == Heap::kNew) {
     class_table->UpdateAllocatedNew(cls_id, size);
@@ -1855,6 +1856,7 @@ RawObject* Object::Allocate(intptr_t cls_id,
   if (FLAG_profiler && cls.TraceAllocation(isolate)) {
     Profiler::SampleAllocation(thread, cls_id);
   }
+#endif  // !PRODUCT
   NoSafepointScope no_safepoint;
   InitializeObject(address, cls_id, size, (isolate == Dart::vm_isolate()));
   RawObject* raw_obj = reinterpret_cast<RawObject*>(address + kHeapObjectTag);
@@ -2074,7 +2076,7 @@ RawArray* Class::OffsetToFieldMap() const {
       fields = cls.fields();
       for (intptr_t i = 0; i < fields.Length(); ++i) {
         f ^= fields.At(i);
-        if (!f.is_static()) {
+        if (f.is_instance()) {
           array.SetAt(f.Offset() >> kWordSizeLog2, f);
         }
       }
@@ -2809,12 +2811,17 @@ void Class::DisableAllCHAOptimizedCode() {
 
 
 bool Class::TraceAllocation(Isolate* isolate) const {
+#ifndef PRODUCT
   ClassTable* class_table = isolate->class_table();
   return class_table->TraceAllocationFor(id());
+#else
+  return false;
+#endif
 }
 
 
 void Class::SetTraceAllocation(bool trace_allocation) const {
+#ifndef PRODUCT
   Isolate* isolate = Isolate::Current();
   const bool changed = trace_allocation != this->TraceAllocation(isolate);
   if (changed) {
@@ -2822,6 +2829,9 @@ void Class::SetTraceAllocation(bool trace_allocation) const {
     class_table->SetTraceAllocationFor(id(), trace_allocation);
     DisableAllocationStub();
   }
+#else
+  UNREACHABLE();
+#endif
 }
 
 
@@ -4190,7 +4200,8 @@ RawField* Class::LookupField(const String& name, MemberKind kind) const {
 }
 
 
-RawField* Class::LookupFieldAllowPrivate(const String& name) const {
+RawField* Class::LookupFieldAllowPrivate(const String& name,
+                                         bool instance_only) const {
   // Use slow string compare, ignoring privacy name mangling.
   Thread* thread = Thread::Current();
   if (EnsureIsFinalized(thread) != Error::null()) {
@@ -4208,6 +4219,10 @@ RawField* Class::LookupFieldAllowPrivate(const String& name) const {
   for (intptr_t i = 0; i < len; i++) {
     field ^= flds.At(i);
     field_name ^= field.name();
+    if (field.is_static() && instance_only) {
+      // If we only care about instance fields, skip statics.
+      continue;
+    }
     if (String::EqualsIgnoringPrivateKey(field_name, name)) {
       return field.raw();
     }
@@ -4217,7 +4232,7 @@ RawField* Class::LookupFieldAllowPrivate(const String& name) const {
 
 
 RawField* Class::LookupInstanceFieldAllowPrivate(const String& name) const {
-  Field& field = Field::Handle(LookupFieldAllowPrivate(name));
+  Field& field = Field::Handle(LookupFieldAllowPrivate(name, true));
   if (!field.IsNull() && !field.is_static()) {
     return field.raw();
   }
@@ -5273,7 +5288,6 @@ bool Function::HasCode() const {
 
 void Function::ClearCode() const {
   ASSERT(Thread::Current()->IsMutatorThread());
-  ASSERT((usage_counter() != 0) || (ic_data_array() == Array::null()));
   StorePointer(&raw_ptr()->unoptimized_code_, Code::null());
   SetInstructions(Code::Handle(StubCode::LazyCompile_entry()->code()));
 }
@@ -8694,6 +8708,11 @@ RawString* Script::GenerateSource() const {
 }
 
 
+void Script::set_compile_time_constants(const Array& value) const {
+  StorePointer(&raw_ptr()->compile_time_constants_, value.raw());
+}
+
+
 RawGrowableObjectArray* Script::GenerateLineNumberArray() const {
   Zone* zone = Thread::Current()->zone();
   const GrowableObjectArray& info =
@@ -8801,6 +8820,11 @@ const char* Script::GetKindAsCString() const {
 
 void Script::set_url(const String& value) const {
   StorePointer(&raw_ptr()->url_, value.raw());
+}
+
+
+void Script::set_resolved_url(const String& value) const {
+  StorePointer(&raw_ptr()->resolved_url_, value.raw());
 }
 
 
@@ -9066,10 +9090,20 @@ RawScript* Script::New() {
 RawScript* Script::New(const String& url,
                        const String& source,
                        RawScript::Kind kind) {
+  return Script::New(url, url, source, kind);
+}
+
+
+RawScript* Script::New(const String& url,
+                       const String& resolved_url,
+                       const String& source,
+                       RawScript::Kind kind) {
   Thread* thread = Thread::Current();
   Zone* zone = thread->zone();
   const Script& result = Script::Handle(zone, Script::New());
   result.set_url(String::Handle(zone, Symbols::New(thread, url)));
+  result.set_resolved_url(
+      String::Handle(zone, Symbols::New(thread, resolved_url)));
   result.set_source(source);
   result.set_kind(kind);
   result.set_load_timestamp(FLAG_remove_script_timestamps_for_test
@@ -10311,18 +10345,10 @@ static RawArray* NewDictionary(intptr_t initial_size) {
 }
 
 
-void Library::InitResolvedNamesCache(intptr_t size,
-                                     SnapshotReader* reader) const {
+void Library::InitResolvedNamesCache(intptr_t size) const {
   ASSERT(Thread::Current()->IsMutatorThread());
-  if (reader == NULL) {
-    StorePointer(&raw_ptr()->resolved_names_,
-                 HashTables::New<ResolvedNamesMap>(size));
-  } else {
-    intptr_t len = ResolvedNamesMap::ArrayLengthForNumOccupied(size);
-    *reader->ArrayHandle() ^= reader->NewArray(len);
-    StorePointer(&raw_ptr()->resolved_names_,
-                 HashTables::New<ResolvedNamesMap>(*reader->ArrayHandle()));
-  }
+  StorePointer(&raw_ptr()->resolved_names_,
+               HashTables::New<ResolvedNamesMap>(size));
 }
 
 
@@ -12476,7 +12502,10 @@ const char* ICData::ToCString() const {
 
 RawFunction* ICData::Owner() const {
   Object& obj = Object::Handle(raw_ptr()->owner_);
-  if (obj.IsFunction()) {
+  if (obj.IsNull()) {
+    ASSERT(Dart::snapshot_kind() == Snapshot::kAppNoJIT);
+    return Function::null();
+  } else if (obj.IsFunction()) {
     return Function::Cast(obj).raw();
   } else {
     ICData& original = ICData::Handle();
@@ -12841,10 +12870,20 @@ void ICData::AddTarget(const Function& target) const {
 }
 
 
+bool ICData::ValidateInterceptor(const Function& target) const {
+  ObjectStore* store = Isolate::Current()->object_store();
+  ASSERT((target.raw() == store->simple_instance_of_true_function()) ||
+         (target.raw() == store->simple_instance_of_false_function()));
+  const String& instance_of_name = String::Handle(
+      Library::PrivateCoreLibName(Symbols::_simpleInstanceOf()).raw());
+  ASSERT(target_name() == instance_of_name.raw());
+  return true;
+}
+
 void ICData::AddCheck(const GrowableArray<intptr_t>& class_ids,
                       const Function& target) const {
   ASSERT(!target.IsNull());
-  ASSERT(target.name() == target_name());
+  ASSERT((target.name() == target_name()) || ValidateInterceptor(target));
   DEBUG_ASSERT(!HasCheck(class_ids));
   ASSERT(NumArgsTested() > 1);  // Otherwise use 'AddReceiverCheck'.
   ASSERT(class_ids.length() == NumArgsTested());
@@ -12938,10 +12977,6 @@ void ICData::DebugDump() const {
     }
     THR_Print("--- %" Pd " hits\n", GetCountAt(i));
   }
-}
-
-
-void ICData::ValidateSentinelLocations() const {
 }
 
 
@@ -13384,12 +13419,10 @@ RawArray* ICData::NewNonCachedEmptyICDataArray(intptr_t num_args_tested) {
 }
 
 
-RawArray* ICData::NewEmptyICDataArray(intptr_t num_args_tested) {
+RawArray* ICData::CachedEmptyICDataArray(intptr_t num_args_tested) {
   ASSERT(num_args_tested >= 0);
-  if (num_args_tested < kCachedICDataArrayCount) {
-    return cached_icdata_arrays_[num_args_tested];
-  }
-  return NewNonCachedEmptyICDataArray(num_args_tested);
+  ASSERT(num_args_tested < kCachedICDataArrayCount);
+  return cached_icdata_arrays_[num_args_tested];
 }
 
 
@@ -13436,16 +13469,6 @@ bool ICData::IsImmutable() const {
 }
 
 
-void ICData::ResetData() const {
-  // Number of array elements in one test entry.
-  intptr_t len = TestEntryLength();
-  // IC data array must be null terminated (sentinel entry).
-  const Array& ic_data = Array::Handle(Array::New(len, Heap::kOld));
-  set_ic_data_array(ic_data);
-  WriteSentinel(ic_data, len);
-}
-
-
 RawICData* ICData::New() {
   ICData& result = ICData::Handle();
   {
@@ -13481,7 +13504,7 @@ RawICData* ICData::New(const Function& owner,
                                                       num_args_tested,
                                                       is_static_call));
   result.set_ic_data_array(
-      Array::Handle(zone, NewEmptyICDataArray(num_args_tested)));
+      Array::Handle(zone, CachedEmptyICDataArray(num_args_tested)));
   return result.raw();
 }
 
@@ -13524,95 +13547,6 @@ RawICData* ICData::Clone(const ICData& from) {
   // Copy deoptimization reasons.
   result.SetDeoptReasons(from.DeoptReasons());
   return result.raw();
-}
-
-
-static Token::Kind RecognizeArithmeticOp(const String& name) {
-  ASSERT(name.IsSymbol());
-  if (name.raw() == Symbols::Plus().raw()) {
-    return Token::kADD;
-  } else if (name.raw() == Symbols::Minus().raw()) {
-    return Token::kSUB;
-  } else if (name.raw() == Symbols::Star().raw()) {
-    return Token::kMUL;
-  } else if (name.raw() == Symbols::Slash().raw()) {
-    return Token::kDIV;
-  } else if (name.raw() == Symbols::TruncDivOperator().raw()) {
-    return Token::kTRUNCDIV;
-  } else if (name.raw() == Symbols::Percent().raw()) {
-    return Token::kMOD;
-  } else if (name.raw() == Symbols::BitOr().raw()) {
-    return Token::kBIT_OR;
-  } else if (name.raw() == Symbols::Ampersand().raw()) {
-    return Token::kBIT_AND;
-  } else if (name.raw() == Symbols::Caret().raw()) {
-    return Token::kBIT_XOR;
-  } else if (name.raw() == Symbols::LeftShiftOperator().raw()) {
-    return Token::kSHL;
-  } else if (name.raw() == Symbols::RightShiftOperator().raw()) {
-    return Token::kSHR;
-  } else if (name.raw() == Symbols::Tilde().raw()) {
-    return Token::kBIT_NOT;
-  } else if (name.raw() == Symbols::UnaryMinus().raw()) {
-    return Token::kNEGATE;
-  }
-  return Token::kILLEGAL;
-}
-
-
-bool ICData::HasRangeFeedback() const {
-  const String& target = String::Handle(target_name());
-  const Token::Kind token_kind = RecognizeArithmeticOp(target);
-  if (!Token::IsBinaryArithmeticOperator(token_kind) &&
-      !Token::IsUnaryArithmeticOperator(token_kind)) {
-    return false;
-  }
-
-  bool initialized = false;
-  const intptr_t len = NumberOfChecks();
-  GrowableArray<intptr_t> class_ids;
-  for (intptr_t i = 0; i < len; i++) {
-    if (IsUsedAt(i)) {
-      initialized = true;
-      GetClassIdsAt(i, &class_ids);
-      for (intptr_t j = 0; j < class_ids.length(); j++) {
-        const intptr_t cid = class_ids[j];
-        if ((cid != kSmiCid) && (cid != kMintCid)) {
-          return false;
-        }
-      }
-    }
-  }
-
-  return initialized;
-}
-
-
-ICData::RangeFeedback ICData::DecodeRangeFeedbackAt(intptr_t idx) const {
-  ASSERT((0 <= idx) && (idx < 3));
-  const uint32_t raw_feedback =
-      RangeFeedbackBits::decode(raw_ptr()->state_bits_);
-  const uint32_t feedback =
-      (raw_feedback >> (idx * kBitsPerRangeFeedback)) & kRangeFeedbackMask;
-  if ((feedback & kInt64RangeBit) != 0) {
-    return kInt64Range;
-  }
-
-  if ((feedback & kUint32RangeBit) != 0) {
-    if ((feedback & kSignedRangeBit) == 0) {
-      return kUint32Range;
-    }
-
-    // Check if Smi is large enough to accomodate Int33: a mixture of Uint32
-    // and negative Int32 values.
-    return (kSmiBits < 33) ? kInt64Range : kSmiRange;
-  }
-
-  if ((feedback & kInt32RangeBit) != 0) {
-    return kInt32Range;
-  }
-
-  return kSmiRange;
 }
 
 
@@ -13854,6 +13788,7 @@ void Code::SetStubCallTargetCodeAt(uword pc, const Code& code) const {
 
 
 void Code::Disassemble(DisassemblyFormatter* formatter) const {
+#ifndef PRODUCT
   if (!FLAG_support_disassembler) {
     return;
   }
@@ -13864,6 +13799,7 @@ void Code::Disassemble(DisassemblyFormatter* formatter) const {
   } else {
     Disassembler::Disassemble(start, start + instr.size(), formatter, *this);
   }
+#endif
 }
 
 
@@ -15375,6 +15311,25 @@ RawInstance* Instance::CheckAndCanonicalize(Thread* thread,
 }
 
 
+#if defined(DEBUG)
+bool Instance::CheckIsCanonical(Thread* thread) const {
+  Zone* zone = thread->zone();
+  Isolate* isolate = thread->isolate();
+  Instance& result = Instance::Handle(zone);
+  const Class& cls = Class::Handle(zone, this->clazz());
+  SafepointMutexLocker ml(isolate->constant_canonicalization_mutex());
+  result ^= cls.LookupCanonicalInstance(zone, *this);
+  // TODO(johnmccutchan) : Temporary workaround for issue (26988).
+  if ((result.raw() != raw()) &&
+      isolate->HasAttemptedReload() &&
+      (GetClassId() == kImmutableArrayCid)) {
+    return true;
+  }
+  return (result.raw() == this->raw());
+}
+#endif  // DEBUG
+
+
 RawAbstractType* Instance::GetType() const {
   if (IsNull()) {
     return Type::NullType();
@@ -16823,7 +16778,8 @@ bool Type::IsEquivalent(const Instance& other, TrailPtr trail) const {
         }
       } else if (!type_args.IsSubvectorEquivalent(other_type_args,
                                                   from_index,
-                                                  num_type_params)) {
+                                                  num_type_params,
+                                                  trail)) {
         return false;
       }
 #ifdef DEBUG
@@ -17182,6 +17138,38 @@ RawAbstractType* Type::Canonicalize(TrailPtr trail) const {
 }
 
 
+#if defined(DEBUG)
+bool Type::CheckIsCanonical(Thread* thread) const {
+  if (IsMalformed()) {
+    return true;
+  }
+  if (type_class() == Object::dynamic_class()) {
+    return (raw() == Object::dynamic_type().raw());
+  }
+  Zone* zone = thread->zone();
+  Isolate* isolate = thread->isolate();
+  AbstractType& type = Type::Handle(zone);
+  const Class& cls = Class::Handle(zone, type_class());
+
+  // Fast canonical lookup/registry for simple types.
+  if (!cls.IsGeneric() && !cls.IsClosureClass() && !cls.IsTypedefClass()) {
+    ASSERT(!IsFunctionType());
+    type = cls.CanonicalType();
+    return (raw() == type.raw());
+  }
+
+  ObjectStore* object_store = isolate->object_store();
+  {
+    SafepointMutexLocker ml(isolate->type_canonicalization_mutex());
+    CanonicalTypeSet table(zone, object_store->canonical_types());
+    type ^= table.GetOrNull(CanonicalTypeKey(*this));
+    object_store->set_canonical_types(table.Release());
+  }
+  return (raw() == type.raw());
+}
+#endif  // DEBUG
+
+
 RawString* Type::EnumerateURIs() const {
   if (IsDynamicType() || IsVoidType()) {
     return Symbols::Empty().raw();
@@ -17442,6 +17430,14 @@ RawAbstractType* TypeRef::Canonicalize(TrailPtr trail) const {
   set_type(ref_type);
   return raw();
 }
+
+
+#if defined(DEBUG)
+bool TypeRef::CheckIsCanonical(Thread* thread) const {
+  AbstractType& ref_type = AbstractType::Handle(type());
+  return ref_type.CheckIsCanonical(thread);
+}
+#endif  // DEBUG
 
 
 RawString* TypeRef::EnumerateURIs() const {
@@ -18107,11 +18103,11 @@ RawInstance* Number::CheckAndCanonicalize(Thread* thread,
     case kDoubleCid:
       return Double::NewCanonical(Double::Cast(*this).value());
     case kBigintCid: {
+      if (this->IsCanonical()) {
+        return this->raw();
+      }
       Zone* zone = thread->zone();
       Isolate* isolate = thread->isolate();
-      if (!CheckAndCanonicalizeFields(thread, error_str)) {
-        return Instance::null();
-      }
       Bigint& result = Bigint::Handle(zone);
       const Class& cls = Class::Handle(zone, this->clazz());
       intptr_t index = 0;
@@ -18149,6 +18145,38 @@ RawInstance* Number::CheckAndCanonicalize(Thread* thread,
   }
   return Instance::null();
 }
+
+
+#if defined(DEBUG)
+bool Number::CheckIsCanonical(Thread* thread) const {
+  intptr_t cid = GetClassId();
+  intptr_t idx = 0;
+  Zone* zone = thread->zone();
+  const Class& cls = Class::Handle(zone, this->clazz());
+  switch (cid) {
+    case kSmiCid:
+      return true;
+    case kMintCid: {
+      Mint& result = Mint::Handle(zone);
+      result ^= cls.LookupCanonicalMint(zone, Mint::Cast(*this).value(), &idx);
+      return (result.raw() == this->raw());
+    }
+    case kDoubleCid: {
+      Double& dbl = Double::Handle(zone);
+      dbl ^= cls.LookupCanonicalDouble(zone, Double::Cast(*this).value(), &idx);
+      return (dbl.raw() == this->raw());
+    }
+    case kBigintCid: {
+      Bigint& result = Bigint::Handle(zone);
+      result ^= cls.LookupCanonicalBigint(zone, Bigint::Cast(*this), &idx);
+      return (result.raw() == this->raw());
+    }
+    default:
+      UNREACHABLE();
+  }
+  return false;
+}
+#endif  // DEBUG
 
 
 const char* Number::ToCString() const {
@@ -19851,6 +19879,15 @@ RawInstance* String::CheckAndCanonicalize(Thread* thread,
 }
 
 
+#if defined(DEBUG)
+bool String::CheckIsCanonical(Thread* thread) const {
+  Zone* zone = thread->zone();
+  const String& str = String::Handle(zone, Symbols::Lookup(thread, *this));
+  return (str.raw() == this->raw());
+}
+#endif  // DEBUG
+
+
 RawString* String::New(const char* cstr, Heap::Space space) {
   ASSERT(cstr != NULL);
   intptr_t array_len = strlen(cstr);
@@ -21371,6 +21408,7 @@ RawArray* Array::Slice(intptr_t start,
 
 void Array::MakeImmutable() const {
   if (IsImmutable()) return;
+  ASSERT(!IsCanonical());
   NoSafepointScope no_safepoint;
   uword tags = raw_ptr()->tags_;
   uword old_tags;

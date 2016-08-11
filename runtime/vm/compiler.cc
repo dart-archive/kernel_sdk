@@ -1187,8 +1187,10 @@ bool CompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         done = true;
       }
 
-      // Clear the error if it was not a real error, but just a bailout.
-      if (error.IsLanguageError() &&
+      // If is is not a background compilation, clear the error if it was not a
+      // real error, but just a bailout. If we're it a background compilation
+      // this will be dealt with in the caller.
+      if (!Compiler::IsBackgroundCompilation() && error.IsLanguageError() &&
           (LanguageError::Cast(error).kind() == Report::kBailout)) {
         thread()->clear_sticky_error();
       }
@@ -1297,6 +1299,21 @@ static RawError* CompileFunctionHelper(CompilationPipeline* pipeline,
             THR_Print("Aborted background compilation: %s\n",
                 function.ToFullyQualifiedCString());
           }
+          {
+            // If it was a bailout, then disable optimization.
+            Error& error = Error::Handle();
+            // We got an error during compilation.
+            error = thread->sticky_error();
+            thread->clear_sticky_error();
+            if (error.IsLanguageError() &&
+                LanguageError::Cast(error).kind() == Report::kBailout) {
+              if (FLAG_trace_compiler) {
+                THR_Print("--> disabling optimizations for '%s'\n",
+                          function.ToFullyQualifiedCString());
+              }
+              function.SetIsOptimizable(false);
+            }
+          }
           return Error::null();
         }
         // Optimizer bailed out. Disable optimizations and never try again.
@@ -1315,6 +1332,7 @@ static RawError* CompileFunctionHelper(CompilationPipeline* pipeline,
         // We got an error during compilation.
         error = thread->sticky_error();
         thread->clear_sticky_error();
+        // The non-optimizing compiler should not bail out.
         ASSERT(error.IsLanguageError() &&
                LanguageError::Cast(error).kind() != Report::kBailout);
         return error.raw();
@@ -1890,10 +1908,7 @@ void BackgroundCompiler::Run() {
         ASSERT(error.IsNull());
 #ifndef PRODUCT
         Isolate* isolate = thread->isolate();
-        // We cannot aggregate stats if isolate is shutting down.
-        if (isolate->HasMutatorThread()) {
-          isolate->aggregate_compiler_stats()->Add(*thread->compiler_stats());
-        }
+        isolate->aggregate_compiler_stats()->Add(*thread->compiler_stats());
         thread->compiler_stats()->Clear();
 #endif  // PRODUCT
 
@@ -1904,8 +1919,9 @@ void BackgroundCompiler::Run() {
             function = Function::null();
           } else {
             qelem = function_queue()->Remove();
-            if (FLAG_stress_test_background_compilation) {
-              const Function& old = Function::Handle(qelem->Function());
+            const Function& old = Function::Handle(qelem->Function());
+            if ((!old.HasOptimizedCode() && old.IsOptimizable()) ||
+                 FLAG_stress_test_background_compilation) {
               if (Compiler::CanOptimizeFunction(thread, old)) {
                 QueueElement* repeat_qelem = new QueueElement(old);
                 function_queue()->Add(repeat_qelem);

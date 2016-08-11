@@ -11,7 +11,6 @@ import '../dart_types.dart';
 import '../elements/elements.dart';
 import '../library_loader.dart' show LibraryProvider;
 import '../util/enumset.dart';
-
 import 'constant_serialization.dart';
 import 'element_serialization.dart';
 import 'json_serializer.dart';
@@ -692,6 +691,7 @@ class Serializer {
         /// Helper used to check that external references are serialized by
         /// the right kind.
         bool verifyElement(var found, var expected) {
+          if (found == null) return false;
           found = found.declaration;
           if (found == expected) return true;
           if (found.isAbstractField && expected.isGetter) {

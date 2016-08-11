@@ -16,6 +16,8 @@ namespace bin {
 
 // Development flag.
 static bool trace_loader = false;
+// Keep in sync with loader.dart.
+static const intptr_t _Dart_kImportExtension = 9;
 
 Loader::Loader(IsolateData* isolate_data)
     : port_(ILLEGAL_PORT),
@@ -64,14 +66,16 @@ Loader::~Loader() {
 // Copy the contents of |message| into an |IOResult|.
 void Loader::IOResult::Setup(Dart_CObject* message) {
   ASSERT(message->type == Dart_CObject_kArray);
-  ASSERT(message->value.as_array.length == 4);
+  ASSERT(message->value.as_array.length == 5);
   Dart_CObject* tag_message = message->value.as_array.values[0];
   ASSERT(tag_message != NULL);
   Dart_CObject* uri_message = message->value.as_array.values[1];
   ASSERT(uri_message != NULL);
-  Dart_CObject* library_uri_message = message->value.as_array.values[2];
+  Dart_CObject* resolved_uri_message = message->value.as_array.values[2];
+  ASSERT(resolved_uri_message != NULL);
+  Dart_CObject* library_uri_message = message->value.as_array.values[3];
   ASSERT(library_uri_message != NULL);
-  Dart_CObject* payload_message = message->value.as_array.values[3];
+  Dart_CObject* payload_message = message->value.as_array.values[4];
   ASSERT(payload_message != NULL);
 
   // Grab the tag.
@@ -81,6 +85,10 @@ void Loader::IOResult::Setup(Dart_CObject* message) {
   // Grab the uri id.
   ASSERT(uri_message->type == Dart_CObject_kString);
   uri = strdup(uri_message->value.as_string);
+
+  // Grab the resolved uri.
+  ASSERT(resolved_uri_message->type == Dart_CObject_kString);
+  resolved_uri = strdup(resolved_uri_message->value.as_string);
 
   // Grab the library uri if one is present.
   if (library_uri_message->type != Dart_CObject_kNull) {
@@ -111,6 +119,7 @@ void Loader::IOResult::Setup(Dart_CObject* message) {
 
 void Loader::IOResult::Cleanup() {
   free(uri);
+  free(resolved_uri);
   free(library_uri);
   free(payload);
 }
@@ -149,6 +158,29 @@ void Loader::Init(const char* package_root,
 
   bool success = Dart_Post(loader_port, request);
   ASSERT(success);
+}
+
+
+void Loader::SendImportExtensionRequest(Dart_Handle url,
+                                        Dart_Handle library_url) {
+  // This port delivers loading messages to the service isolate.
+  Dart_Port loader_port = Builtin::LoadPort();
+  ASSERT(loader_port != ILLEGAL_PORT);
+
+
+  Dart_Handle request = Dart_NewList(6);
+  Dart_ListSetAt(request, 0, trace_loader ? Dart_True() : Dart_False());
+  Dart_ListSetAt(request, 1, Dart_NewInteger(Dart_GetMainPortId()));
+  Dart_ListSetAt(request, 2, Dart_NewInteger(_Dart_kImportExtension));
+  Dart_ListSetAt(request, 3, Dart_NewSendPort(port_));
+
+  Dart_ListSetAt(request, 4, url);
+  Dart_ListSetAt(request, 5, library_url);
+
+  if (Dart_Post(loader_port, request)) {
+    MonitorLocker ml(monitor_);
+    pending_operations_++;
+  }
 }
 
 
@@ -229,11 +261,22 @@ static bool LibraryHandleError(Dart_Handle library, Dart_Handle error) {
 }
 
 
+static bool IsWindowsHost() {
+#if defined(TARGET_OS_WINDOWS)
+  return true;
+#else  // defined(TARGET_OS_WINDOWS)
+  return false;
+#endif  // defined(TARGET_OS_WINDOWS)
+}
+
+
 bool Loader::ProcessResultLocked(Loader* loader, Loader::IOResult* result) {
   // We have to copy everything we care about out of |result| because after
   // dropping the lock below |result| may no longer valid.
   Dart_Handle uri =
       Dart_NewStringFromCString(reinterpret_cast<char*>(result->uri));
+  Dart_Handle resolved_uri =
+      Dart_NewStringFromCString(reinterpret_cast<char*>(result->resolved_uri));
   Dart_Handle library_uri = Dart_Null();
   if (result->library_uri != NULL) {
     library_uri =
@@ -257,6 +300,42 @@ bool Loader::ProcessResultLocked(Loader* loader, Loader::IOResult* result) {
     return false;
   }
 
+
+  if (result->tag == _Dart_kImportExtension) {
+    ASSERT(library_uri != Dart_Null());
+    Dart_Handle library = Dart_LookupLibrary(library_uri);
+    ASSERT(!Dart_IsError(library));
+    const char* lib_uri = reinterpret_cast<const char*>(result->payload);
+    if (strncmp(lib_uri, "http://", 7) == 0 ||
+        strncmp(lib_uri, "https://", 8) == 0) {
+      loader->error_ =
+        Dart_NewApiError("Cannot load native extensions over http: or https:");
+        return false;
+    }
+    const char* extension_uri = reinterpret_cast<const char*>(result->uri);
+    const char* lib_path = NULL;
+    if (strncmp(lib_uri, "file://", 7) == 0) {
+      lib_path = DartUtils::RemoveScheme(lib_uri);
+    } else {
+      lib_path = lib_uri;
+    }
+    const char* extension_path = DartUtils::RemoveScheme(extension_uri);
+    if (strchr(extension_path, '/') != NULL ||
+        (IsWindowsHost() && strchr(extension_path, '\\') != NULL)) {
+      loader->error_ = DartUtils::NewError(
+          "Relative paths for dart extensions are not supported: '%s'",
+          extension_path);
+      return false;
+    }
+    Dart_Handle result = Extensions::LoadExtension(lib_path,
+                                                   extension_path,
+                                                   library);
+    if (Dart_IsError(result)) {
+      loader->error_ = result;
+      return false;
+    }
+    return true;
+  }
 
   // Check for payload and load accordingly.
   bool is_snapshot = false;
@@ -292,13 +371,13 @@ bool Loader::ProcessResultLocked(Loader* loader, Loader::IOResult* result) {
 
   switch (tag) {
     case Dart_kImportTag:
-      dart_result = Dart_LoadLibrary(uri, source, 0, 0);
+      dart_result = Dart_LoadLibrary(uri, resolved_uri, source, 0, 0);
     break;
     case Dart_kSourceTag: {
       ASSERT(library_uri != Dart_Null());
       Dart_Handle library = Dart_LookupLibrary(library_uri);
       ASSERT(!Dart_IsError(library));
-      dart_result = Dart_LoadSource(library, uri, source, 0, 0);
+      dart_result = Dart_LoadSource(library, uri, resolved_uri, source, 0, 0);
     }
     break;
     case Dart_kScriptTag:
@@ -307,7 +386,7 @@ bool Loader::ProcessResultLocked(Loader* loader, Loader::IOResult* result) {
       } else if (is_dilfile) {
         dart_result = Dart_LoadDil(payload, payload_length);
       } else {
-        dart_result = Dart_LoadScript(uri, source, 0, 0);
+        dart_result = Dart_LoadScript(uri, resolved_uri, source, 0, 0);
       }
     break;
     default:
@@ -356,15 +435,6 @@ bool Loader::ProcessQueueLocked(ProcessResult process_result) {
   }
   results_length_ = 0;
   return !hit_error;
-}
-
-
-static bool IsWindowsHost() {
-#if defined(TARGET_OS_WINDOWS)
-  return true;
-#else  // defined(TARGET_OS_WINDOWS)
-  return false;
-#endif  // defined(TARGET_OS_WINDOWS)
 }
 
 
@@ -469,7 +539,7 @@ Dart_Handle Loader::LibraryTagHandler(Dart_LibraryTag tag,
   }
 
   if (DartUtils::IsDartExtensionSchemeURL(url_string)) {
-    // Load a native code shared library to use in a native extension
+    // Handle early error cases for dart-ext: imports.
     if (tag != Dart_kImportTag) {
       return DartUtils::NewError("Dart extensions must use import: '%s'",
                                  url_string);
@@ -478,19 +548,6 @@ Dart_Handle Loader::LibraryTagHandler(Dart_LibraryTag tag,
     if (Dart_IsError(library_url)) {
       return library_url;
     }
-    Dart_Handle library_file_path = DartUtils::LibraryFilePath(library_url);
-    const char* lib_path_str = NULL;
-    Dart_StringToCString(library_file_path, &lib_path_str);
-    const char* extension_path = DartUtils::RemoveScheme(url_string);
-    if (strchr(extension_path, '/') != NULL ||
-        (IsWindowsHost() && strchr(extension_path, '\\') != NULL)) {
-      return DartUtils::NewError(
-          "Relative paths for dart extensions are not supported: '%s'",
-          extension_path);
-    }
-    return Extensions::LoadExtension(lib_path_str,
-                                     extension_path,
-                                     library);
   }
 
   IsolateData* isolate_data =
@@ -527,10 +584,15 @@ Dart_Handle Loader::LibraryTagHandler(Dart_LibraryTag tag,
   ASSERT(loader != NULL);
   ASSERT(isolate_data->HasLoader());
 
-  loader->SendRequest(tag,
-                      url,
-                      (library != Dart_Null()) ?
-                          Dart_LibraryUrl(library) : Dart_Null());
+  if (DartUtils::IsDartExtensionSchemeURL(url_string)) {
+    loader->SendImportExtensionRequest(url, Dart_LibraryUrl(library));
+  } else {
+    loader->SendRequest(tag,
+                        url,
+                        (library != Dart_Null()) ?
+                            Dart_LibraryUrl(library) : Dart_Null());
+  }
+
 
   if (blocking_call) {
     // The outer invocation of the tag handler will block here until all nested
@@ -604,7 +666,7 @@ Dart_Handle Loader::DartColonLibraryTagHandler(Dart_LibraryTag tag,
     Dart_Handle part_uri_obj = DartUtils::NewString(part_uri);
     free(part_uri);
     return Dart_LoadSource(library,
-                           part_uri_obj,
+                           part_uri_obj, Dart_Null(),
                            Builtin::PartSource(id, url_string), 0, 0);
   }
   // All cases should have been handled above.
@@ -612,7 +674,12 @@ Dart_Handle Loader::DartColonLibraryTagHandler(Dart_LibraryTag tag,
 }
 
 
-Mutex Loader::loader_infos_lock_;
+void Loader::InitOnce() {
+  loader_infos_lock_ = new Mutex();
+}
+
+
+Mutex* Loader::loader_infos_lock_;
 Loader::LoaderInfo* Loader::loader_infos_ = NULL;
 intptr_t Loader::loader_infos_length_ = 0;
 intptr_t Loader::loader_infos_capacity_ = 0;
@@ -623,7 +690,7 @@ intptr_t Loader::loader_infos_capacity_ = 0;
 // correct loader.
 // This happens whenever an isolate begins loading.
 void Loader::AddLoader(Dart_Port port, IsolateData* isolate_data) {
-  MutexLocker ml(&loader_infos_lock_);
+  MutexLocker ml(loader_infos_lock_);
   ASSERT(LoaderForLocked(port) == NULL);
   if (loader_infos_length_ == loader_infos_capacity_) {
     // Grow to an initial capacity or double in size.
@@ -651,7 +718,7 @@ void Loader::AddLoader(Dart_Port port, IsolateData* isolate_data) {
 // Remove |port| from the map.
 // This happens once an isolate has finished loading.
 void Loader::RemoveLoader(Dart_Port port) {
-  MutexLocker ml(&loader_infos_lock_);
+  MutexLocker ml(loader_infos_lock_);
   const intptr_t index = LoaderIndexFor(port);
   ASSERT(index >= 0);
   const intptr_t last = loader_infos_length_ - 1;
@@ -684,14 +751,14 @@ Loader* Loader::LoaderForLocked(Dart_Port port) {
 
 
 Loader* Loader::LoaderFor(Dart_Port port) {
-  MutexLocker ml(&loader_infos_lock_);
+  MutexLocker ml(loader_infos_lock_);
   return LoaderForLocked(port);
 }
 
 
 void Loader::NativeMessageHandler(Dart_Port dest_port_id,
                                   Dart_CObject* message) {
-  MutexLocker ml(&loader_infos_lock_);
+  MutexLocker ml(loader_infos_lock_);
   Loader* loader = LoaderForLocked(dest_port_id);
   if (loader == NULL) {
     return;

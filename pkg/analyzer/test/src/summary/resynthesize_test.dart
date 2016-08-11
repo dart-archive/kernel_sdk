@@ -107,14 +107,16 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
     expect(resynthesized.imports.length, original.imports.length,
         reason: 'imports');
     for (int i = 0; i < resynthesized.imports.length; i++) {
-      compareImportElements(resynthesized.imports[i], original.imports[i],
-          'import ${original.imports[i].uri}');
+      ImportElement originalImport = original.imports[i];
+      compareImportElements(
+          resynthesized.imports[i], originalImport, originalImport.toString());
     }
     expect(resynthesized.exports.length, original.exports.length,
         reason: 'exports');
     for (int i = 0; i < resynthesized.exports.length; i++) {
-      compareExportElements(resynthesized.exports[i], original.exports[i],
-          'export ${original.exports[i].uri}');
+      ExportElement originalExport = original.exports[i];
+      compareExportElements(
+          resynthesized.exports[i], originalExport, originalExport.toString());
     }
     expect(resynthesized.nameLength, original.nameLength);
     compareNamespaces(resynthesized.publicNamespace, original.publicNamespace,
@@ -692,16 +694,10 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
     compareMetadata(resynthesized.metadata, original.metadata, desc);
 
     // Validate modifiers.
-    for (Modifier modifier in Modifier.persistedValues) {
+    for (Modifier modifier in Modifier.values) {
       bool got = _hasModifier(resynthesized, modifier);
       bool want = _hasModifier(original, modifier);
       expect(got, want,
-          reason: 'Mismatch in $desc.$modifier: got $got, want $want');
-    }
-    for (Modifier modifier in Modifier.transientValues) {
-      bool got = rImpl.hasModifier(modifier);
-      bool want = false;
-      expect(got, false,
           reason: 'Mismatch in $desc.$modifier: got $got, want $want');
     }
 
@@ -1170,6 +1166,7 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
       }
       return new LinkedLibrary.fromBuffer(serialized.linked.toBuffer());
     }
+
     Map<String, LinkedLibrary> linkedSummaries = <String, LinkedLibrary>{
       library.source.uri.toString(): getLinkedSummaryFor(library)
     };
@@ -1334,6 +1331,13 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
       return false;
     } else if (modifier == Modifier.SYNTHETIC) {
       return element.isSynthetic;
+    } else if (modifier == Modifier.URI_EXISTS) {
+      if (element is ExportElement) {
+        return element.uriExists;
+      } else if (element is ImportElement) {
+        return element.uriExists;
+      }
+      return false;
     }
     throw new UnimplementedError(
         'Modifier $modifier for ${element?.runtimeType}');
@@ -1400,6 +1404,7 @@ class ResynthesizeElementTest extends ResynthesizeTest {
       }
       return new LinkedLibrary.fromBuffer(serialized.linked.toBuffer());
     }
+
     Map<String, LinkedLibrary> linkedSummaries = <String, LinkedLibrary>{
       library.source.uri.toString(): getLinkedSummaryFor(library)
     };
