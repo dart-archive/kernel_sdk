@@ -764,6 +764,7 @@ class InstructionsWriter : public ZoneAllocated {
   }
 
   void DumpInstructionsSizes() const;
+  void DumpCombinedCodeStatistics() const;
 
  protected:
   struct InstructionsData {

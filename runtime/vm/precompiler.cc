@@ -59,6 +59,7 @@ DEFINE_FLAG(int, max_speculative_inlining_attempts, 1,
     "Max number of attempts with speculative inlining (precompilation only)");
 DEFINE_FLAG(int, precompiler_rounds, 1, "Number of precompiler iterations");
 
+
 DECLARE_FLAG(bool, allocation_sinking);
 DECLARE_FLAG(bool, common_subexpression_elimination);
 DECLARE_FLAG(bool, constant_propagation);
@@ -75,6 +76,7 @@ DECLARE_FLAG(bool, huge_method_cutoff_in_code_size);
 DECLARE_FLAG(bool, trace_failed_optimization_attempts);
 DECLARE_FLAG(bool, trace_inlining_intervals);
 DECLARE_FLAG(bool, trace_irregexp);
+DECLARE_FLAG(bool, print_instruction_stats);
 
 #ifdef DART_PRECOMPILER
 
@@ -124,7 +126,8 @@ class PrecompileParsedFunctionHelper : public ValueObject {
 
   void FinalizeCompilation(Assembler* assembler,
                            FlowGraphCompiler* graph_compiler,
-                           FlowGraph* flow_graph);
+                           FlowGraph* flow_graph,
+                           CodeStatistics* stats);
 
   ParsedFunction* parsed_function_;
   const bool optimized_;
@@ -2316,7 +2319,8 @@ void Precompiler::ResetPrecompilerState() {
 void PrecompileParsedFunctionHelper::FinalizeCompilation(
     Assembler* assembler,
     FlowGraphCompiler* graph_compiler,
-    FlowGraph* flow_graph) {
+    FlowGraph* flow_graph,
+    CodeStatistics* stats) {
   const Function& function = parsed_function()->function();
   Zone* const zone = thread()->zone();
 
@@ -2374,6 +2378,11 @@ void PrecompileParsedFunctionHelper::FinalizeCompilation(
   }
   ASSERT(!parsed_function()->HasDeferredPrefixes());
   ASSERT(FLAG_load_deferred_eagerly);
+
+  if (stats != NULL) {
+    stats->Finalize();
+    code.set_stats(stats);
+  }
 }
 
 
@@ -2825,11 +2834,18 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
       ASSERT(inline_id_to_function.length() == caller_inline_id.length());
       Assembler assembler(use_far_branches);
+
+      CodeStatistics* function_stats = NULL;
+      if (FLAG_print_instruction_stats) {
+        function_stats = new CodeStatistics(&assembler);
+      }
+
       FlowGraphCompiler graph_compiler(&assembler, flow_graph,
                                        *parsed_function(), optimized(),
                                        inline_id_to_function,
                                        inline_id_to_token_pos,
-                                       caller_inline_id);
+                                       caller_inline_id,
+                                       function_stats);
       {
         CSTAT_TIMER_SCOPE(thread(), graphcompiler_timer);
 #ifndef PRODUCT
@@ -2847,7 +2863,8 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
                                   "FinalizeCompilation");
 #endif  // !PRODUCT
         ASSERT(thread()->IsMutatorThread());
-        FinalizeCompilation(&assembler, &graph_compiler, flow_graph);
+        FinalizeCompilation(
+            &assembler, &graph_compiler, flow_graph, function_stats);
       }
       // Mark that this isolate now has compiled code.
       isolate()->set_has_compiled_code(true);
@@ -2906,6 +2923,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
     // Reset global isolate state.
     thread()->set_deopt_id(prev_deopt_id);
   }
+
   return is_compiled;
 }
 

@@ -1834,6 +1834,8 @@ class BoxAllocationSlowPath : public SlowPathCode {
         result_(result) { }
 
   virtual void EmitNativeCode(FlowGraphCompiler* compiler) {
+    compiler->SpecialStatsBegin(
+        CombinedCodeStatistics::kTagBoxAllocationSlowPath);
     if (Assembler::EmittingComments()) {
       __ Comment("%s slow path allocation of %s",
                  instruction_->DebugName(),
@@ -1857,6 +1859,8 @@ class BoxAllocationSlowPath : public SlowPathCode {
     __ MoveRegister(result_, R0);
     compiler->RestoreLiveRegisters(locs);
     __ b(exit_label());
+    compiler->SpecialStatsEnd(
+        CombinedCodeStatistics::kTagBoxAllocationSlowPath);
   }
 
   static void Allocate(FlowGraphCompiler* compiler,
@@ -2688,6 +2692,8 @@ class AllocateContextSlowPath : public SlowPathCode {
       : instruction_(instruction) { }
 
   virtual void EmitNativeCode(FlowGraphCompiler* compiler) {
+    compiler->SpecialStatsBegin(
+        CombinedCodeStatistics::kTagAllocateContextSlowPath);
     __ Comment("AllocateContextSlowPath");
     __ Bind(entry_label());
 
@@ -2707,6 +2713,8 @@ class AllocateContextSlowPath : public SlowPathCode {
     ASSERT(instruction_->locs()->out(0).reg() == R0);
     compiler->RestoreLiveRegisters(instruction_->locs());
     __ b(exit_label());
+    compiler->SpecialStatsEnd(
+        CombinedCodeStatistics::kTagAllocateContextSlowPath);
   }
 
  private:
@@ -2912,6 +2920,8 @@ class CheckStackOverflowSlowPath : public SlowPathCode {
       : instruction_(instruction) { }
 
   virtual void EmitNativeCode(FlowGraphCompiler* compiler) {
+    compiler->SpecialStatsBegin(
+        CombinedCodeStatistics::kTagCheckStackOverflowSlowPath);
     if (FLAG_use_osr && osr_entry_label()->IsLinked()) {
       const Register value = instruction_->locs()->temp(0).reg();
       __ Comment("CheckStackOverflowSlowPathOsr");
@@ -2942,6 +2952,8 @@ class CheckStackOverflowSlowPath : public SlowPathCode {
     compiler->pending_deoptimization_env_ = NULL;
     compiler->RestoreLiveRegisters(instruction_->locs());
     __ b(exit_label());
+    compiler->SpecialStatsEnd(
+        CombinedCodeStatistics::kTagCheckStackOverflowSlowPath);
   }
 
   Label* osr_entry_label() {
@@ -3081,6 +3093,7 @@ class CheckedSmiSlowPath : public SlowPathCode {
       : instruction_(instruction), try_index_(try_index) { }
 
   virtual void EmitNativeCode(FlowGraphCompiler* compiler) {
+    compiler->SpecialStatsBegin(CombinedCodeStatistics::kTagCheckedSmiSlowPath);
     if (Assembler::EmittingComments()) {
       __ Comment("slow path smi operation");
     }
@@ -3103,6 +3116,7 @@ class CheckedSmiSlowPath : public SlowPathCode {
     __ mov(result, Operand(R0));
     compiler->RestoreLiveRegisters(locs);
     __ b(exit_label());
+    compiler->SpecialStatsEnd(CombinedCodeStatistics::kTagCheckedSmiSlowPath);
   }
 
  private:

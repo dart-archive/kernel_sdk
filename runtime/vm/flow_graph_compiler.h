@@ -10,6 +10,7 @@
 #include "vm/code_descriptors.h"
 #include "vm/code_generator.h"
 #include "vm/intermediate_language.h"
+#include "vm/code_statistics.h"
 
 namespace dart {
 
@@ -302,7 +303,8 @@ class FlowGraphCompiler : public ValueObject {
       bool is_optimizing,
       const GrowableArray<const Function*>& inline_id_to_function,
       const GrowableArray<TokenPosition>& inline_id_to_token_pos,
-      const GrowableArray<intptr_t>& caller_inline_id);
+      const GrowableArray<intptr_t>& caller_inline_id,
+      CodeStatistics* stats = NULL);
 
   ~FlowGraphCompiler();
 
@@ -350,6 +352,22 @@ class FlowGraphCompiler : public ValueObject {
   const GrowableArray<BlockInfo*>& block_info() const { return block_info_; }
   ParallelMoveResolver* parallel_move_resolver() {
     return &parallel_move_resolver_;
+  }
+
+  void StatsBegin(Instruction* instr) {
+    if (stats_ != NULL) stats_->Begin(instr);
+  }
+
+  void StatsEnd(Instruction* instr) {
+    if (stats_ != NULL) stats_->End(instr);
+  }
+
+  void SpecialStatsBegin(intptr_t tag) {
+    if (stats_ != NULL) stats_->SpecialBegin(tag);
+  }
+
+  void SpecialStatsEnd(intptr_t tag) {
+    if (stats_ != NULL) stats_->SpecialEnd(tag);
   }
 
   // Constructor is lighweight, major initialization work should occur here.
@@ -832,6 +850,7 @@ class FlowGraphCompiler : public ValueObject {
   const GrowableArray<const Function*>& inline_id_to_function_;
   const GrowableArray<TokenPosition>& inline_id_to_token_pos_;
   const GrowableArray<intptr_t>& caller_inline_id_;
+  CodeStatistics* stats_;
 
   DISALLOW_COPY_AND_ASSIGN(FlowGraphCompiler);
 };

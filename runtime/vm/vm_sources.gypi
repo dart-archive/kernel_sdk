@@ -467,6 +467,8 @@
     'stack_frame_mips.h',
     'stack_frame_test.cc',
     'stack_frame_x64.h',
+    'code_statistics.h',
+    'code_statistics.cc',
     'store_buffer.cc',
     'store_buffer.h',
     'stub_code.cc',

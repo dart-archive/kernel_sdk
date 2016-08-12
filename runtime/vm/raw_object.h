@@ -1093,6 +1093,7 @@ class RawNamespace : public RawObject {
 };
 
 
+class CodeStatistics;
 class RawCode : public RawObject {
   enum InlinedMetadataIndex {
     kInlinedIntervalsIndex = 0,
@@ -1131,6 +1132,10 @@ class RawCode : public RawObject {
   RawObject** to() {
     return reinterpret_cast<RawObject**>(&ptr()->return_address_metadata_);
   }
+
+#ifdef DART_PRECOMPILER
+  CodeStatistics* function_stats_;
+#endif
 
   // Compilation timestamp.
   int64_t compile_timestamp_;

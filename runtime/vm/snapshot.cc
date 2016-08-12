@@ -20,6 +20,7 @@
 #include "vm/symbols.h"
 #include "vm/timeline.h"
 #include "vm/version.h"
+#include "vm/code_statistics.h"
 
 // We currently only expect the Dart mutator to read snapshots.
 #define ASSERT_NO_SAFEPOINT_SCOPE()                            \
@@ -689,6 +690,35 @@ int32_t InstructionsWriter::GetObjectOffsetFor(RawObject* raw_object) {
   next_object_offset_ += heap_size;
   objects_.Add(ObjectData(raw_object));
   return offset;
+}
+
+
+void InstructionsWriter::DumpCombinedCodeStatistics() const {
+  CombinedCodeStatistics instruction_stats;
+  intptr_t count = instructions_.length();
+  intptr_t missing_count = 0;
+  for (intptr_t i = 0; i < count; i++) {
+    const Code &code = *instructions_[i].code_;
+    CodeStatistics* stats = code.stats();
+    if (stats != NULL) {
+      stats->AppendTo(&instruction_stats);
+    } else {
+      missing_count++;
+    }
+  }
+  instruction_stats.DumpStatistics();
+  if (missing_count > 0) {
+    fprintf(stderr, "--------------------\n");
+    fprintf(
+        stderr,
+        "Missed statistics for %" Pd " out of %" Pd " functions\n",
+        missing_count, count);
+    fprintf(stderr, "--------------------\n");
+  }
+
+  fprintf(stderr, "--------------------\n");
+  fprintf(stderr, "Emitted %" Pd " functions\n", count);
+  fprintf(stderr, "--------------------\n");
 }
 
 

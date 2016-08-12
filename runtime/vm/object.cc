@@ -13946,6 +13946,7 @@ RawCode* Code::New(intptr_t pointer_offsets_length) {
     result.set_compile_timestamp(0);
     result.set_lazy_deopt_pc_offset(kInvalidPc);
     result.set_pc_descriptors(Object::empty_descriptors());
+    result.set_stats(NULL);
   }
   return result.raw();
 }

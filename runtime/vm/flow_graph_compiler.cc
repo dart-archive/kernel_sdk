@@ -27,6 +27,7 @@
 #include "vm/stub_code.h"
 #include "vm/symbols.h"
 #include "vm/timeline.h"
+#include "vm/code_statistics.h"
 
 namespace dart {
 
@@ -189,7 +190,8 @@ FlowGraphCompiler::FlowGraphCompiler(
     bool is_optimizing,
     const GrowableArray<const Function*>& inline_id_to_function,
     const GrowableArray<TokenPosition>& inline_id_to_token_pos,
-    const GrowableArray<intptr_t>& caller_inline_id)
+    const GrowableArray<intptr_t>& caller_inline_id,
+    CodeStatistics* stats)
       : thread_(Thread::Current()),
         zone_(Thread::Current()->zone()),
         assembler_(assembler),
@@ -229,7 +231,8 @@ FlowGraphCompiler::FlowGraphCompiler(
         inlined_code_intervals_(Array::ZoneHandle(Object::empty_array().raw())),
         inline_id_to_function_(inline_id_to_function),
         inline_id_to_token_pos_(inline_id_to_token_pos),
-        caller_inline_id_(caller_inline_id) {
+        caller_inline_id_(caller_inline_id),
+        stats_(stats) {
   ASSERT(flow_graph->parsed_function().function().raw() ==
          parsed_function.function().raw());
   if (!is_optimizing) {
@@ -534,11 +537,18 @@ void FlowGraphCompiler::VisitBlocks() {
 
     entry->set_offset(assembler()->CodeSize());
     BeginCodeSourceRange();
+    StatsBegin(entry);
     entry->EmitNativeCode(this);
+    StatsEnd(entry);
     EndCodeSourceRange(entry->token_pos());
     // Compile all successors until an exit, branch, or a block entry.
     for (ForwardInstructionIterator it(entry); !it.Done(); it.Advance()) {
       Instruction* instr = it.Current();
+
+      // NOTE: We handle polymorphic instance calls separately for statistics.
+      bool is_polymorphic_call = instr->IsPolymorphicInstanceCall();
+      if (!is_polymorphic_call) StatsBegin(instr);
+
       // Compose intervals.
       if (instr->has_inlining_id() && is_optimizing()) {
         if (prev_inlining_id != instr->inlining_id()) {
@@ -583,6 +593,7 @@ void FlowGraphCompiler::VisitBlocks() {
         FrameStateUpdateWith(instr);
       }
 #endif
+      if (!is_polymorphic_call) StatsEnd(instr);
     }
 
 #if defined(DEBUG) && !defined(TARGET_ARCH_DBC)

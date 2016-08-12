@@ -19,6 +19,7 @@
 #include "vm/stack_frame.h"
 #include "vm/stub_code.h"
 #include "vm/symbols.h"
+#include "vm/code_statistics.h"
 
 namespace dart {
 
@@ -32,9 +33,11 @@ void MegamorphicSlowPath::EmitNativeCode(FlowGraphCompiler* compiler) {
 #define __ assembler->
   __ Bind(entry_label());
   __ Comment("MegamorphicSlowPath");
+  compiler->SpecialStatsBegin(CombinedCodeStatistics::kTagMegamorphicSlowPath);
   compiler->EmitMegamorphicInstanceCall(ic_data_, argument_count_, deopt_id_,
                                         token_pos_, locs_, try_index_);
   __ jmp(exit_label());
+  compiler->SpecialStatsEnd(CombinedCodeStatistics::kTagMegamorphicSlowPath);
 #undef __
 }
 
@@ -1043,7 +1046,9 @@ void FlowGraphCompiler::CompileGraph() {
     return;
   }
 
+  SpecialStatsBegin(CombinedCodeStatistics::kTagFrameEntry);
   EmitFrameEntry();
+  SpecialStatsEnd(CombinedCodeStatistics::kTagFrameEntry);
   ASSERT(assembler()->constant_pool_allowed());
 
   const Function& function = parsed_function().function();
@@ -1061,6 +1066,7 @@ void FlowGraphCompiler::CompileGraph() {
         function.IsClosureFunction() && !flow_graph().IsCompiledForOsr();
     if (check_arguments) {
       __ Comment("Check argument count");
+      SpecialStatsBegin(CombinedCodeStatistics::kTagCheckArgumentCount);
       // Check that exactly num_fixed arguments are passed in.
       Label correct_num_arguments, wrong_num_arguments;
       __ movq(RAX, FieldAddress(R10, ArgumentsDescriptor::count_offset()));
@@ -1076,12 +1082,16 @@ void FlowGraphCompiler::CompileGraph() {
       __ Jmp(*StubCode::CallClosureNoSuchMethod_entry());
       // The noSuchMethod call may return to the caller, but not here.
       __ Bind(&correct_num_arguments);
+      SpecialStatsEnd(CombinedCodeStatistics::kTagCheckArgumentCount);
     }
   } else if (!flow_graph().IsCompiledForOsr()) {
+    SpecialStatsBegin(CombinedCodeStatistics::kTagCopyParameters);
     CopyParameters();
+    SpecialStatsEnd(CombinedCodeStatistics::kTagCopyParameters);
   }
 
   if (function.IsClosureFunction() && !flow_graph().IsCompiledForOsr()) {
+    SpecialStatsBegin(CombinedCodeStatistics::kTagLoadClosureContext);
     // Load context from the closure object (first argument).
     LocalScope* scope = parsed_function().node_sequence()->scope();
     LocalVariable* closure_parameter = scope->VariableAt(0);
@@ -1095,6 +1105,7 @@ void FlowGraphCompiler::CompileGraph() {
     __ Stop("Incorrect context at entry");
     __ Bind(&ok);
 #endif
+    SpecialStatsEnd(CombinedCodeStatistics::kTagLoadClosureContext);
   }
 
   // In unoptimized code, initialize (non-argument) stack allocated slots to

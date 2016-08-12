@@ -15,10 +15,13 @@
 #include "vm/virtual_memory.h"
 #include "vm/visitor.h"
 #include "vm/clustered_snapshot.h"
+#include "vm/code_statistics.h"
 
 namespace dart {
 
 DEFINE_FLAG(bool, disassemble_stubs, false, "Disassemble generated stubs.");
+
+DECLARE_FLAG(bool, print_instruction_stats);
 
 #define STUB_CODE_DECLARE(name)                                                \
   StubEntry* StubCode::name##_entry_ = NULL;
@@ -146,6 +149,13 @@ RawCode* StubCode::GetAllocationStubForClass(const Class& cls) {
   Code& stub = Code::Handle(zone, cls.allocation_stub());
   if (stub.IsNull()) {
     Assembler assembler;
+
+    CodeStatistics* function_stats = NULL;
+    if (FLAG_print_instruction_stats) {
+      function_stats = new CodeStatistics(&assembler);
+      function_stats->SpecialBegin(CombinedCodeStatistics::kTagStubCode);
+    }
+
     const char* name = cls.ToCString();
     StubCode::GenerateAllocationStubForClass(&assembler, cls);
 
@@ -182,6 +192,11 @@ RawCode* StubCode::GetAllocationStubForClass(const Class& cls) {
       if (isolate->heap()->NeedsGarbageCollection()) {
         isolate->heap()->CollectAllGarbage();
       }
+    }
+    if (FLAG_print_instruction_stats) {
+      function_stats->SpecialEnd(CombinedCodeStatistics::kTagStubCode);
+      function_stats->Finalize();
+      stub.set_stats(function_stats);
     }
 #ifndef PRODUCT
     if (FLAG_support_disassembler && FLAG_disassemble_stubs) {
@@ -226,9 +241,22 @@ const StubEntry* StubCode::UnoptimizedStaticCallEntry(
 RawCode* StubCode::Generate(const char* name,
                             void (*GenerateStub)(Assembler* assembler)) {
   Assembler assembler;
+
+  CodeStatistics* function_stats = NULL;
+  if (FLAG_print_instruction_stats) {
+    function_stats = new CodeStatistics(&assembler);
+    function_stats->SpecialBegin(CombinedCodeStatistics::kTagStubCode);
+  }
+
   GenerateStub(&assembler);
   const Code& code = Code::Handle(
       Code::FinalizeCode(name, &assembler, false /* optimized */));
+
+  if (FLAG_print_instruction_stats) {
+    function_stats->SpecialEnd(CombinedCodeStatistics::kTagStubCode);
+    function_stats->Finalize();
+    code.set_stats(function_stats);
+  }
 #ifndef PRODUCT
   if (FLAG_support_disassembler && FLAG_disassemble_stubs) {
     LogBlock lb;
