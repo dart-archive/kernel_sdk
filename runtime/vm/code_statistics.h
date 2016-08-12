@@ -32,6 +32,8 @@ FOR_EACH_INSTRUCTION(DO)
     kTagFrameEntry,
     kTagLoadClosureContext,
 
+    kTagTrySyncSpilling,
+
     kNumEntries,
   };
 

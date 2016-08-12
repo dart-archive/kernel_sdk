@@ -46,6 +46,8 @@ CombinedCodeStatistics::CombinedCodeStatistics() {
   INIT_SPECIAL_ENTRY(kTagFrameEntry, "<frame-entry>");
   INIT_SPECIAL_ENTRY(kTagLoadClosureContext, "<load-closure-context>");
 
+  INIT_SPECIAL_ENTRY(kTagTrySyncSpilling, "<try-sync-spilling-code>");
+
 #undef INIT_SPECIAL_ENTRY
 }
 
@@ -169,7 +171,7 @@ void CodeStatistics::SpecialBegin(intptr_t tag) {
 }
 
 void CodeStatistics::SpecialEnd(intptr_t tag) {
-  ASSERT(stack_[stack_index_] >= 0);
+  ASSERT(stack_index_ > 0 || stack_[stack_index_] >= 0);
   ASSERT(tag < CombinedCodeStatistics::kNumEntries);
 
   intptr_t diff = assembler_->CodeSize() - stack_[stack_index_];
@@ -181,6 +183,15 @@ void CodeStatistics::SpecialEnd(intptr_t tag) {
   instruction_bytes_ += diff;
   stack_[stack_index_] = -1;
   stack_index_--;
+
+  // We make try-sync-spilling code be subtracted from the calls.
+  if (tag == CombinedCodeStatistics::kTagTrySyncSpilling) {
+    ASSERT(stack_index_ >= 0);
+    // By adding it here we will increase the 'assembler_->CodeSize()' offset
+    // when the parent instruction started, thereby reducing it's accounted size
+    // by `diff`.
+    stack_[stack_index_] += diff;
+  }
 }
 
 void CodeStatistics::Finalize() {

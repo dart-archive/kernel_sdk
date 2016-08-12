@@ -442,10 +442,12 @@ void FlowGraphCompiler::EmitInstructionPrologue(Instruction* instr) {
                            instr->token_pos());
     }
     AllocateRegistersLocally(instr);
-  } else if (instr->MayThrow()  &&
+  } else if (instr->MayThrow() &&
              (CurrentTryIndex() != CatchClauseNode::kInvalidTryIndex)) {
     // Optimized try-block: Sync locals to fixed stack locations.
+    SpecialStatsBegin(CombinedCodeStatistics::kTagTrySyncSpilling);
     EmitTrySync(instr, CurrentTryIndex());
+    SpecialStatsEnd(CombinedCodeStatistics::kTagTrySyncSpilling);
   }
 }
 
