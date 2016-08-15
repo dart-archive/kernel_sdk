@@ -855,6 +855,13 @@ class AssemblyInstructionsWriter : public InstructionsWriter {
     *current_section_size_ += sizeof(value);
   }
 
+  void WriteByteLiteral(uword value) {
+    assembly_stream_.Print(".byte 0x%0.8" Px "\n", value);
+    *current_section_size_ += 1;
+  }
+
+  void WriteByteSequence(uword start, uword end);
+
   WriteStream assembly_stream_;
   intptr_t* current_section_size_;
   intptr_t read_only_binary_size_;

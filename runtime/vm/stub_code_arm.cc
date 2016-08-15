@@ -740,6 +740,17 @@ void StubCode::GenerateInvokeDartCodeStub(Assembler* assembler) {
 
   // Save new context and C++ ABI callee-saved registers.
   __ PushList(kAbiPreservedCpuRegs);
+  {
+    intptr_t offset =
+        -(Utils::CountOneBits(kAbiPreservedCpuRegs) + 1) * kWordSize;
+    for (intptr_t r = 0; r < kNumberOfCpuRegisters; r++) {
+      if ((kAbiPreservedCpuRegs & (1 << r)) != 0) {
+        __ Comment(".cfi_offset %" Pd ", %" Pd "", r, offset);
+        offset += kWordSize;
+      }
+    }
+  }
+
 
   const DRegister firstd = EvenDRegisterOf(kAbiFirstPreservedFpuReg);
   if (TargetCPUFeatures::vfp_supported()) {
@@ -2086,6 +2097,8 @@ void StubCode::GenerateICLookupThroughFunctionStub(Assembler* assembler) {
 
 void StubCode::GenerateICLookupThroughCodeStub(Assembler* assembler) {
   Label loop, found, miss;
+  __ Comment(".cfi_def_cfa %d, 0", SP);
+  __ Comment(".cfi_same_value %d", LR);
   __ ldr(R4, FieldAddress(R9, ICData::arguments_descriptor_offset()));
   __ ldr(R8, FieldAddress(R9, ICData::ic_data_offset()));
   __ AddImmediate(R8, R8, Array::data_offset() - kHeapObjectTag);

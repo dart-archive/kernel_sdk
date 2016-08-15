@@ -18,6 +18,9 @@ DEFINE_FLAG(bool, check_code_pointer, false,
             "NOTE: This breaks the profiler.");
 DEFINE_FLAG(bool, code_comments, false,
             "Include comments into code and disassembly");
+DEFINE_FLAG(bool, emit_unwinding_data, false,
+            "Include platform unwinding data into the code."
+            "This is only supported for assembly snapshots");
 #if defined(TARGET_ARCH_ARM) || defined(TARGET_ARCH_MIPS)
 DEFINE_FLAG(bool, use_far_branches, false,
             "Enable far branches for ARM and MIPS");
@@ -210,7 +213,8 @@ void Assembler::Unreachable(const char* message) {
 
 
 void Assembler::Comment(const char* format, ...) {
-  if (EmittingComments()) {
+  if (EmittingComments() ||
+      (FLAG_emit_unwinding_data && (format[0] == '.'))) {
     char buffer[1024];
 
     va_list args;

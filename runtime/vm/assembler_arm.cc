@@ -3082,16 +3082,53 @@ static int NumRegsBelowFP(RegList regs) {
 }
 
 
+const char* FormatRegList(char* buffer, size_t n, RegList regs) {
+  intptr_t pos = 0;
+  for (intptr_t r = 0; r < kNumberOfCpuRegisters; r++) {
+    if (regs & (1 << r)) {
+      pos += OS::SNPrint(buffer + pos,
+                         n - pos,
+                         "%s%s",
+                         pos > 0 ? ", " : "",
+                         Assembler::RegisterName(static_cast<Register>(r),
+                                                 /*use_aliases=*/false));
+    }
+  }
+  return buffer;
+}
+
+
 void Assembler::EnterFrame(RegList regs, intptr_t frame_size) {
   if (prologue_offset_ == -1) {
     prologue_offset_ = CodeSize();
   }
   PushList(regs);
+
+  char buffer[kNumberOfCpuRegisters * 6];
+  Comment(".save {%s}", FormatRegList(buffer, sizeof(buffer), regs));
+
   if ((regs & (1 << FP)) != 0) {
     // Set FP to the saved previous FP.
+    Comment(".setfp fp, sp, #%d", 4 * NumRegsBelowFP(regs));
     add(FP, SP, Operand(4 * NumRegsBelowFP(regs)));
   }
+
+  if (frame_size != 0) {
+    Comment(".pad #%d", frame_size);
+  }
   AddImmediate(SP, -frame_size);
+
+  if ((regs & (1 << FP)) != 0) {
+    Comment(".cfi_def_cfa %d, 0", FP);
+
+    intptr_t offset = -NumRegsBelowFP(regs) * kWordSize;
+    for (intptr_t r = 0; r < kNumberOfCpuRegisters; r++) {
+      if ((regs & (1 << r)) != 0) {
+        Comment(".cfi_offset %" Pd ", %" Pd "", r, offset);
+        offset += kWordSize;
+      }
+    }
+  }
 }
 
 
@@ -3198,6 +3235,9 @@ void Assembler::EnterDartFrame(intptr_t frame_size) {
   LoadPoolPointer();
 
   // Reserve space for locals.
+  if (frame_size != 0) {
+    Comment(".pad #%d", frame_size);
+  }
   AddImmediate(SP, -frame_size);
 }
 
@@ -3487,15 +3527,22 @@ Address Assembler::ElementAddressForRegIndex(bool is_load,
 }
 
 
-static const char* cpu_reg_names[kNumberOfCpuRegisters] = {
+static const char* platform_cpu_reg_names[kNumberOfCpuRegisters] = {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-  "r8", "ctx", "pp", "fp", "ip", "sp", "lr", "pc",
+  "r8", "r9", "r10", "r11", "ip", "sp", "lr", "pc",
 };
 
 
-const char* Assembler::RegisterName(Register reg) {
+static const char* dart_cpu_reg_names[kNumberOfCpuRegisters] = {
+  "r0", "r1", "r2", "r3", "r4", "pp", "r6", "r7",
+  "r8", "r9", "r10", "fp", "ip", "sp", "lr", "pc",
+};
+
+
+const char* Assembler::RegisterName(Register reg,
+                                    bool use_aliases /* = true */) {
   ASSERT((0 <= reg) && (reg < kNumberOfCpuRegisters));
-  return cpu_reg_names[reg];
+  return use_aliases ? dart_cpu_reg_names[reg] : platform_cpu_reg_names[reg];
 }
 
 
