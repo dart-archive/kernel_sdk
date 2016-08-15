@@ -29,6 +29,8 @@
 
 namespace dart {
 
+DECLARE_FLAG(bool, emit_unwinding_data);
+
 static const int kNumInitialReferences = 64;
 
 
@@ -797,7 +799,9 @@ void AssemblyInstructionsWriter::Write() {
   }
 
   SetSection(AssemblyInstructionsWriter::kRXSection);
-  assembly_stream_.Print(".cfi_sections .eh_frame, .debug_frame\n");
+  if (FLAG_emit_unwinding_data) {
+    assembly_stream_.Print(".cfi_sections .eh_frame, .debug_frame\n");
+  }
   assembly_stream_.Print(".text\n");
   assembly_stream_.Print(".globl _kInstructionsSnapshot\n");
   // Start snapshot at page boundary.
@@ -870,8 +874,13 @@ void AssemblyInstructionsWriter::Write() {
     const Code::Comments& comments = code.comments();
     intptr_t comment_finger = 0;
 
-    assembly_stream_.Print(".fnstart\n");
-    assembly_stream_.Print(".cfi_startproc\n");
+    if (FLAG_emit_unwinding_data) {
+#if defined(TARGET_ARCH_ARM)
+      assembly_stream_.Print(".fnstart\n");
+#endif
+      assembly_stream_.Print(".cfi_startproc\n");
+    }
+
     {
       // 3. Write from the entry point to the end.
       NoSafepointScope no_safepoint;
@@ -910,8 +919,13 @@ void AssemblyInstructionsWriter::Write() {
         cursor = next_offset;
       }
     }
-    assembly_stream_.Print(".cfi_endproc\n");
-    assembly_stream_.Print(".fnend\n");
+
+    if (FLAG_emit_unwinding_data) {
+      assembly_stream_.Print(".cfi_endproc\n");
+#if defined(TARGET_ARCH_ARM)
+      assembly_stream_.Print(".fnend\n");
+#endif
+    }
   }
 
   SetSection(AssemblyInstructionsWriter::kROSection);
