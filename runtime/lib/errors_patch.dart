@@ -2,9 +2,6 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import 'dart:_internal' as internal;
-import 'dart:convert' show JSON;
-
 @patch class Error {
   @patch static String _objectToString(Object object) {
     return Object._toString(object);
@@ -353,7 +350,7 @@ class _InternalError {
   }
 }
 
-patch _unresolvedConstructorError(
+@patch _unresolvedConstructorError(
     Object typeLiteral,
     Symbol fullConstructorName,
     List arguments,
@@ -368,7 +365,7 @@ patch _unresolvedConstructorError(
       existingArgumentNames);
 }
 
-patch _unresolvedStaticGetterError(
+@patch _unresolvedStaticGetterError(
     Object typeLiteral,
     Symbol name,
     List arguments,
@@ -384,7 +381,7 @@ patch _unresolvedStaticGetterError(
       existingArgumentNames);
 }
 
-patch _unresolvedStaticSetterError(
+@patch _unresolvedStaticSetterError(
     Object typeLiteral,
     Symbol name,
     List arguments,
@@ -400,7 +397,7 @@ patch _unresolvedStaticSetterError(
       existingArgumentNames);
 }
 
-patch _unresolvedStaticMethodError(
+@patch _unresolvedStaticMethodError(
     Object typeLiteral,
     Symbol name,
     List arguments,
@@ -416,7 +413,7 @@ patch _unresolvedStaticMethodError(
       existingArgumentNames);
 }
 
-patch _unresolvedTopLevelGetterError(
+@patch _unresolvedTopLevelGetterError(
     Object unused,
     Symbol name,
     List arguments,
@@ -432,7 +429,7 @@ patch _unresolvedTopLevelGetterError(
       existingArgumentNames);
 }
 
-patch _unresolvedTopLevelSetterError(
+@patch _unresolvedTopLevelSetterError(
     Object unused,
     Symbol name,
     List arguments,
@@ -448,7 +445,7 @@ patch _unresolvedTopLevelSetterError(
       existingArgumentNames);
 }
 
-patch _unresolvedTopLevelMethodError(
+@patch _unresolvedTopLevelMethodError(
     Object unused,
     Symbol name,
     List arguments,
@@ -464,7 +461,7 @@ patch _unresolvedTopLevelMethodError(
       existingArgumentNames);
 }
 
-patch _unresolvedSuperGetterError(
+@patch _unresolvedSuperGetterError(
     Object receiver,
     Symbol name,
     List arguments,
@@ -480,7 +477,7 @@ patch _unresolvedSuperGetterError(
       existingArgumentNames);
 }
 
-patch _unresolvedSuperSetterError(
+@patch _unresolvedSuperSetterError(
     Object receiver,
     Symbol name,
     List arguments,
@@ -496,7 +493,7 @@ patch _unresolvedSuperSetterError(
       existingArgumentNames);
 }
 
-patch _unresolvedSuperMethodError(
+@patch _unresolvedSuperMethodError(
     Object receiver,
     Symbol name,
     List arguments,
@@ -512,7 +509,7 @@ patch _unresolvedSuperMethodError(
       existingArgumentNames);
 }
 
-patch _genericNoSuchMethod(
+@patch _genericNoSuchMethod(
     Object receiver,
     Symbol methodName,
     List arguments,
@@ -522,10 +519,10 @@ patch _genericNoSuchMethod(
       existingArgumentNames);
 }
 
-patch _malformedTypeError(String errorMessage) {
+@patch _malformedTypeError(String errorMessage) {
   return new _TypeError._create(null, null, null, errorMessage);
 }
 
-patch _fallThroughError() {
+@patch _fallThroughError() {
   return new FallThroughError();
 }
