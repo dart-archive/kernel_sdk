@@ -60,3 +60,9 @@ class CodeUnits extends UnmodifiableListBase<int> {
 
   static String stringOf(CodeUnits u) => u._string;
 }
+
+/// Marks a class as native and defines its implementation-specific name.
+class Native {
+  final String name;
+  const Native(this.name);
+}
