@@ -1235,7 +1235,7 @@
       ]
     },
     {
-      'target_name': 'generate_library_patches',
+      'target_name': 'generate_patched_sdk',
       'type': 'none',
       'toolsets': ['host'],
       'dependencies': [
@@ -1251,6 +1251,40 @@
         'generate_profiler_library_patch',
         'generate_typed_data_library_patch',
         'generate_vmservice_library_patch',
+      ],
+      'actions': [
+        {
+          'action_name': 'patch_sdk',
+          'inputs': [
+            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)dart<(EXECUTABLE_SUFFIX)',
+            '<!@(["python", "../tools/list_files.py",' '"dart$",' '"sdk/lib"])',
+            '<(gen_source_dir)/patches/async_patch.dart',
+            '<(gen_source_dir)/patches/collection_patch.dart',
+            '<(gen_source_dir)/patches/convert_patch.dart',
+            '<(gen_source_dir)/patches/core_patch.dart',
+            '<(gen_source_dir)/patches/developer_patch.dart',
+            '<(gen_source_dir)/patches/internal_patch.dart',
+            '<(gen_source_dir)/patches/isolate_patch.dart',
+            '<(gen_source_dir)/patches/math_patch.dart',
+            '<(gen_source_dir)/patches/mirrors_patch.dart',
+            '<(gen_source_dir)/patches/profiler_patch.dart',
+            '<(gen_source_dir)/patches/typed_data_patch.dart',
+            '<(gen_source_dir)/patches/vmservice_patch.dart',
+          ],
+          'outputs': [
+            # Instead of listing all outputs we list a single well-known one.
+            '<(gen_source_dir)/patched_sdk/lib/core/core.dart',
+          ],
+          'action': [
+            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)dart<(EXECUTABLE_SUFFIX)',
+            '--package-root=<(PRODUCT_DIR)/packages',
+            '../tools/patch_sdk.dart',
+            'vm',
+            '../sdk',
+            '<(gen_source_dir)/patches',
+            '<(gen_source_dir)/patched_sdk',
+          ],
+        },
       ],
     },
     {
@@ -1272,13 +1306,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1304,13 +1338,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1336,13 +1370,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1368,13 +1402,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1400,13 +1434,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1432,13 +1466,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1464,13 +1498,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1496,13 +1530,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1528,13 +1562,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1560,13 +1594,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1592,13 +1626,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',
@@ -1624,13 +1658,13 @@
             '<@(_sources)',
           ],
           'outputs': [
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart'
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
           ],
           'action': [
             'python',
             'tools/concatenate_patches.py',
             '--output',
-            '<(gen_source_dir)/patch/<(library_name)_patch.dart',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
             '<@(_sources)',
           ],
           'message': 'Generating <(library_uri) patch.',

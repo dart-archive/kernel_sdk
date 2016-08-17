@@ -5527,7 +5527,8 @@ class Parser {
           true, ParserErrorCode.MISSING_FUNCTION_BODY, false);
       if (constKeyword != null &&
           factoryKeyword != null &&
-          externalKeyword == null) {
+          externalKeyword == null &&
+          body is! NativeFunctionBody) {
         _reportErrorForToken(ParserErrorCode.CONST_FACTORY, factoryKeyword);
       } else if (body is EmptyFunctionBody) {
         if (factoryKeyword != null &&
@@ -5537,7 +5538,7 @@ class Parser {
               ParserErrorCode.FACTORY_WITHOUT_BODY, factoryKeyword);
         }
       } else {
-        if (constKeyword != null) {
+        if (constKeyword != null && body is! NativeFunctionBody) {
           _reportErrorForNode(
               ParserErrorCode.CONST_CONSTRUCTOR_WITH_BODY, body);
         } else if (externalKeyword != null) {

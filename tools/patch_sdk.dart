@@ -14,38 +14,53 @@ import 'package:analyzer/src/generated/sdk.dart';
 import 'package:path/path.dart' as path;
 
 void main(List<String> argv) {
-  if (argv.length < 2) {
-    var self = path.relative(path.fromUri(Platform.script));
-    var toolDir = path.relative(path.dirname(path.fromUri(Platform.script)));
+  if (argv.length != 4 ||
+      !argv.isEmpty && argv.first != 'vm' && argv.first != 'ddc') {
+    var base = path.fromUri(Platform.script);
+    var self = path.relative(base);
+    print('Usage: $self MODE SDK_DIR PATCH_DIR OUTPUT_DIR');
+    print('MODE must be one of ddc or vm.');
 
-    var inputExample = path.join(toolDir, 'input_sdk');
+    var toolDir = path.relative(path.dirname(base));
+    var sdkExample = path.join(toolDir, 'input_sdk');
+    var patchExample = path.join(sdkExample, 'patch');
     var outExample =
         path.relative(path.normalize(path.join('gen', 'patched_sdk')));
-
-    print('Usage: $self INPUT_DIR OUTPUT_DIR');
     print('For example:');
-    print('\$ $self $inputExample $outExample');
+    print('\$ $self ddc $sdkExample $patchExample $outExample');
+
+    var repositoryDir = path.relative(path.dirname(path.dirname(base)));
+    sdkExample = path.relative(path.join(repositoryDir, 'sdk'));
+    patchExample = path.relative(path.join(repositoryDir, 'out', 'DebugX64',
+                                           'obj', 'gen', 'patch'));
+    outExample = path.relative(path.join(repositoryDir, 'out', 'DebugX64',
+                                         'obj', 'gen', 'patched_sdk'));
+    print('or:');
+    print('\$ $self vm $sdkExample $patchExample $outExample');
+
     exit(1);
   }
 
-  var input = argv[0];
+  var mode = argv[0];
+  var input = argv[1];
   var sdkLibIn = path.join(input, 'lib');
-  var patchIn = path.join(input, 'patch');
-  var privateIn = path.join(input, 'private');
-  var sdkOut = path.join(argv[1], 'lib');
+  var patchIn = argv[2];
+  var sdkOut = path.join(argv[3], 'lib');
 
+  var privateIn = path.join(input, 'private');
   var INTERNAL_PATH = '_internal/compiler/js_lib/';
 
   // Copy libraries.dart and version
-  var libContents = new File(path.join(sdkLibIn, '_internal', 'libraries.dart'))
-      .readAsStringSync();
-  _writeSync(path.join(sdkOut, '_internal', 'libraries.dart'), libContents);
+  var libContents = new File(path.join(sdkLibIn, '_internal',
+      'sdk_library_metadata', 'lib', 'libraries.dart')).readAsStringSync();
   _writeSync(
       path.join(
           sdkOut, '_internal', 'sdk_library_metadata', 'lib', 'libraries.dart'),
       libContents);
-  _writeSync(path.join(sdkOut, '..', 'version'),
-      new File(path.join(sdkLibIn, '..', 'version')).readAsStringSync());
+  if (mode == 'ddc') {
+    _writeSync(path.join(sdkOut, '..', 'version'),
+        new File(path.join(sdkLibIn, '..', 'version')).readAsStringSync());
+  }
 
   // Parse libraries.dart
   var sdkLibraries = _getSdkLibraries(libContents);
@@ -54,8 +69,10 @@ void main(List<String> argv) {
   for (SdkLibrary library in sdkLibraries) {
     // TODO(jmesserly): analyzer does not handle the default case of
     // "both platforms" correctly, and treats it as being supported on neither.
-    // So instead we skip explicitly marked as VM libs.
-    if (library.isVmLibrary) continue;
+    // So instead we skip explicitly marked as either VM or dart2js libs.
+    if (mode == 'ddc' ? libary.isVmLibrary : library.isDart2JsLibrary) {
+      continue;
+    }
 
     var libraryOut = path.join(sdkLibIn, library.path);
     var libraryIn;

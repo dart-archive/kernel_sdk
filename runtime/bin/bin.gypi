@@ -941,7 +941,6 @@
         # use libdart_builtin and libdart_io that still have io enabled.
         'libdart_builtin_no_disable#host',
         'libdart_io_no_disable#host',
-        'generate_library_patches#host',
       ],
       'include_dirs': [
         '..',
@@ -1117,7 +1116,6 @@
         'libdart',
         'libdart_builtin',
         'libdart_io',
-        'generate_library_patches#host',
       ],
       'include_dirs': [
         '..',
@@ -1173,7 +1171,6 @@
         'libdart_builtin',
         'libdart_io',
         'libdart_noopt',
-        'generate_library_patches#host',
       ],
       'include_dirs': [
         '..',
@@ -1230,7 +1227,6 @@
         'libdart_builtin',
         'libdart_io',
         'libdart_precompiled_runtime',
-        'generate_library_patches#host',
       ],
       'include_dirs': [
         '..',
@@ -1278,7 +1274,6 @@
         'libdart_builtin',
         'libdart_io',
         'libdart_nosnapshot',
-        'generate_library_patches#host',
       ],
       'include_dirs': [
         '..',
@@ -1357,7 +1352,6 @@
         'libdart_io',
         'generate_snapshot_file#host',
         'generate_snapshot_test_dat_file#host',
-        'generate_library_patches#host',
       ],
       'include_dirs': [
         '..',

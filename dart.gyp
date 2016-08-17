@@ -32,6 +32,7 @@
         'packages',
         'runtime/dart-runtime.gyp:test_extension',
         'runtime/dart-runtime.gyp:sample_extension',
+        'runtime/dart-runtime.gyp:generate_patched_sdk#host',
       ],
     },
     {
@@ -44,6 +45,7 @@
         'runtime/dart-runtime.gyp:dart_precompiled_runtime',
         'runtime/dart-runtime.gyp:dart_bootstrap#host',
         'packages',
+        'runtime/dart-runtime.gyp:generate_patched_sdk#host',
       ],
     },
     {
@@ -61,6 +63,7 @@
         'packages',
         'runtime/dart-runtime.gyp:test_extension',
         'runtime/dart-runtime.gyp:sample_extension',
+        'runtime/dart-runtime.gyp:generate_patched_sdk#host',
       ],
     },
     {

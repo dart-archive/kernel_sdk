@@ -244,6 +244,17 @@ const Map<String, LibraryInfo> libraries = const {
       categories: "",
       documented: false,
       platforms: DART2JS_PLATFORM),
+
+  "profiler": const LibraryInfo(
+      "profiler/profiler.dart",
+      maturity: Maturity.DEPRECATED,
+      documented: false),
+
+  "vmservice": const LibraryInfo(
+      "vmservice/vmservice.dart",
+      implementation: true,
+      documented: false,
+      platforms: VM_PLATFORM),
 };
 
 /**
