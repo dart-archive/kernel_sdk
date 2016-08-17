@@ -47,6 +47,9 @@ int identityHashCode(Object object) => objectHashCode(object);
 @patch
 class Object {
   @patch
+  bool operator==(other) => identical(this, other);
+
+  @patch
   int get hashCode => Primitives.objectHashCode(this);
 
 
@@ -545,7 +548,25 @@ class StringBuffer {
 }
 
 @patch
+class AbstractClassInstantiationError {
+  @patch
+  String toString() => "Cannot instantiate abstract class: '$_className'";
+}
+
+@patch
 class NoSuchMethodError {
+  @patch
+  NoSuchMethodError(Object receiver,
+                    Symbol memberName,
+                    List positionalArguments,
+                    Map<Symbol ,dynamic> namedArguments,
+                    [List existingArgumentNames = null])
+      : _receiver = receiver,
+        _memberName = memberName,
+        _arguments = positionalArguments,
+        _namedArguments = namedArguments,
+        _existingArgumentNames = existingArgumentNames;
+
   @patch
   String toString() {
     StringBuffer sb = new StringBuffer();

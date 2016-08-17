@@ -422,7 +422,7 @@ class FallThroughError extends Error {
 class AbstractClassInstantiationError extends Error {
   final String _className;
   AbstractClassInstantiationError(String this._className);
-  String toString() => "Cannot instantiate abstract class: '$_className'";
+  external String toString();
 }
 
 
@@ -459,16 +459,11 @@ class NoSuchMethodError extends Error {
    * the signature of the method that would have been called if the parameters
    * had matched.
    */
-  NoSuchMethodError(Object receiver,
-                    Symbol memberName,
-                    List positionalArguments,
-                    Map<Symbol ,dynamic> namedArguments,
-                    [List existingArgumentNames = null])
-      : _receiver = receiver,
-        _memberName = memberName,
-        _arguments = positionalArguments,
-        _namedArguments = namedArguments,
-        _existingArgumentNames = existingArgumentNames;
+  external NoSuchMethodError(Object receiver,
+                             Symbol memberName,
+                             List positionalArguments,
+                             Map<Symbol ,dynamic> namedArguments,
+                             [List existingArgumentNames = null]);
 
   external String toString();
 }
@@ -571,84 +566,3 @@ class CyclicInitializationError extends Error {
       ? "Reading static variable during its initialization"
       : "Reading static variable '$variableName' during its initialization";
 }
-
-external _unresolvedConstructorError(
-    Object typeLiteral,
-    Symbol fullConstructorName,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedStaticGetterError(
-    Object typeLiteral,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedStaticSetterError(
-    Object typeLiteral,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedStaticMethodError(
-    Object typeLiteral,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedTopLevelGetterError(
-    Object unused,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedTopLevelSetterError(
-    Object unused,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedTopLevelMethodError(
-    Object unused,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedSuperGetterError(
-    Object receiver,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedSuperSetterError(
-    Object receiver,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _unresolvedSuperMethodError(
-    Object receiver,
-    Symbol name,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _genericNoSuchMethod(
-    Object receiver,
-    Symbol methodName,
-    List arguments,
-    Map<Symbol, dynamic> namedArguments,
-    List existingArgumentNames);
-
-external _malformedTypeError(String errorMessage);
-
-external _fallThroughError();

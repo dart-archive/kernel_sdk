@@ -45,6 +45,56 @@ _registerExtension(String method, ServiceExtensionHandler handler) {
   _extensions[method] = handler;
 }
 
+@patch class UserTag {
+  @patch
+  factory UserTag(String label) => new _FakeUserTag(label);
+
+  @patch
+  static UserTag get defaultTag => _FakeUserTag._defaultTag;
+}
+
+// This is a fake implementation of UserTag so that code can compile and run
+// in dart2js.
+class _FakeUserTag implements UserTag {
+  static Map _instances = {};
+
+  _FakeUserTag.real(this.label);
+
+  factory _FakeUserTag(String label) {
+    // Canonicalize by name.
+    var existingTag = _instances[label];
+    if (existingTag != null) {
+      return existingTag;
+    }
+    // Throw an exception if we've reached the maximum number of user tags.
+    if (_instances.length == UserTag.MAX_USER_TAGS) {
+      throw new UnsupportedError(
+          'UserTag instance limit (${UserTag.MAX_USER_TAGS}) reached.');
+    }
+    // Create a new instance and add it to the instance map.
+    var instance = new _FakeUserTag.real(label);
+    _instances[label] = instance;
+    return instance;
+  }
+
+  final String label;
+
+  UserTag makeCurrent() {
+    var old = _currentTag;
+    _currentTag = this;
+    return old;
+  }
+
+  static final UserTag _defaultTag = new _FakeUserTag('Default');
+}
+
+var _currentTag = _FakeUserTag._defaultTag;
+
+@patch
+UserTag getCurrentTag() {
+  return _currentTag;
+}
+
 @patch
 _postEvent(String eventKind, String eventData) {
   // TODO.

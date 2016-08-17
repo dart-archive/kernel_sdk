@@ -132,7 +132,8 @@ class _InternalError {
   static _throwNew(int case_clause_pos, String className)
       native "AbstractClassInstantiationError_throwNew";
 
-  @patch String toString() {
+  @patch
+  String toString() {
     return "Cannot instantiate abstract class $_className: "
            "_url '$_url' line $_line";
   }
@@ -198,6 +199,7 @@ class _InternalError {
   // that no information is available.
   final int _invocation_type;
 
+  @patch
   NoSuchMethodError(Object this._receiver,
                     Symbol this._memberName,
                     List this._arguments,
@@ -350,7 +352,7 @@ class _InternalError {
   }
 }
 
-@patch _unresolvedConstructorError(
+_unresolvedConstructorError(
     Object typeLiteral,
     Symbol fullConstructorName,
     List arguments,
@@ -365,7 +367,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedStaticGetterError(
+_unresolvedStaticGetterError(
     Object typeLiteral,
     Symbol name,
     List arguments,
@@ -381,7 +383,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedStaticSetterError(
+_unresolvedStaticSetterError(
     Object typeLiteral,
     Symbol name,
     List arguments,
@@ -397,7 +399,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedStaticMethodError(
+_unresolvedStaticMethodError(
     Object typeLiteral,
     Symbol name,
     List arguments,
@@ -413,7 +415,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedTopLevelGetterError(
+_unresolvedTopLevelGetterError(
     Object unused,
     Symbol name,
     List arguments,
@@ -429,7 +431,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedTopLevelSetterError(
+_unresolvedTopLevelSetterError(
     Object unused,
     Symbol name,
     List arguments,
@@ -445,7 +447,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedTopLevelMethodError(
+_unresolvedTopLevelMethodError(
     Object unused,
     Symbol name,
     List arguments,
@@ -461,7 +463,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedSuperGetterError(
+_unresolvedSuperGetterError(
     Object receiver,
     Symbol name,
     List arguments,
@@ -477,7 +479,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedSuperSetterError(
+_unresolvedSuperSetterError(
     Object receiver,
     Symbol name,
     List arguments,
@@ -493,7 +495,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _unresolvedSuperMethodError(
+_unresolvedSuperMethodError(
     Object receiver,
     Symbol name,
     List arguments,
@@ -509,7 +511,7 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _genericNoSuchMethod(
+_genericNoSuchMethod(
     Object receiver,
     Symbol methodName,
     List arguments,
@@ -519,10 +521,10 @@ class _InternalError {
       existingArgumentNames);
 }
 
-@patch _malformedTypeError(String errorMessage) {
+_malformedTypeError(String errorMessage) {
   return new _TypeError._create(null, null, null, errorMessage);
 }
 
-@patch _fallThroughError() {
+_fallThroughError() {
   return new FallThroughError();
 }
