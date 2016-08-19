@@ -1690,10 +1690,9 @@ class KernelCompilationCommandOutputImpl extends CompilationCommandOutputImpl {
 
   bool get canRunDependendCommands {
     // See [BatchRunnerProcess]: 0 means success, 1 means compile-time error.
-    // Since the rastak compiler is always supposed to write the KernelIR file -
-    // even if there were compile-time errors, only crashes or timeouts are
-    // fatal.
-    return !hasCrashed && !timedOut && (exitCode == 0 || exitCode == 1);
+    // TODO(asgerf): When the frontend supports it, continue running even if
+    //   there were compile-time errors. See kernel_sdk issue #18.
+    return !hasCrashed && !timedOut && exitCode == 0;
   }
 
   // If the compiler was able to produce a Kernel IR file we want to run the
