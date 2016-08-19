@@ -370,6 +370,10 @@ class FlowGraphCompiler : public ValueObject {
     if (stats_ != NULL) stats_->SpecialEnd(tag);
   }
 
+  Label& GetReturnCodeLabel() {
+    return return_code_label_;
+  }
+
   // Constructor is lighweight, major initialization work should occur here.
   // This makes it easier to measure time spent in the compiler.
   void InitCompiler();
@@ -851,6 +855,7 @@ class FlowGraphCompiler : public ValueObject {
   const GrowableArray<TokenPosition>& inline_id_to_token_pos_;
   const GrowableArray<intptr_t>& caller_inline_id_;
   CodeStatistics* stats_;
+  Label return_code_label_;
 
   DISALLOW_COPY_AND_ASSIGN(FlowGraphCompiler);
 };

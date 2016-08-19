@@ -103,8 +103,16 @@ void ReturnInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   __ Bind(&stack_ok);
 #endif
   ASSERT(__ constant_pool_allowed());
-  __ LeaveDartFrame();  // Disallows constant pool use.
-  __ Ret();
+
+  Label& return_code = compiler->GetReturnCodeLabel();
+  if (return_code.IsBound()) {
+    __ b(&return_code);
+  } else {
+    __ Bind(&return_code);
+    __ LeaveDartFrame();  // Disallows constant pool use.
+    __ Ret();
+  }
+
   // This ReturnInstr may be emitted out of order by the optimizer. The next
   // block may be a target expecting a properly set constant pool pointer.
   __ set_constant_pool_allowed(true);
