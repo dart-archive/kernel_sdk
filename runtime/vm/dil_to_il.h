@@ -439,6 +439,7 @@ class ScopeBuilder : public RecursiveVisitor {
   virtual void VisitTryCatch(TryCatch* node);
   virtual void VisitTryFinally(TryFinally* node);
   virtual void VisitYieldStatement(YieldStatement* node);
+  virtual void VisitAssertStatement(AssertStatement* node);
 
   virtual void VisitFunctionNode(FunctionNode* node);
 

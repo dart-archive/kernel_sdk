@@ -600,6 +600,13 @@ void ScopeBuilder::VisitYieldStatement(YieldStatement* node) {
 }
 
 
+void ScopeBuilder::VisitAssertStatement(AssertStatement* node) {
+  if (I->asserts()) {
+    RecursiveVisitor::VisitAssertStatement(node);
+  }
+}
+
+
 class BreakableBlock {
  public:
   BreakableBlock(FlowGraphBuilder* builder,
