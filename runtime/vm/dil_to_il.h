@@ -422,9 +422,6 @@ class ScopeBuilder : public RecursiveVisitor {
   virtual void VisitTypeParameterType(TypeParameterType* node);
   virtual void VisitVariableGet(VariableGet* node);
   virtual void VisitVariableSet(VariableSet* node);
-  virtual void VisitSuperPropertyGet(SuperPropertyGet* node);
-  virtual void VisitSuperPropertySet(SuperPropertySet* node);
-  virtual void VisitSuperMethodInvocation(SuperMethodInvocation* node);
   virtual void VisitFunctionExpression(FunctionExpression* node);
   virtual void VisitLet(Let* node);
   virtual void VisitBlock(Block* node);
@@ -537,11 +534,11 @@ class FlowGraphBuilder : public TreeVisitor {
   virtual void VisitStaticSet(StaticSet* node);
   virtual void VisitPropertyGet(PropertyGet* node);
   virtual void VisitPropertySet(PropertySet* node);
-  virtual void VisitSuperPropertyGet(SuperPropertyGet* node);
-  virtual void VisitSuperPropertySet(SuperPropertySet* node);
+  virtual void VisitDirectPropertyGet(DirectPropertyGet* node);
+  virtual void VisitDirectPropertySet(DirectPropertySet* node);
   virtual void VisitStaticInvocation(StaticInvocation* node);
   virtual void VisitMethodInvocation(MethodInvocation* node);
-  virtual void VisitSuperMethodInvocation(SuperMethodInvocation* node);
+  virtual void VisitDirectMethodInvocation(DirectMethodInvocation* node);
   virtual void VisitConstructorInvocation(ConstructorInvocation* node);
   virtual void VisitIsExpression(IsExpression* node);
   virtual void VisitAsExpression(AsExpression* node);

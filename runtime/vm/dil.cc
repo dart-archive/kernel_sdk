@@ -213,21 +213,23 @@ void PropertySet::VisitChildren(Visitor* visitor) {
   value()->AcceptExpressionVisitor(visitor);
 }
 
-SuperPropertyGet::~SuperPropertyGet() {}
-void SuperPropertyGet::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
-  visitor->VisitSuperPropertyGet(this);
+DirectPropertyGet::~DirectPropertyGet() {}
+void DirectPropertyGet::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
+  visitor->VisitDirectPropertyGet(this);
 }
-void SuperPropertyGet::VisitChildren(Visitor* visitor) {
+void DirectPropertyGet::VisitChildren(Visitor* visitor) {
+  receiver()->AcceptExpressionVisitor(visitor);
   target()->AcceptReferenceVisitor(visitor);
 }
 
-SuperPropertySet::~SuperPropertySet() {}
-void SuperPropertySet::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
-  visitor->VisitSuperPropertySet(this);
+DirectPropertySet::~DirectPropertySet() {}
+void DirectPropertySet::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
+  visitor->VisitDirectPropertySet(this);
 }
-void SuperPropertySet::VisitChildren(Visitor* visitor) {
+void DirectPropertySet::VisitChildren(Visitor* visitor) {
+  receiver()->AcceptExpressionVisitor(visitor);
   target()->AcceptReferenceVisitor(visitor);
-  expression()->AcceptExpressionVisitor(visitor);
+  value()->AcceptExpressionVisitor(visitor);
 }
 
 StaticGet::~StaticGet() {}
@@ -275,11 +277,12 @@ void MethodInvocation::VisitChildren(Visitor* visitor) {
   visitor->VisitArguments(arguments());
 }
 
-SuperMethodInvocation::~SuperMethodInvocation() {}
-void SuperMethodInvocation::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
-  visitor->VisitSuperMethodInvocation(this);
+DirectMethodInvocation::~DirectMethodInvocation() {}
+void DirectMethodInvocation::AcceptExpressionVisitor(ExpressionVisitor* visitor) {
+  visitor->VisitDirectMethodInvocation(this);
 }
-void SuperMethodInvocation::VisitChildren(Visitor* visitor) {
+void DirectMethodInvocation::VisitChildren(Visitor* visitor) {
+  receiver()->AcceptExpressionVisitor(visitor);
   visitor->VisitProcedureReference(target());
   visitor->VisitArguments(arguments());
 }

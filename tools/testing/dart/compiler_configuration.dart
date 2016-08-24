@@ -293,6 +293,7 @@ class DartKCompilerConfiguration extends CompilerConfiguration {
       '--sdk',
       sdkDir,
       '--link',
+      '--target=vm',
       '--out',
       outputFileName
     ];

@@ -43,14 +43,14 @@
   M(VariableSet) \
   M(PropertyGet) \
   M(PropertySet) \
-  M(SuperPropertyGet) \
-  M(SuperPropertySet) \
+  M(DirectPropertyGet) \
+  M(DirectPropertySet) \
   M(StaticGet) \
   M(StaticSet) \
   M(Arguments) \
   M(NamedExpression) \
   M(MethodInvocation) \
-  M(SuperMethodInvocation) \
+  M(DirectMethodInvocation) \
   M(StaticInvocation) \
   M(ConstructorInvocation) \
   M(Not) \
@@ -943,48 +943,52 @@ class PropertySet : public Expression {
   Child<Expression> value_;
 };
 
-class SuperPropertyGet : public Expression {
+class DirectPropertyGet : public Expression {
  public:
-  static SuperPropertyGet* ReadFrom(Reader* reader);
+  static DirectPropertyGet* ReadFrom(Reader* reader);
   virtual void WriteTo(Writer* writer);
 
-  virtual ~SuperPropertyGet();
+  virtual ~DirectPropertyGet();
 
-  DEFINE_CASTING_OPERATIONS(SuperPropertyGet);
+  DEFINE_CASTING_OPERATIONS(DirectPropertyGet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
 
+  Expression* receiver() { return receiver_; }
   Member* target() { return target_; }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(SuperPropertyGet);
-  SuperPropertyGet() {}
+  DISALLOW_COPY_AND_ASSIGN(DirectPropertyGet);
+  DirectPropertyGet() {}
 
+  Child<Expression> receiver_;
   Ref<Member> target_;
 };
 
-class SuperPropertySet : public Expression {
+class DirectPropertySet : public Expression {
  public:
-  static SuperPropertySet* ReadFrom(Reader* reader);
+  static DirectPropertySet* ReadFrom(Reader* reader);
   virtual void WriteTo(Writer* writer);
 
-  virtual ~SuperPropertySet();
+  virtual ~DirectPropertySet();
 
-  DEFINE_CASTING_OPERATIONS(SuperPropertySet);
+  DEFINE_CASTING_OPERATIONS(DirectPropertySet);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
 
+  Expression* receiver() { return receiver_; }
   Member* target() { return target_; }
-  Expression* expression() { return expression_; }
+  Expression* value() { return value_; }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(SuperPropertySet);
-  SuperPropertySet() {}
+  DISALLOW_COPY_AND_ASSIGN(DirectPropertySet);
+  DirectPropertySet() {}
 
+  Child<Expression> receiver_;
   Ref<Member> target_;
-  Child<Expression> expression_;
+  Child<Expression> value_;
 };
 
 class StaticGet : public Expression {
@@ -1107,25 +1111,27 @@ class MethodInvocation : public Expression {
   Child<Arguments> arguments_;
 };
 
-class SuperMethodInvocation : public Expression {
+class DirectMethodInvocation : public Expression {
  public:
-  static SuperMethodInvocation* ReadFrom(Reader* reader);
+  static DirectMethodInvocation* ReadFrom(Reader* reader);
   virtual void WriteTo(Writer* writer);
 
-  virtual ~SuperMethodInvocation();
+  virtual ~DirectMethodInvocation();
 
-  DEFINE_CASTING_OPERATIONS(SuperMethodInvocation);
+  DEFINE_CASTING_OPERATIONS(DirectMethodInvocation);
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
 
+  Expression* receiver() { return receiver_; }
   Procedure* target() { return target_; }
   Arguments* arguments() { return arguments_; }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(SuperMethodInvocation);
-  SuperMethodInvocation() {}
+  DISALLOW_COPY_AND_ASSIGN(DirectMethodInvocation);
+  DirectMethodInvocation() {}
 
+  Child<Expression> receiver_;
   Ref<Procedure> target_;
   Child<Arguments> arguments_;
 };
@@ -2514,12 +2520,12 @@ class ExpressionVisitor {
   virtual void VisitVariableSet(VariableSet* node) { VisitDefaultExpression(node); }
   virtual void VisitPropertyGet(PropertyGet* node) { VisitDefaultExpression(node); }
   virtual void VisitPropertySet(PropertySet* node) { VisitDefaultExpression(node); }
-  virtual void VisitSuperPropertyGet(SuperPropertyGet* node) { VisitDefaultExpression(node); }
-  virtual void VisitSuperPropertySet(SuperPropertySet* node) { VisitDefaultExpression(node); }
+  virtual void VisitDirectPropertyGet(DirectPropertyGet* node) { VisitDefaultExpression(node); }
+  virtual void VisitDirectPropertySet(DirectPropertySet* node) { VisitDefaultExpression(node); }
   virtual void VisitStaticGet(StaticGet* node) { VisitDefaultExpression(node); }
   virtual void VisitStaticSet(StaticSet* node) { VisitDefaultExpression(node); }
   virtual void VisitMethodInvocation(MethodInvocation* node) { VisitDefaultExpression(node); }
-  virtual void VisitSuperMethodInvocation(SuperMethodInvocation* node) { VisitDefaultExpression(node); }
+  virtual void VisitDirectMethodInvocation(DirectMethodInvocation* node) { VisitDefaultExpression(node); }
   virtual void VisitStaticInvocation(StaticInvocation* node) { VisitDefaultExpression(node); }
   virtual void VisitConstructorInvocation(ConstructorInvocation* node) { VisitDefaultExpression(node); }
   virtual void VisitNot(Not* node) { VisitDefaultExpression(node); }

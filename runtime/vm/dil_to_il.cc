@@ -350,24 +350,6 @@ void ScopeBuilder::VisitVariableSet(VariableSet* node) {
 }
 
 
-void ScopeBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
-  HandleSpecialLoad(&result_->this_variable, Symbols::This());
-  node->VisitChildren(this);
-}
-
-
-void ScopeBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
-  HandleSpecialLoad(&result_->this_variable, Symbols::This());
-  node->VisitChildren(this);
-}
-
-
-void ScopeBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
-  HandleSpecialLoad(&result_->this_variable, Symbols::This());
-  node->VisitChildren(this);
-}
-
-
 void ScopeBuilder::HandleLocalFunction(TreeNode* parent,
                                        FunctionNode* function) {
   LocalScope* saved_function_scope = current_function_scope_;
@@ -3791,7 +3773,7 @@ void FlowGraphBuilder::VisitPropertySet(PropertySet* node) {
 }
 
 
-void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
+void FlowGraphBuilder::VisitDirectPropertyGet(DirectPropertyGet* node) {
   Function& target = Function::ZoneHandle(Z);
   if (node->target()->IsProcedure()) {
     Procedure* dil_procedure = Procedure::Cast(node->target());
@@ -3813,29 +3795,29 @@ void FlowGraphBuilder::VisitSuperPropertyGet(SuperPropertyGet* node) {
     ASSERT(target.IsGetterFunction() || target.IsImplicitGetterFunction());
   }
 
-  Fragment instructions = LoadLocal(scopes_->this_variable);
+  Fragment instructions = TranslateExpression(node->receiver());
   instructions += PushArgument();
   fragment_ = instructions + StaticCall(target, 1);
 }
 
 
-void FlowGraphBuilder::VisitSuperPropertySet(SuperPropertySet* node) {
+void FlowGraphBuilder::VisitDirectPropertySet(DirectPropertySet* node) {
   const dart::String& method_name =
       H.DartSetterName(node->target()->name());
   const Function& target = Function::ZoneHandle(Z,
       LookupMethodByMember(node->target(), method_name));
   ASSERT(target.IsSetterFunction() || target.IsImplicitSetterFunction());
 
-  Fragment instructions = TranslateExpression(node->expression());
-  LocalVariable* expression = MakeTemporary();
-  instructions += LoadLocal(scopes_->this_variable);
+  Fragment instructions(NullConstant());
+  LocalVariable* value = MakeTemporary();
+  instructions += TranslateExpression(node->receiver());
   instructions += PushArgument();
-  instructions += LoadLocal(expression);
+  instructions += TranslateExpression(node->value());
+  instructions += StoreLocal(value);
   instructions += PushArgument();
   instructions += StaticCall(target, 2);
-  instructions += Drop();
 
-  fragment_ = instructions;
+  fragment_ = instructions + Drop();
 }
 
 
@@ -3966,7 +3948,7 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
 }
 
 
-void FlowGraphBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
+void FlowGraphBuilder::VisitDirectMethodInvocation(DirectMethodInvocation* node) {
   const dart::String& method_name = H.DartMethodName(node->target()->name());
   const Function& target = Function::ZoneHandle(Z,
       LookupMethodByMember(node->target(), method_name));
@@ -3975,7 +3957,7 @@ void FlowGraphBuilder::VisitSuperMethodInvocation(SuperMethodInvocation* node) {
   Array& argument_names = Array::ZoneHandle(Z);
 
   ASSERT(node->arguments()->types().length() == 0);
-  Fragment instructions = LoadLocal(scopes_->this_variable);
+  Fragment instructions = TranslateExpression(node->receiver());
   instructions += PushArgument();
   instructions += TranslateArguments(node->arguments(), &argument_names);
   fragment_ = instructions + StaticCall(target, argument_count, argument_names);

@@ -153,6 +153,9 @@ enum Tag {
   kRedirectingInitializer = 10,
   kLocalInitializer = 11,
 
+  kDirectPropertyGet = 15,
+  kDirectPropertySet = 16,
+  kDirectMethodInvocation = 17,
   kConstStaticInvocation = 18,
   kInvalidExpression = 19,
   kVariableGet = 20,
@@ -1325,18 +1328,18 @@ Expression* Expression::ReadFrom(Reader* reader) {
       return PropertyGet::ReadFrom(reader);
     case kPropertySet:
       return PropertySet::ReadFrom(reader);
-    case kSuperPropertyGet:
-      return SuperPropertyGet::ReadFrom(reader);
-    case kSuperPropertySet:
-      return SuperPropertySet::ReadFrom(reader);
+    case kDirectPropertyGet:
+      return DirectPropertyGet::ReadFrom(reader);
+    case kDirectPropertySet:
+      return DirectPropertySet::ReadFrom(reader);
     case kStaticGet:
       return StaticGet::ReadFrom(reader);
     case kStaticSet:
       return StaticSet::ReadFrom(reader);
     case kMethodInvocation:
       return MethodInvocation::ReadFrom(reader);
-    case kSuperMethodInvocation:
-      return SuperMethodInvocation::ReadFrom(reader);
+    case kDirectMethodInvocation:
+      return DirectMethodInvocation::ReadFrom(reader);
     case kStaticInvocation:
       return StaticInvocation::ReadFrom(reader, false);
     case kConstStaticInvocation:
@@ -1502,32 +1505,36 @@ void PropertySet::WriteTo(Writer* writer) {
   value_->WriteTo(writer);
 }
 
-SuperPropertyGet* SuperPropertyGet::ReadFrom(Reader* reader) {
+DirectPropertyGet* DirectPropertyGet::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  SuperPropertyGet* get = new SuperPropertyGet();
+  DirectPropertyGet* get = new DirectPropertyGet();
+  get->receiver_ = Expression::ReadFrom(reader);
   get->target_ = Reference::ReadMemberFrom(reader);
   return get;
 }
 
-void SuperPropertyGet::WriteTo(Writer* writer) {
+void DirectPropertyGet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kSuperPropertyGet);
+  writer->WriteTag(kDirectPropertyGet);
+  receiver_->WriteTo(writer);
   Reference::WriteMemberTo(writer, target_);
 }
 
-SuperPropertySet* SuperPropertySet::ReadFrom(Reader* reader) {
+DirectPropertySet* DirectPropertySet::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  SuperPropertySet* set = new SuperPropertySet();
+  DirectPropertySet* set = new DirectPropertySet();
+  set->receiver_ = Expression::ReadFrom(reader);
   set->target_ = Reference::ReadMemberFrom(reader);
-  set->expression_ = Expression::ReadFrom(reader);
+  set->value_ = Expression::ReadFrom(reader);
   return set;
 }
 
-void SuperPropertySet::WriteTo(Writer* writer) {
+void DirectPropertySet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kSuperPropertySet);
+  writer->WriteTag(kDirectPropertySet);
+  receiver_->WriteTo(writer);
   Reference::WriteMemberTo(writer, target_);
-  expression_->WriteTo(writer);
+  value_->WriteTo(writer);
 }
 
 StaticGet* StaticGet::ReadFrom(Reader* reader) {
@@ -1604,17 +1611,19 @@ void MethodInvocation::WriteTo(Writer* writer) {
   arguments_->WriteTo(writer);
 }
 
-SuperMethodInvocation* SuperMethodInvocation::ReadFrom(Reader* reader) {
+DirectMethodInvocation* DirectMethodInvocation::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
-  SuperMethodInvocation* invocation = new SuperMethodInvocation();
+  DirectMethodInvocation* invocation = new DirectMethodInvocation();
+  invocation->receiver_ = Expression::ReadFrom(reader);
   invocation->target_ = Procedure::Cast(Reference::ReadMemberFrom(reader));
   invocation->arguments_ = Arguments::ReadFrom(reader);
   return invocation;
 }
 
-void SuperMethodInvocation::WriteTo(Writer* writer) {
+void DirectMethodInvocation::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
-  writer->WriteTag(kSuperMethodInvocation);
+  writer->WriteTag(kDirectMethodInvocation);
+  receiver_->WriteTo(writer);
   Reference::WriteMemberTo(writer, target_);
   arguments_->WriteTo(writer);
 }
