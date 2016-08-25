@@ -798,7 +798,7 @@ void Disassembler::DecodeInstruction(char* hex_buffer, intptr_t hex_size,
   }
 }
 
-#endif  // !PRODUCT
+#endif  // !PRODUCT_WITHOUT_DISASSEMBLER
 
 }  // namespace dart
 

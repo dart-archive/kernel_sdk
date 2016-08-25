@@ -1303,7 +1303,7 @@ const char* Environment::ToCString() const {
 }
 
 
-#else  // PRODUCT
+#else  // PRODUCT_WITHOUT_DISASSEMBLER
 
 
 const char* Instruction::ToCString() const {
@@ -1348,6 +1348,6 @@ bool FlowGraphPrinter::ShouldPrint(const Function& function) {
   return false;
 }
 
-#endif  // !PRODUCT
+#endif  // !PRODUCT_WITHOUT_DISASSEMBLER
 
 }  // namespace dart

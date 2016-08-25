@@ -1335,7 +1335,7 @@ void FlowGraphCompiler::EmitComment(Instruction* instr) {
   BufferFormatter f(buffer, sizeof(buffer));
   instr->PrintTo(&f);
   assembler()->Comment("%s", buffer);
-#endif
+#endif  // !PRODUCT_WITHOUT_DISASSEMBLER
 }
 
 

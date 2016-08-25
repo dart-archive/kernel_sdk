@@ -324,6 +324,6 @@ void Disassembler::DisassembleCodeUnoptimized(
 }
 
 
-#endif  // !PRODUCT
+#endif  // !PRODUCT_WITHOUT_DISASSEMBLER
 
 }  // namespace dart

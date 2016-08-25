@@ -606,14 +606,14 @@ FOR_EACH_ABSTRACT_INSTRUCTION(FORWARD_DECLARATION)
     virtual void PrintTo(BufferFormatter* f) const;
 #else
 #define PRINT_TO_SUPPORT
-#endif  // !PRODUCT
+#endif  // !PRODUCT_WITHOUT_DISASSEMBLER
 
 #ifndef PRODUCT_WITHOUT_DISASSEMBLER
 #define PRINT_OPERANDS_TO_SUPPORT                                              \
     virtual void PrintOperandsTo(BufferFormatter* f) const;
 #else
 #define PRINT_OPERANDS_TO_SUPPORT
-#endif  // !PRODUCT
+#endif  // !PRODUCT_WITHOUT_DISASSEMBLER
 
 class Instruction : public ZoneAllocated {
  public:
@@ -733,7 +733,7 @@ class Instruction : public ZoneAllocated {
 #ifndef PRODUCT_WITHOUT_DISASSEMBLER
   virtual void PrintTo(BufferFormatter* f) const;
   virtual void PrintOperandsTo(BufferFormatter* f) const;
-#endif
+#endif  // !PRODUCT_WITHOUT_DISASSEMBLER
 
 #define DECLARE_INSTRUCTION_TYPE_CHECK(Name, Type)                             \
   bool Is##Name() { return (As##Name() != NULL); }                             \

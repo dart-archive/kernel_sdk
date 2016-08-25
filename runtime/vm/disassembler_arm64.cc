@@ -11,7 +11,7 @@
 
 namespace dart {
 
-#ifndef PRODUCT
+#ifndef PRODUCT_WITHOUT_DISASSEMBLER
 
 class ARM64Decoder : public ValueObject {
  public:
@@ -1508,7 +1508,7 @@ void Disassembler::DecodeInstruction(char* hex_buffer, intptr_t hex_size,
   }
 }
 
-#endif  // !PRODUCT
+#endif  // !PRODUCT_WITHOUT_DISASSEMBLER
 
 }  // namespace dart
 
