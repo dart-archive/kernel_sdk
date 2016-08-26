@@ -2406,6 +2406,44 @@ void AotOptimizer::VisitInstanceCall(InstanceCallInstr* instr) {
     // Call receiver is method receiver.
     Class& receiver_class = Class::Handle(Z, function.Owner());
 
+    // Check if this is a call through a field.
+    const Field& field = Field::Handle(Z,
+        receiver_class.LookupField(instr->function_name()));
+    if (!field.IsNull() && !field.is_static()) {
+      const String& getter_name =
+          String::Handle(Z, Field::GetterName(instr->function_name()));
+      intptr_t subclasses_count = 0;
+      if (!thread()->cha()->HasOverride(receiver_class,
+                                        getter_name,
+                                        &subclasses_count)) {
+        LoadFieldInstr* load = new(Z) LoadFieldInstr(
+            new(Z) Value(instr->ArgumentAt(0)),
+            &Field::ZoneHandle(Z, field.raw()),
+            AbstractType::ZoneHandle(Z, field.type()),
+            instr->token_pos());
+        load->set_is_immutable(field.is_final());
+        InsertBefore(instr->PushArgumentAt(0), load, NULL, FlowGraph::kValue);
+        instr->PushArgumentAt(0)->value()->BindTo(load);
+
+        ZoneGrowableArray<PushArgumentInstr*>* args =
+            new(Z) ZoneGrowableArray<PushArgumentInstr*>(
+                instr->ArgumentCount());
+        for (intptr_t i = 0; i < instr->ArgumentCount(); i++) {
+          args->Add(instr->PushArgumentAt(i));
+        }
+        InstanceCallInstr* call = new(Z) InstanceCallInstr(
+            instr->token_pos(),
+            Symbols::Call(),
+            Token::kILLEGAL,
+            args,
+            instr->argument_names(),
+            1,
+            instr->deopt_id());
+        instr->ReplaceWith(call, current_iterator());
+      }
+      return;
+    }
+
     GrowableArray<intptr_t> class_ids(6);
     if (thread()->cha()->ConcreteSubclasses(receiver_class, &class_ids)) {
       // First check if all subclasses end up calling the same method.

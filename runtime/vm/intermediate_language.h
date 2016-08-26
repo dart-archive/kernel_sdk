@@ -2864,6 +2864,36 @@ class InstanceCallInstr : public TemplateDefinition<0, Throws> {
            token_kind == Token::kILLEGAL);
   }
 
+  InstanceCallInstr(TokenPosition token_pos,
+                    const String& function_name,
+                    Token::Kind token_kind,
+                    ZoneGrowableArray<PushArgumentInstr*>* arguments,
+                    const Array& argument_names,
+                    intptr_t checked_argument_count,
+                    intptr_t deopt_id)
+      : TemplateDefinition(deopt_id),
+        ic_data_(NULL),
+        token_pos_(token_pos),
+        function_name_(function_name),
+        token_kind_(token_kind),
+        arguments_(arguments),
+        argument_names_(argument_names),
+        checked_argument_count_(checked_argument_count) {
+    ASSERT(function_name.IsNotTemporaryScopedHandle());
+    ASSERT(!arguments->is_empty());
+    ASSERT(argument_names.IsZoneHandle() || argument_names.InVMHeap());
+    ASSERT(Token::IsBinaryOperator(token_kind) ||
+           Token::IsEqualityOperator(token_kind) ||
+           Token::IsRelationalOperator(token_kind) ||
+           Token::IsUnaryOperator(token_kind) ||
+           Token::IsIndexOperator(token_kind) ||
+           Token::IsTypeTestOperator(token_kind) ||
+           Token::IsTypeCastOperator(token_kind) ||
+           token_kind == Token::kGET ||
+           token_kind == Token::kSET ||
+           token_kind == Token::kILLEGAL);
+  }
+
   DECLARE_INSTRUCTION(InstanceCall)
 
   const ICData* ic_data() const { return ic_data_; }
