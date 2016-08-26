@@ -1526,7 +1526,7 @@ const TypeArguments* ConstantEvaluator::TranslateTypeArguments(
   const TypeArguments* type_arguments = NULL;
   if (dil_type_arguments.length() > 0) {
     type_arguments = &T.TranslateInstantiatedTypeArguments(
-        target_klass,
+        *target_klass,
         dil_type_arguments.raw_array(),
         dil_type_arguments.length());
 
@@ -1845,7 +1845,7 @@ Fragment FlowGraphBuilder::BooleanNegate() {
 }
 
 
-Fragment FlowGraphBuilder::StrictCompare() {
+Fragment FlowGraphBuilder::StrictCompare(bool number_check /* = false */) {
   Value* right = Pop();
   Value* left = Pop();
   StrictCompareInstr* compare =
@@ -1853,7 +1853,7 @@ Fragment FlowGraphBuilder::StrictCompare() {
                                 Token::kEQ_STRICT,
                                 left,
                                 right,
-                                false);
+                                number_check);
   Push(compare);
   return Fragment(compare);
 }
@@ -3611,7 +3611,7 @@ const TypeArguments& DartTypeTranslator::TranslateTypeArguments(
 
 
 const TypeArguments& DartTypeTranslator::TranslateInstantiatedTypeArguments(
-      dart::Class* receiver_class,
+      const dart::Class& receiver_class,
       DartType** receiver_type_arguments,
       intptr_t length) {
   const TypeArguments& type_arguments =
@@ -3622,7 +3622,7 @@ const TypeArguments& DartTypeTranslator::TranslateInstantiatedTypeArguments(
   // finalize the argument types.
   // (This can for example make the [type_arguments] vector larger)
   Type& type = Type::Handle(Z,
-      Type::New(*receiver_class, type_arguments, TokenPosition::kNoSource));
+      Type::New(receiver_class, type_arguments, TokenPosition::kNoSource));
   type ^= ClassFinalizer::FinalizeType(
       *active_class_->klass, type, ClassFinalizer::kCanonicalizeWellFormed);
 
@@ -3824,6 +3824,7 @@ void FlowGraphBuilder::VisitDirectPropertySet(DirectPropertySet* node) {
 void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   const Function& target = Function::ZoneHandle(Z,
       H.LookupStaticMethodByDilProcedure(node->procedure()));
+  const dart::Class& klass = dart::Class::ZoneHandle(Z, target.Owner());
   intptr_t argument_count = node->arguments()->count();
   if (target.IsGenerativeConstructor() || target.IsFactory()) {
     // The VM requires currently a TypeArguments object as first parameter for
@@ -3869,12 +3870,10 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   // TODO(kustermann): Get rid of this after we're using our own core
   // libraries.
   if (target.IsGenerativeConstructor()) {
-    dart::Class& klass = dart::Class::ZoneHandle(Z, target.Owner());
-
     if (klass.NumTypeArguments() > 0) {
       List<DartType>& dil_type_arguments = node->arguments()->types();
       const TypeArguments& type_arguments =
-          T.TranslateInstantiatedTypeArguments(&klass,
+          T.TranslateInstantiatedTypeArguments(klass,
                                                dil_type_arguments.raw_array(),
                                                dil_type_arguments.length());
       instructions += TranslateInstantiatedTypeArguments(type_arguments);
@@ -3896,9 +3895,8 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
     // libraries.
     List<DartType>& dil_type_arguments = node->arguments()->types();
 
-    dart::Class& klass = dart::Class::Handle(Z, target.Owner());
     const TypeArguments& type_arguments =
-        T.TranslateInstantiatedTypeArguments(&klass,
+        T.TranslateInstantiatedTypeArguments(klass,
                                              dil_type_arguments.raw_array(),
                                              dil_type_arguments.length());
 
@@ -3907,13 +3905,29 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
   } else {
     ASSERT(node->arguments()->types().length() == 0);
   }
-  instructions += TranslateArguments(node->arguments(), NULL);
-  instructions += StaticCall(target, argument_count, argument_names);
 
-  if (target.IsGenerativeConstructor()) {
-    // Drop the result of the constructor call and leave [instance_variable] on
-    // top-of-stack.
-    instructions += Drop();
+  // Special case identical(x, y) call.
+  // TODO(vegorov) consider moving this into the inliner and force inline it
+  // there.
+  if (klass.IsTopLevel() &&
+      (klass.library() == dart::Library::CoreLibrary()) &&
+      (target.name() == Symbols::Identical().raw())) {
+    ASSERT(argument_count == 2);
+
+    List<Expression>& positional = node->arguments()->positional();
+    for (intptr_t i = 0; i < positional.length(); ++i) {
+      instructions += TranslateExpression(positional[i]);
+    }
+    instructions += StrictCompare(/*number_check=*/ true);
+  } else {
+    instructions += TranslateArguments(node->arguments(), NULL);
+    instructions += StaticCall(target, argument_count, argument_names);
+
+    if (target.IsGenerativeConstructor()) {
+      // Drop the result of the constructor call and leave [instance_variable]
+      // on top-of-stack.
+      instructions += Drop();
+    }
   }
 
   fragment_ = instructions;
@@ -3948,7 +3962,8 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
 }
 
 
-void FlowGraphBuilder::VisitDirectMethodInvocation(DirectMethodInvocation* node) {
+void FlowGraphBuilder::VisitDirectMethodInvocation(
+    DirectMethodInvocation* node) {
   const dart::String& method_name = H.DartMethodName(node->target()->name());
   const Function& target = Function::ZoneHandle(Z,
       LookupMethodByMember(node->target(), method_name));
@@ -3980,7 +3995,7 @@ void FlowGraphBuilder::VisitConstructorInvocation(ConstructorInvocation* node) {
   if (klass.NumTypeArguments() > 0) {
     List<DartType>& dil_type_arguments = node->arguments()->types();
     const TypeArguments& type_arguments = T.TranslateInstantiatedTypeArguments(
-        &klass,
+        klass,
         dil_type_arguments.raw_array(),
         dil_type_arguments.length());
 

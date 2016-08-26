@@ -237,7 +237,8 @@ class DartTypeTranslator : public DartTypeVisitor {
   // Will return `TypeArguments::null()` in case any of the arguments are
   // malformed.
   const TypeArguments& TranslateInstantiatedTypeArguments(
-      dart::Class* receiver_class, DartType** receiver_type_arguments,
+      const dart::Class& receiver_class,
+      DartType** receiver_type_arguments,
       intptr_t length);
 
   // Will return `TypeArguments::null()` in case any of the arguments are
@@ -627,7 +628,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment AllocateObject(const dart::Class& klass,
                           const Function& closure_function);
   Fragment BooleanNegate();
-  Fragment StrictCompare();
+  Fragment StrictCompare(bool number_check = false);
   Fragment BranchIfTrue(TargetEntryInstr** then_entry,
                         TargetEntryInstr** otherwise_entry,
                         bool negate = false);
