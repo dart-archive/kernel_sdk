@@ -1103,6 +1103,7 @@ stack_trace_test: RuntimeError
 stacktrace_rethrow_error_test/none: RuntimeError
 stacktrace_rethrow_error_test/withtraceparameter: RuntimeError
 stacktrace_rethrow_nonerror_test: RuntimeError
+static_const_field_test: RuntimeError
 static_setter_get_test/01: RuntimeError
 string_interpolation7_test: RuntimeError
 super_call3_test/01: Crash
