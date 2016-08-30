@@ -284,6 +284,9 @@ void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
     interface_class.set_is_implemented();
   }
   klass->set_interfaces(interfaces);
+  if (dil_klass->is_abstract()) {
+    klass->set_is_abstract();
+  }
 
   ClassFinalizer::FinalizeTypesInClass(*klass);
 }
