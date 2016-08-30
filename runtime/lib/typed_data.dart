@@ -2,6 +2,9 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+// Unlike the other SDK libraries, this file is not a patch that is applied to
+// dart:typed_data.  Instead, it completely replaces the implementation from the
+// SDK.
 library dart.typed_data;
 
 import "dart:_internal";
@@ -73,13 +76,11 @@ class Endianness {
  *     bdata.setFloat32(0, 3.04);
  *     int huh = bdata.getInt32(0);
  */
-@patch
 class ByteData implements TypedData {
   /**
    * Creates a [ByteData] of the specified length (in elements), all of
    * whose bytes are initially zero.
    */
-  @patch
   factory ByteData(int length) {
     var list = new Uint8List(length);
     return new _ByteDataView(list, 0, length);
@@ -1103,14 +1104,11 @@ abstract class _TypedList extends _TypedListBase {
 }
 
 
-@patch
 class Int8List extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Int8List(int length) native "TypedData_Int8Array_new";
 
-  @patch
   factory Int8List.fromList(List<int> elements) {
     return new Int8List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1154,14 +1152,11 @@ class Int8List extends _TypedList with _IntListMixin implements List<int>, Typed
 }
 
 
-@patch
 class Uint8List extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Uint8List(int length) native "TypedData_Uint8Array_new";
 
-  @patch
   factory Uint8List.fromList(List<int> elements) {
     return new Uint8List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1202,14 +1197,11 @@ class Uint8List extends _TypedList with _IntListMixin implements List<int>, Type
 }
 
 
-@patch
 class Uint8ClampedList extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Uint8ClampedList(int length) native "TypedData_Uint8ClampedArray_new";
 
-  @patch
   factory Uint8ClampedList.fromList(List<int> elements) {
     return new Uint8ClampedList(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1252,14 +1244,11 @@ class Uint8ClampedList extends _TypedList with _IntListMixin implements List<int
 }
 
 
-@patch
 class Int16List extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Int16List(int length) native "TypedData_Int16Array_new";
 
-  @patch
   factory Int16List.fromList(List<int> elements) {
     return new Int16List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1321,14 +1310,11 @@ class Int16List extends _TypedList with _IntListMixin implements List<int>, Type
 }
 
 
-@patch
 class Uint16List extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Uint16List(int length) native "TypedData_Uint16Array_new";
 
-  @patch
   factory Uint16List.fromList(List<int> elements) {
     return new Uint16List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1390,14 +1376,11 @@ class Uint16List extends _TypedList with _IntListMixin implements List<int>, Typ
 }
 
 
-@patch
 class Int32List extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Int32List(int length) native "TypedData_Int32Array_new";
 
-  @patch
   factory Int32List.fromList(List<int> elements) {
     return new Int32List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1450,14 +1433,11 @@ class Int32List extends _TypedList with _IntListMixin implements List<int>, Type
 }
 
 
-@patch
 class Uint32List extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Uint32List(int length) native "TypedData_Uint32Array_new";
 
-  @patch
   factory Uint32List.fromList(List<int> elements) {
     return new Uint32List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1509,14 +1489,11 @@ class Uint32List extends _TypedList with _IntListMixin implements List<int>, Typ
 }
 
 
-@patch
 class Int64List extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Int64List(int length) native "TypedData_Int64Array_new";
 
-  @patch
   factory Int64List.fromList(List<int> elements) {
     return new Int64List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1568,14 +1545,11 @@ class Int64List extends _TypedList with _IntListMixin implements List<int>, Type
 }
 
 
-@patch
 class Uint64List extends _TypedList with _IntListMixin implements List<int>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Uint64List(int length) native "TypedData_Uint64Array_new";
 
-  @patch
   factory Uint64List.fromList(List<int> elements) {
     return new Uint64List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1627,14 +1601,11 @@ class Uint64List extends _TypedList with _IntListMixin implements List<int>, Typ
 }
 
 
-@patch
 class Float32List extends _TypedList with _DoubleListMixin implements List<double>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Float32List(int length) native "TypedData_Float32Array_new";
 
-  @patch
   factory Float32List.fromList(List<double> elements) {
     return new Float32List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1686,14 +1657,11 @@ class Float32List extends _TypedList with _DoubleListMixin implements List<doubl
 }
 
 
-@patch
 class Float64List extends _TypedList with _DoubleListMixin implements List<double>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Float64List(int length) native "TypedData_Float64Array_new";
 
-  @patch
   factory Float64List.fromList(List<double> elements) {
     return new Float64List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1745,14 +1713,11 @@ class Float64List extends _TypedList with _DoubleListMixin implements List<doubl
 }
 
 
-@patch
 class Float32x4List extends _TypedList with _Float32x4ListMixin implements List<Float32x4>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Float32x4List(int length) native "TypedData_Float32x4Array_new";
 
-  @patch
   factory Float32x4List.fromList(List<Float32x4> elements) {
     return new Float32x4List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1802,14 +1767,11 @@ class Float32x4List extends _TypedList with _Float32x4ListMixin implements List<
 }
 
 
-@patch
 class Int32x4List extends _TypedList with _Int32x4ListMixin implements List<Int32x4>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Int32x4List(int length) native "TypedData_Int32x4Array_new";
 
-  @patch
   factory Int32x4List.fromList(List<Int32x4> elements) {
     return new Int32x4List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -1859,14 +1821,11 @@ class Int32x4List extends _TypedList with _Int32x4ListMixin implements List<Int3
 }
 
 
-@patch
 class Float64x2List extends _TypedList with _Float64x2ListMixin implements List<Float64x2>, TypedData {
   // Factory constructors.
 
-  @patch
   factory Float64x2List(int length) native "TypedData_Float64x2Array_new";
 
-  @patch
   factory Float64x2List.fromList(List<Float64x2> elements) {
     return new Float64x2List(elements.length)
         ..setRange(0, elements.length, elements);
@@ -2521,19 +2480,13 @@ class _ExternalFloat64x2Array extends _TypedList with _Float64x2ListMixin implem
 }
 
 
-@patch
 class Float32x4 {
-  @patch
   factory Float32x4(double x, double y, double z, double w)
       native "Float32x4_fromDoubles";
-  @patch
   factory Float32x4.splat(double v) native "Float32x4_splat";
-  @patch
   factory Float32x4.zero() native "Float32x4_zero";
-  @patch
   factory Float32x4.fromInt32x4Bits(Int32x4 x)
       native "Float32x4_fromInt32x4Bits";
-  @patch
   factory Float32x4.fromFloat64x2(Float64x2 v)
       native "Float32x4_fromFloat64x2";
   Float32x4 operator +(Float32x4 other) {
@@ -2890,15 +2843,11 @@ class Float32x4 {
 }
 
 
-@patch
 class Int32x4 {
-  @patch
   factory Int32x4(int x, int y, int z, int w)
       native "Int32x4_fromInts";
-  @patch
   factory Int32x4.bool(bool x, bool y, bool z, bool w)
       native "Int32x4_fromBools";
-  @patch
   factory Int32x4.fromFloat32x4Bits(Float32x4 x)
       native "Int32x4_fromFloat32x4Bits";
   Int32x4 operator |(Int32x4 other) {
@@ -3207,15 +3156,10 @@ class Int32x4 {
 }
 
 
-@patch
 class Float64x2 {
-  @patch
   factory Float64x2(double x, double y) native "Float64x2_fromDoubles";
-  @patch
   factory Float64x2.splat(double v) native "Float64x2_splat";
-  @patch
   factory Float64x2.zero() native "Float64x2_zero";
-  @patch
   factory Float64x2.fromFloat32x4(Float32x4 v) native "Float64x2_fromFloat32x4";
 
   Float64x2 operator +(Float64x2 other) {
