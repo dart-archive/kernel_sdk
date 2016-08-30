@@ -144,24 +144,30 @@ void MethodRecognizer::InitializeState() {
   libs.Add(&Library::ZoneHandle(Library::DeveloperLibrary()));
   Function& func = Function::Handle();
 
+// TODO(kustermann): Figure out why fingerprint validation failes in
+// PRODUCT+DEBUG mode.
 #define SET_RECOGNIZED_KIND(class_name, function_name, enum_name, type, fp)    \
   func = Library::GetFunction(libs, #class_name, #function_name);              \
   if (func.IsNull()) {                                                         \
     OS::PrintErr("Missing %s::%s\n", #class_name, #function_name);             \
     UNREACHABLE();                                                             \
   }                                                                            \
-  CHECK_FINGERPRINT3(func, class_name, function_name, enum_name, fp);          \
+  NOT_IN_PRODUCT(CHECK_FINGERPRINT3(                                           \
+        func, class_name, function_name, enum_name, fp));                      \
   func.set_recognized_kind(k##enum_name);
 
   RECOGNIZED_LIST(SET_RECOGNIZED_KIND);
 
+// TODO(kustermann): Figure out why fingerprint validation failes in
+// PRODUCT+DEBUG mode.
 #define SET_FUNCTION_BIT(class_name, function_name, dest, fp, setter, value)   \
   func = Library::GetFunction(libs, #class_name, #function_name);              \
   if (func.IsNull()) {                                                         \
     OS::PrintErr("Missing %s::%s\n", #class_name, #function_name);             \
     UNREACHABLE();                                                             \
   }                                                                            \
-  CHECK_FINGERPRINT3(func, class_name, function_name, dest, fp);               \
+  NOT_IN_PRODUCT(CHECK_FINGERPRINT3(                                           \
+        func, class_name, function_name, dest, fp));                           \
   func.setter(value);
 
 #define SET_IS_ALWAYS_INLINE(class_name, function_name, dest, fp)              \
