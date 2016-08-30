@@ -125,6 +125,9 @@ builtin_impl_sources_gypi =
                 ["builtin_impl_sources.gypi"])
 
 static_library("libdart_builtin") {
+  if (!is_debug) {
+    configs -= ["//build/config:release"]
+  }
   configs += ["..:dart_config", "..:dart_product_config"]
   public_configs = [":libdart_builtin_config"]
   deps = [
@@ -147,6 +150,9 @@ static_library("libdart_builtin") {
 
 
 static_library("libdart_nosnapshot") {
+  if (!is_debug) {
+    configs -= ["//build/config:release"]
+  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiled_runtime_config"]
@@ -181,6 +187,9 @@ static_library("libdart_nosnapshot") {
 
 
 static_library("libdart_nosnapshot_with_precompiler") {
+  if (!is_debug) {
+    configs -= ["//build/config:release"]
+  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiler_config"]
@@ -220,6 +229,9 @@ io_impl_sources_gypi =
                 [ "io_impl_sources.gypi" ])
 
 executable("gen_snapshot") {
+  if (!is_debug) {
+    configs -= ["//build/config:release"]
+  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiler_config"]
@@ -265,6 +277,9 @@ executable("gen_snapshot") {
 # A source set for the implementation of 'dart:io' library
 # (without secure sockets) suitable for linking with gen_snapshot.
 source_set("gen_snapshot_dart_io") {
+  if (!is_debug) {
+    configs -= ["//build/config:release"]
+  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiler_config"]
@@ -304,6 +319,9 @@ source_set("gen_snapshot_dart_io") {
 }
 
 source_set("libdart_embedder_noio") {
+  if (!is_debug) {
+    configs -= ["//build/config:release"]
+  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiled_runtime_config"]
@@ -317,6 +335,9 @@ source_set("libdart_embedder_noio") {
 # A source set for the implementation of 'dart:io' library
 # (without secure sockets).
 source_set("embedded_dart_io") {
+  if (!is_debug) {
+    configs -= ["//build/config:release"]
+  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiled_runtime_config"]
@@ -451,6 +472,9 @@ source_set("dart_snapshot_cc") {
 
 if (defined(is_fuchsia) && is_fuchsia) {
   executable("fuchsia_test") {
+    if (!is_debug) {
+      configs -= ["//build/config:release"]
+    }
     configs += ["..:dart_config",
                 "..:dart_product_config",
                 "..:dart_precompiled_runtime_config"]
@@ -476,6 +500,9 @@ if (defined(is_fuchsia) && is_fuchsia) {
   }
 
   executable("dart_no_observatory") {
+    if (!is_debug) {
+      configs -= ["//build/config:release"]
+    }
     configs += ["..:dart_config",
                 "..:dart_product_config",
                 "..:dart_precompiled_runtime_config",]
@@ -538,6 +565,9 @@ if (defined(is_fuchsia) && is_fuchsia) {
 
   executable("run_vm_tests") {
     testonly = true
+    if (!is_debug) {
+      configs -= ["//build/config:release"]
+    }
     configs += ["..:dart_config",
                 "..:dart_product_config",
                 "..:dart_precompiled_runtime_config",]
@@ -586,6 +616,9 @@ if (defined(is_fuchsia) && is_fuchsia) {
 
   executable("run_vm_tests_fuchsia") {
     testonly = true
+    if (!is_debug) {
+      configs -= ["//build/config:release"]
+    }
     configs += ["..:dart_config"]
     sources = [
       "run_vm_tests_fuchsia.cc"
