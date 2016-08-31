@@ -36,6 +36,12 @@ class IrRepresentation {
   const IrRepresentation(this.value);
 }
 
+/// Marks a class as native and defines its JavaScript name(s).
+class Native {
+  final String name;
+  const Native(this.name);
+}
+
 class _Patch {
   final String version;
 

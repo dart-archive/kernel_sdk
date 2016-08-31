@@ -57,7 +57,6 @@ import 'dart:_interceptors';
 import 'dart:_internal' as _symbol_dev;
 import 'dart:_internal' show
     EfficientLength,
-    Native,
     MappedIterable,
     IterableElementError;
 
