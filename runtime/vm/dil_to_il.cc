@@ -2231,6 +2231,27 @@ Fragment FlowGraphBuilder::StaticCall(const Function& target,
 }
 
 
+static intptr_t GetResultCidOfListFactory(const Function& function,
+                                          intptr_t argument_count) {
+  if (!function.IsFactory()) {
+    return kDynamicCid;
+  }
+
+  const dart::Class& owner = dart::Class::Handle(function.Owner());
+  if ((owner.library() != dart::Library::CoreLibrary()) &&
+      (owner.library() != dart::Library::TypedDataLibrary())) {
+    return kDynamicCid;
+  }
+
+  if ((owner.Name() == Symbols::List().raw()) &&
+      (function.name() == Symbols::ListFactory().raw())) {
+    ASSERT(argument_count == 1 || argument_count == 2);
+    return (argument_count == 1) ? kGrowableObjectArrayCid : kArrayCid;
+  }
+  return FactoryRecognizer::ResultCid(function);
+}
+
+
 Fragment FlowGraphBuilder::StaticCall(const Function& target,
                                       intptr_t argument_count,
                                       const Array& argument_names) {
@@ -2241,6 +2262,13 @@ Fragment FlowGraphBuilder::StaticCall(const Function& target,
                              argument_names,
                              arguments,
                              ic_data_array_);
+  const intptr_t list_cid = GetResultCidOfListFactory(target, argument_count);
+  if (list_cid != kDynamicCid) {
+    call->set_result_cid(list_cid);
+    call->set_is_known_list_constructor(true);
+  } else if (target.recognized_kind() != MethodRecognizer::kUnknown) {
+    call->set_result_cid(MethodRecognizer::ResultCid(target));
+  }
   Push(call);
   return Fragment(call);
 }
@@ -3417,12 +3445,12 @@ void FlowGraphBuilder::VisitInvalidExpression(InvalidExpression* node) {
 
 
 void FlowGraphBuilder::VisitNullLiteral(NullLiteral* node) {
-  fragment_ = Fragment(Constant(Instance::ZoneHandle(Z, Instance::null())));
+  fragment_ = Constant(Instance::ZoneHandle(Z, Instance::null()));
 }
 
 
 void FlowGraphBuilder::VisitBoolLiteral(BoolLiteral* node) {
-  fragment_ = Fragment(Constant(Bool::Get(node->value())));
+  fragment_ = Constant(Bool::Get(node->value()));
 }
 
 
@@ -3433,14 +3461,12 @@ void FlowGraphBuilder::VisitIntLiteral(IntLiteral* node) {
 
 void FlowGraphBuilder::VisitBigintLiteral(BigintLiteral* node) {
   const dart::String& value = H.DartString(node->value());
-  fragment_ = Fragment(Constant(
-      Integer::ZoneHandle(Z, Integer::New(value, Heap::kOld))));
+  fragment_ = Constant(Integer::ZoneHandle(Z, Integer::New(value, Heap::kOld)));
 }
 
 
 void FlowGraphBuilder::VisitDoubleLiteral(DoubleLiteral* node) {
-  fragment_ = Fragment(Constant(
-      constant_evaluator_.EvaluateExpression(node)));
+  fragment_ = Constant(constant_evaluator_.EvaluateExpression(node));
 }
 
 
@@ -3450,8 +3476,7 @@ void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
 
 
 void FlowGraphBuilder::VisitSymbolLiteral(SymbolLiteral* node) {
-  fragment_ = Fragment(Constant(
-      constant_evaluator_.EvaluateExpression(node)));
+  fragment_ = Constant(constant_evaluator_.EvaluateExpression(node));
 }
 
 
@@ -3682,7 +3707,7 @@ void FlowGraphBuilder::VisitTypeLiteral(TypeLiteral* node) {
   const AbstractType& type = T.TranslateType(node->type());
   if (type.IsMalformed()) H.ReportError("Malformed type literal");
 
-  fragment_ = Fragment(Constant(type));
+  fragment_ = Constant(type);
 }
 
 
@@ -3965,7 +3990,27 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
 }
 
 
+static bool IsNumberLiteral(Node* node) {
+  return node->IsIntLiteral() || node->IsDoubleLiteral();
+}
+
+
 void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
+  const dart::String& name = H.DartMethodName(node->name());
+  const intptr_t argument_count = node->arguments()->count() + 1;
+  const Token::Kind token_kind = MethodKind(name);
+  if (IsNumberLiteral(node->receiver())) {
+    if ((argument_count == 1) && (token_kind == Token::kNEGATE)) {
+      fragment_ = Constant(constant_evaluator_.EvaluateExpression(node));
+      return;
+    } else if ((argument_count == 2) &&
+               Token::IsBinaryArithmeticOperator(token_kind) &&
+               IsNumberLiteral(node->arguments()->positional()[0])) {
+      fragment_ = Constant(constant_evaluator_.EvaluateExpression(node));
+      return;
+    }
+  }
+
   Fragment instructions = TranslateExpression(node->receiver());
   instructions += PushArgument();
 
@@ -3975,11 +4020,7 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   Array& argument_names = Array::ZoneHandle(Z);
   instructions += TranslateArguments(node->arguments(), &argument_names);
 
-  const dart::String& name = H.DartMethodName(node->name());
-  intptr_t argument_count = node->arguments()->count() + 1;
-
   intptr_t num_args_checked = 1;
-  Token::Kind token_kind = MethodKind(name);
   // If we have a special operation (e.g. +/-/==) we mark both arguments as
   // to be checked.
   if (token_kind != Token::kILLEGAL) {
@@ -4096,7 +4137,11 @@ void FlowGraphBuilder::VisitIsExpression(IsExpression* node) {
   } else {
     instructions += PushArgument();
 
-    instructions += LoadInstantiatorTypeArguments();
+    if (!type.IsInstantiated()) {
+      instructions += LoadInstantiatorTypeArguments();
+    } else {
+      instructions += NullConstant();
+    }
     instructions += PushArgument();  // Type arguments.
 
     instructions += Constant(type);
@@ -4136,7 +4181,11 @@ void FlowGraphBuilder::VisitAsExpression(AsExpression* node) {
   } else {
     instructions += PushArgument();
 
-    instructions += LoadInstantiatorTypeArguments();
+    if (!type.IsInstantiated()) {
+      instructions += LoadInstantiatorTypeArguments();
+    } else {
+      instructions += NullConstant();
+    }
     instructions += PushArgument();  // Type arguments.
 
     instructions += Constant(type);

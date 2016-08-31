@@ -1009,12 +1009,32 @@ void ConstantPropagator::VisitUnarySmiOp(UnarySmiOpInstr* instr) {
 }
 
 
+static bool IsIntegerOrDouble(const Object& value) {
+  return value.IsInteger() || value.IsDouble();
+}
+
+
+static double ToDouble(const Object& value) {
+  return value.IsInteger() ? Integer::Cast(value).AsDoubleValue()
+                           : Double::Cast(value).value();
+}
+
+
 void ConstantPropagator::VisitUnaryDoubleOp(UnaryDoubleOpInstr* instr) {
   const Object& value = instr->value()->definition()->constant_value();
-  if (IsNonConstant(value)) {
-    SetValue(instr, non_constant_);
-  } else if (IsConstant(value)) {
-    // TODO(kmillikin): Handle unary operations.
+  if (IsIntegerOrDouble(value)) {
+    const double val = ToDouble(value);
+    double result_val = 0.0;
+    switch (instr->op_kind()) {
+      case Token::kNEGATE:
+        result_val = -val;
+        break;
+      default:
+        UNREACHABLE();
+    }
+    const Double& result = Double::ZoneHandle(Double::NewCanonical(result_val));
+    SetValue(instr, result);
+  } else if (!IsUnknown(value)) {
     SetValue(instr, non_constant_);
   }
 }
@@ -1120,17 +1140,6 @@ void ConstantPropagator::VisitConstraint(ConstraintInstr* instr) {
 void ConstantPropagator::VisitMaterializeObject(MaterializeObjectInstr* instr) {
   // Should not be used outside of allocation elimination pass.
   UNREACHABLE();
-}
-
-
-static bool IsIntegerOrDouble(const Object& value) {
-  return value.IsInteger() || value.IsDouble();
-}
-
-
-static double ToDouble(const Object& value) {
-  return value.IsInteger() ? Integer::Cast(value).AsDoubleValue()
-                           : Double::Cast(value).value();
 }
 
 
