@@ -396,7 +396,10 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
   TokenPosition pos(0);
 
   // For static fields we only need the getter if the field is lazy-initialized.
-  if (dil_field->IsStatic() && !field.has_initializer()) return;
+  if (dil_field->IsStatic() &&
+      !(field.has_initializer() && field.IsUninitialized())) {
+    return;
+  }
 
   const dart::String& getter_name = H.DartGetterName(dil_field->name());
   dart::Function& getter = dart::Function::ZoneHandle(Z, dart::Function::New(

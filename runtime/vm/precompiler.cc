@@ -943,55 +943,30 @@ RawFunction* Precompiler::CompileStaticInitializer(const Field& field,
   StackZone _(thread);
   Zone* zone = thread->zone();
 
-  // If the field is a DIL field:
-  //
-  //   * it will have a get:<fieldname>
-  //   * it will have an init:<fieldname> initializer (if non-primitive)
-  //
-  // => Problem is that the current precompiler asks us to generate an
-  //    initializer function even if the initializer is a primitive (e.g. int,
-  //    string).
-  // => That's the root cause why simply looking up the initializer function is
-  //    not good enough. Our strategy is to lookup the getter to determine if
-  //    it's a DIL field. If so, we either use the existing initializer
-  //    function or create a new one.
-  //
-  // FIXME(kustermann): Either make the VM not call this function for primitive
-  // values as initializers and/or share this code with [dart::dil::DilReader]
-  const Class& klass = Class::Handle(zone, field.Owner());
-  const String& getter_name = String::Handle(
-      zone, dart::Field::GetterSymbol(String::Handle(zone, field.name())));
-  const Function& getter_fun = Function::ZoneHandle(zone,
-      klass.LookupFunctionAllowPrivate(getter_name));
-  if (!getter_fun.IsNull() && getter_fun.dil_function() != 0) {
+  if (field.dil_field() != 0) {
+    const dil::Field* dil_field = dil::Field::Cast(
+        reinterpret_cast<dil::Node*>(field.dil_field()));
     const String& init_name = String::Handle(
         zone,
         Symbols::FromConcat(thread, Symbols::InitPrefix(),
         String::Handle(zone, field.name())));
-    Function& initializer_fun = Function::ZoneHandle(zone,
-        klass.LookupFunctionAllowPrivate(init_name));
-    if (initializer_fun.IsNull()) {
-      dil::Field* dil_field = dil::Field::Cast(
-          reinterpret_cast<dil::Node*>(getter_fun.dil_function()));
 
-      // Create a static final getter.
-      dart::Class& owner = dart::Class::Handle(zone, field.Owner());
-      initializer_fun ^= dart::Function::New(init_name,
-                              RawFunction::kImplicitStaticFinalGetter,
-                              true,  // is_static
-                              false,  // is_const
-                              false,  // is_abstract
-                              false,  // is_external
-                              false,  // is_native
-                              owner,
-                              TokenPosition::kNoSource);
-      initializer_fun.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
-      initializer_fun.set_result_type(AbstractType::dynamic_type());
-      initializer_fun.set_is_debuggable(false);
-      initializer_fun.set_is_reflectable(false);
-      owner.AddFunction(initializer_fun);
-    }
-
+    // Create a static final getter.
+    const dart::Class& owner = dart::Class::Handle(zone, field.Owner());
+    const Function& initializer_fun = Function::ZoneHandle(
+        zone, dart::Function::New(init_name,
+                                  RawFunction::kImplicitStaticFinalGetter,
+                                  true,  // is_static
+                                  false,  // is_const
+                                  false,  // is_abstract
+                                  false,  // is_external
+                                  false,  // is_native
+                                  owner,
+                                  TokenPosition::kNoSource));
+    initializer_fun.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
+    initializer_fun.set_result_type(AbstractType::dynamic_type());
+    initializer_fun.set_is_debuggable(false);
+    initializer_fun.set_is_reflectable(false);
     parsed_function = new(zone) ParsedFunction(thread, initializer_fun);
   } else {
     parsed_function = Parser::ParseStaticFieldInitializer(field);
