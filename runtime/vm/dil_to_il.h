@@ -634,7 +634,7 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment AllocateObject(const dart::Class& klass,
                           const Function& closure_function);
   Fragment BooleanNegate();
-  Fragment StrictCompare(bool number_check = false);
+  Fragment StrictCompare(Token::Kind kind, bool number_check = false);
   Fragment BranchIfTrue(TargetEntryInstr** then_entry,
                         TargetEntryInstr** otherwise_entry,
                         bool negate = false);

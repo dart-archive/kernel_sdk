@@ -1896,12 +1896,13 @@ Fragment FlowGraphBuilder::BooleanNegate() {
 }
 
 
-Fragment FlowGraphBuilder::StrictCompare(bool number_check /* = false */) {
+Fragment FlowGraphBuilder::StrictCompare(Token::Kind kind,
+                                         bool number_check /* = false */) {
   Value* right = Pop();
   Value* left = Pop();
   StrictCompareInstr* compare =
       new(Z) StrictCompareInstr(TokenPosition::kNoSource,
-                                Token::kEQ_STRICT,
+                                kind,
                                 left,
                                 right,
                                 number_check);
@@ -3974,7 +3975,7 @@ void FlowGraphBuilder::VisitStaticInvocation(StaticInvocation* node) {
     for (intptr_t i = 0; i < positional.length(); ++i) {
       instructions += TranslateExpression(positional[i]);
     }
-    instructions += StrictCompare(/*number_check=*/ true);
+    instructions += StrictCompare(Token::kEQ_STRICT, /*number_check=*/ true);
   } else {
     instructions += TranslateArguments(node->arguments(), NULL);
     instructions += StaticCall(target, argument_count, argument_names);
@@ -4246,9 +4247,10 @@ void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
 
     Value* top = stack_;
     Fragment right_fragment(right_entry);
-    right_fragment += TranslateExpression(node->right());
+    right_fragment += TranslateCondition(node->right(), &negate);
     right_fragment += Constant(Bool::True());
-    right_fragment += StrictCompare();
+    right_fragment += StrictCompare(
+        negate ? Token::kNE_STRICT : Token::kEQ_STRICT);
     right_fragment += StoreLocal(parsed_function_->expression_temp_var());
     right_fragment += Drop();
 
