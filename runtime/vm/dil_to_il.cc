@@ -4346,27 +4346,31 @@ void FlowGraphBuilder::VisitListLiteral(ListLiteral* node) {
   // The type argument for the factory call.
   Fragment instructions = TranslateInstantiatedTypeArguments(type_arguments);
   instructions += PushArgument();
-  // The type arguments for CreateArray.
-  instructions += Constant(TypeArguments::ZoneHandle(Z));
   List<Expression>& expressions = node->expressions();
-  instructions += IntConstant(expressions.length());
-  instructions += CreateArray();
+  if (expressions.length() == 0) {
+    instructions += Constant(Object::empty_array());
+  } else {
+    // The type arguments for CreateArray.
+    instructions += Constant(TypeArguments::ZoneHandle(Z));
+    instructions += IntConstant(expressions.length());
+    instructions += CreateArray();
 
-  LocalVariable* array = MakeTemporary();
-  for (intptr_t i = 0; i < expressions.length(); ++i) {
-    instructions += LoadLocal(array);
-    instructions += IntConstant(i);
-    instructions += TranslateExpression(expressions[i]);
-    instructions += StoreIndexed(kArrayCid);
-    instructions += Drop();
+    LocalVariable* array = MakeTemporary();
+    for (intptr_t i = 0; i < expressions.length(); ++i) {
+      instructions += LoadLocal(array);
+      instructions += IntConstant(i);
+      instructions += TranslateExpression(expressions[i]);
+      instructions += StoreIndexed(kArrayCid);
+      instructions += Drop();
+    }
   }
+  instructions += PushArgument();  // The array.
 
   const dart::Class& factory_class = dart::Class::Handle(Z,
       dart::Library::LookupCoreClass(Symbols::List()));
   const Function& factory_method = Function::ZoneHandle(Z,
       factory_class.LookupFactory(
           dart::Library::PrivateCoreLibName(Symbols::ListLiteralFactory())));
-  instructions += PushArgument();  // The array.
   fragment_ = instructions + StaticCall(factory_method, 2);
 }
 
@@ -4391,30 +4395,34 @@ void FlowGraphBuilder::VisitMapLiteral(MapLiteral* node) {
   Fragment instructions = TranslateInstantiatedTypeArguments(type_arguments);
   instructions += PushArgument();
 
-  // The type arguments for `new List<X>(int len)`.
-  instructions += Constant(TypeArguments::ZoneHandle(Z));
   List<MapEntry>& entries = node->entries();
+  if (entries.length() == 0) {
+    instructions += Constant(Object::empty_array());
+  } else {
+    // The type arguments for `new List<X>(int len)`.
+    instructions += Constant(TypeArguments::ZoneHandle(Z));
 
-  // We generate a list of tuples, i.e. [key1, value1, ..., keyN, valueN].
-  instructions += IntConstant(2 * entries.length());
-  instructions += CreateArray();
+    // We generate a list of tuples, i.e. [key1, value1, ..., keyN, valueN].
+    instructions += IntConstant(2 * entries.length());
+    instructions += CreateArray();
 
-  LocalVariable* array = MakeTemporary();
-  for (intptr_t i = 0; i < entries.length(); ++i) {
-    instructions += LoadLocal(array);
-    instructions += IntConstant(2 * i);
-    instructions += TranslateExpression(entries[i]->key());
-    instructions += StoreIndexed(kArrayCid);
-    instructions += Drop();
+    LocalVariable* array = MakeTemporary();
+    for (intptr_t i = 0; i < entries.length(); ++i) {
+      instructions += LoadLocal(array);
+      instructions += IntConstant(2 * i);
+      instructions += TranslateExpression(entries[i]->key());
+      instructions += StoreIndexed(kArrayCid);
+      instructions += Drop();
 
-    instructions += LoadLocal(array);
-    instructions += IntConstant(2 * i + 1);
-    instructions += TranslateExpression(entries[i]->value());
-    instructions += StoreIndexed(kArrayCid);
-    instructions += Drop();
+      instructions += LoadLocal(array);
+      instructions += IntConstant(2 * i + 1);
+      instructions += TranslateExpression(entries[i]->value());
+      instructions += StoreIndexed(kArrayCid);
+      instructions += Drop();
+    }
   }
-
   instructions += PushArgument();  // The array.
+
   fragment_ = instructions + StaticCall(factory_method, 2);
 }
 
