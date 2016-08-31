@@ -47,9 +47,7 @@ Language/Classes/Setters/name_t12: CompileTimeError
 Language/Classes/Setters/name_t13: CompileTimeError
 Language/Classes/Setters/name_t14: CompileTimeError
 Language/Classes/Setters/name_t15: CompileTimeError
-Language/Classes/definition_t01: Crash
 Language/Classes/definition_t23: CompileTimeError
-Language/Classes/mixins_t01: Crash
 Language/Enums/declaration_equivalent_t01: RuntimeError
 Language/Enums/syntax_t08: MissingCompileTimeError
 Language/Enums/syntax_t09: MissingCompileTimeError
@@ -340,20 +338,8 @@ Language/Libraries_and_Scripts/top_level_syntax_t18: MissingCompileTimeError
 Language/Libraries_and_Scripts/top_level_syntax_t19: MissingCompileTimeError
 Language/Mixins/Mixin_Application/error_t01: MissingCompileTimeError
 Language/Mixins/Mixin_Application/error_t02: MissingCompileTimeError
-Language/Mixins/Mixin_Application/initializers_t02: Crash
+Language/Mixins/Mixin_Application/initializers_t02: RuntimeError
 Language/Mixins/Mixin_Application/initializers_t03: RuntimeError
-Language/Mixins/Mixin_Application/syntax_t02: Crash
-Language/Mixins/Mixin_Application/syntax_t03: Crash
-Language/Mixins/Mixin_Application/syntax_t04: Crash
-Language/Mixins/Mixin_Application/syntax_t08: Crash
-Language/Mixins/Mixin_Application/syntax_t09: Crash
-Language/Mixins/Mixin_Application/syntax_t13: Crash
-Language/Mixins/Mixin_Application/syntax_t17: Crash
-Language/Mixins/Mixin_Application/syntax_t18: Crash
-Language/Mixins/Mixin_Application/syntax_t19: Crash
-Language/Mixins/Mixin_Application/syntax_t20: Crash
-Language/Mixins/Mixin_Application/syntax_t21: Crash
-Language/Mixins/Mixin_Composition/order_t01: Crash
 Language/Reference/Lexical_Rules/Comments/documentation_t02: Crash
 Language/Reference/Lexical_Rules/Comments/documentation_t03: Crash
 Language/Reference/Lexical_Rules/Comments/documentation_t04: Crash
@@ -432,7 +418,7 @@ LibTest/core/Invocation/positionalArguments_A01_t01: RuntimeError
 
 # dartk: precompilation failures
 [ $compiler == dartkp && $runtime == dart_precompiled ]
-Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01: RuntimeError
+co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01: RuntimeError
 Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02: RuntimeError
 Language/Classes/Constructors/Generative_Constructors/formal_parameter_t01: Crash
 Language/Classes/Constructors/Generative_Constructors/formal_parameter_t03: Crash
@@ -450,9 +436,7 @@ Language/Classes/Setters/name_t12: CompileTimeError
 Language/Classes/Setters/name_t13: CompileTimeError
 Language/Classes/Setters/name_t14: CompileTimeError
 Language/Classes/Setters/name_t15: CompileTimeError
-Language/Classes/definition_t01: Crash
 Language/Classes/definition_t23: CompileTimeError
-Language/Classes/mixins_t01: Crash
 Language/Enums/declaration_equivalent_t01: RuntimeError
 Language/Enums/syntax_t08: Crash
 Language/Enums/syntax_t09: Crash
@@ -739,20 +723,8 @@ Language/Libraries_and_Scripts/top_level_syntax_t16: MissingCompileTimeError
 Language/Libraries_and_Scripts/top_level_syntax_t17: MissingCompileTimeError
 Language/Libraries_and_Scripts/top_level_syntax_t18: MissingCompileTimeError
 Language/Libraries_and_Scripts/top_level_syntax_t19: MissingCompileTimeError
-Language/Mixins/Mixin_Application/initializers_t02: Crash
+Language/Mixins/Mixin_Application/initializers_t02: RuntimeError
 Language/Mixins/Mixin_Application/initializers_t03: RuntimeError
-Language/Mixins/Mixin_Application/syntax_t02: Crash
-Language/Mixins/Mixin_Application/syntax_t03: Crash
-Language/Mixins/Mixin_Application/syntax_t04: Crash
-Language/Mixins/Mixin_Application/syntax_t08: Crash
-Language/Mixins/Mixin_Application/syntax_t09: Crash
-Language/Mixins/Mixin_Application/syntax_t13: Crash
-Language/Mixins/Mixin_Application/syntax_t17: Crash
-Language/Mixins/Mixin_Application/syntax_t18: Crash
-Language/Mixins/Mixin_Application/syntax_t19: Crash
-Language/Mixins/Mixin_Application/syntax_t20: Crash
-Language/Mixins/Mixin_Application/syntax_t21: Crash
-Language/Mixins/Mixin_Composition/order_t01: Crash
 Language/Reference/Lexical_Rules/Comments/documentation_t02: Crash
 Language/Reference/Lexical_Rules/Comments/documentation_t03: Crash
 Language/Reference/Lexical_Rules/Comments/documentation_t04: Crash
