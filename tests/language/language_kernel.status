@@ -470,8 +470,6 @@ super_operator_index8_test: RuntimeError
 super_test: RuntimeError
 switch7_negative_test: Fail
 switch_try_catch_test: RuntimeError
-symbol_literal_test/01: RuntimeError
-symbol_literal_test/none: RuntimeError
 sync_generator1_test/01: Crash
 sync_generator1_test/none: Crash
 sync_generator2_test/none: RuntimeError
@@ -979,8 +977,6 @@ super_operator_index8_test: RuntimeError
 super_test: RuntimeError
 switch7_negative_test: Fail
 switch_try_catch_test: RuntimeError
-symbol_literal_test/01: RuntimeError
-symbol_literal_test/none: RuntimeError
 sync_generator1_test/01: Crash
 sync_generator1_test/none: Crash
 sync_generator2_test/none: Crash

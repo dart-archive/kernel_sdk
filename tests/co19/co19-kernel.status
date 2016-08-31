@@ -97,7 +97,6 @@ Language/Expressions/Instance_Creation/New/evaluation_t12: RuntimeError
 Language/Expressions/Instance_Creation/New/evaluation_t19: RuntimeError
 Language/Expressions/Instance_Creation/New/evaluation_t20: RuntimeError
 Language/Expressions/Lookup/Method_Lookup/superclass_t08: RuntimeError
-Language/Expressions/Maps/key_value_equals_operator_t02: RuntimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/accessible_instance_member_t05: RuntimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/evaluation_t07: RuntimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/method_lookup_failed_t18: RuntimeError
@@ -261,8 +260,6 @@ Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closuriz
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t02: RuntimeError
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/static_type_warning_t01: Crash
 Language/Expressions/Strings/adjacent_strings_t02: RuntimeError
-Language/Expressions/Symbols/syntax_t01: RuntimeError
-Language/Expressions/Symbols/syntax_t02: RuntimeError
 Language/Expressions/Type_Test/evaluation_t10: RuntimeError
 Language/Functions/External_Functions/not_connected_to_a_body_t01: RuntimeError
 Language/Functions/Formal_Parameters/syntax_t04: MissingCompileTimeError
@@ -485,7 +482,6 @@ Language/Expressions/Instance_Creation/New/evaluation_t12: RuntimeError
 Language/Expressions/Instance_Creation/New/evaluation_t19: RuntimeError
 Language/Expressions/Instance_Creation/New/evaluation_t20: RuntimeError
 Language/Expressions/Lookup/Method_Lookup/superclass_t08: RuntimeError
-Language/Expressions/Maps/key_value_equals_operator_t02: RuntimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/accessible_instance_member_t05: RuntimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/evaluation_t07: RuntimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/method_lookup_failed_t18: RuntimeError
@@ -648,8 +644,6 @@ Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_cl
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t01: RuntimeError
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t02: RuntimeError
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/static_type_warning_t01: Crash
-Language/Expressions/Symbols/syntax_t01: RuntimeError
-Language/Expressions/Symbols/syntax_t02: RuntimeError
 Language/Expressions/Type_Test/evaluation_t10: RuntimeError
 Language/Functions/External_Functions/not_connected_to_a_body_t01: RuntimeError
 Language/Functions/Formal_Parameters/syntax_t04: MissingCompileTimeError
