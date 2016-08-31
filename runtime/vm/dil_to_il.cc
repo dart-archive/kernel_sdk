@@ -1238,8 +1238,59 @@ void ConstantEvaluator::VisitTypeLiteral(TypeLiteral* node) {
 }
 
 
+RawObject* ConstantEvaluator::EvaluateConstConstructorCall(
+    const dart::Class& type_class,
+    const TypeArguments& type_arguments,
+    const Function& constructor,
+    const Object& argument) {
+  // Factories have one extra argument: the type arguments.
+  // Constructors have 1 extra arguments: receiver.
+  const int kNumArgs = 1;
+  const int kNumExtraArgs = 1;
+  const int num_arguments = kNumArgs + kNumExtraArgs;
+  const Array& arg_values =
+      Array::Handle(Z, Array::New(num_arguments, Heap::kOld));
+  Instance& instance = Instance::Handle(Z);
+  if (!constructor.IsFactory()) {
+    instance = Instance::New(type_class, Heap::kOld);
+    if (!type_arguments.IsNull()) {
+      ASSERT(type_arguments.IsInstantiated());
+      instance.SetTypeArguments(
+          TypeArguments::Handle(Z, type_arguments.Canonicalize()));
+    }
+    arg_values.SetAt(0, instance);
+  } else {
+    // Prepend type_arguments to list of arguments to factory.
+    ASSERT(type_arguments.IsZoneHandle());
+    arg_values.SetAt(0, type_arguments);
+  }
+  arg_values.SetAt((0 + kNumExtraArgs), argument);
+  const Array& args_descriptor = Array::Handle(Z,
+      ArgumentsDescriptor::New(num_arguments, Object::empty_array()));
+  const Object& result = Object::Handle(Z,
+      DartEntry::InvokeFunction(constructor, arg_values, args_descriptor));
+  ASSERT(!result.IsError());
+  if (constructor.IsFactory()) {
+    // The factory method returns the allocated object.
+    instance ^= result.raw();
+  }
+  return Canonicalize(instance);
+}
+
+
 void ConstantEvaluator::VisitSymbolLiteral(SymbolLiteral* node) {
-  result_ = H.DartSymbol(node->value()).raw();
+  const dart::String& symbol_value = H.DartSymbol(node->value());
+
+  const dart::Class& symbol_class = dart::Class::ZoneHandle(Z,
+      I->object_store()->symbol_class());
+  ASSERT(!symbol_class.IsNull());
+  const dart::Function& symbol_constructor = Function::ZoneHandle(Z,
+      symbol_class.LookupConstructor(Symbols::SymbolCtor()));
+  ASSERT(!symbol_constructor.IsNull());
+  result_ ^= EvaluateConstConstructorCall(symbol_class,
+                                          TypeArguments::Handle(Z),
+                                          symbol_constructor,
+                                          symbol_value);
 }
 
 
@@ -3399,28 +3450,8 @@ void FlowGraphBuilder::VisitStringLiteral(StringLiteral* node) {
 
 
 void FlowGraphBuilder::VisitSymbolLiteral(SymbolLiteral* node) {
-  const dart::String& symbol_value = H.DartSymbol(node->value());
-
-  const dart::Class& symbol_class = dart::Class::ZoneHandle(Z,
-      I->object_store()->symbol_class());
-  ASSERT(!symbol_class.IsNull());
-  const dart::Function& symbol_constructor = Function::ZoneHandle(Z,
-      symbol_class.LookupConstructor(Symbols::SymbolCtor()));
-  ASSERT(!symbol_constructor.IsNull());
-
-  // TODO(kustermann): We should implement constant canonicalization.
-  Fragment instructions;
-  instructions += AllocateObject(symbol_class, 0);
-  LocalVariable* symbol = MakeTemporary();
-
-  instructions += LoadLocal(symbol);
-  instructions += PushArgument();
-  instructions += Constant(symbol_value);
-  instructions += PushArgument();
-  instructions += StaticCall(symbol_constructor, 2);
-  instructions += Drop();
-
-  fragment_ = instructions;
+  fragment_ = Fragment(Constant(
+      constant_evaluator_.EvaluateExpression(node)));
 }
 
 

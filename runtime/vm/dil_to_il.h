@@ -341,6 +341,12 @@ class ConstantEvaluator : public ExpressionVisitor {
                             const Array& arguments,
                             const Array& names);
 
+  RawObject* EvaluateConstConstructorCall(
+    const dart::Class& type_class,
+    const TypeArguments& type_arguments,
+    const Function& constructor,
+    const Object& argument);
+
   FlowGraphBuilder* builder_;
   Isolate* isolate_;
   Zone* zone_;
