@@ -418,7 +418,7 @@ LibTest/core/Invocation/positionalArguments_A01_t01: RuntimeError
 
 # dartk: precompilation failures
 [ $compiler == dartkp && $runtime == dart_precompiled ]
-co19/Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01: RuntimeError
+Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01: RuntimeError
 Language/Classes/Constructors/Generative_Constructors/execution_of_an_initializer_t02: RuntimeError
 Language/Classes/Constructors/Generative_Constructors/formal_parameter_t01: Crash
 Language/Classes/Constructors/Generative_Constructors/formal_parameter_t03: Crash
