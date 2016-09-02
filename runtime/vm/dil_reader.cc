@@ -161,8 +161,8 @@ void DilReader::ReadLibrary(Library* dil_library) {
       const dart::String& name = H.DartFieldName(dil_field->name());
       dart::Field& field = dart::Field::Handle(Z, dart::Field::NewTopLevel(
             name,
+            dil_field->IsFinal(),
             dil_field->IsConst(),
-            dil_field->IsStatic(),
             toplevel_class,
             TokenPosition::kNoSource));
       field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
@@ -303,7 +303,10 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     Field* dil_field = dil_klass->fields()[i];
 
     const dart::String& name = H.DartFieldName(dil_field->name());
-    const AbstractType& type = AbstractType::dynamic_type();
+    // TODO(vegorov) check if this might have some ordering issues
+    // e.g. addressing types that are not loaded yet.
+    const AbstractType& type =
+        T.TranslateTypeWithoutFinalization(dil_field->type());
     dart::Field& field = dart::Field::Handle(Z,
         dart::Field::New(name,
                    dil_field->IsStatic(),
@@ -637,9 +640,6 @@ RawFunction::Kind DilReader::GetFunctionType(Procedure* dil_procedure) {
   if (kind == Procedure::kIncompleteProcedure) {
     // TODO(kustermann): Is this correct?
     return RawFunction::kSignatureFunction;
-  } else if ((kind == Procedure::kFactory) &&
-             dil_procedure->function()->type_parameters().length() == 0) {
-    return RawFunction::kRegularFunction;
   } else {
     ASSERT(0 <= kind && kind <= Procedure::kFactory);
     return static_cast<RawFunction::Kind>(lookuptable[kind]);

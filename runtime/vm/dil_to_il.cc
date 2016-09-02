@@ -3202,7 +3202,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfInvokeFieldDispatcher(
     // Invoke the getter to get the field value.
     body += LoadLocal(scope->VariableAt(0));
     body += PushArgument();
-    body += InstanceCall(getter_name, Token::kILLEGAL, 1);
+    body += InstanceCall(getter_name, Token::kGET, 1);
   }
 
   body += PushArgument();
@@ -4943,7 +4943,7 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         current_instructions += LoadLocal(scopes_->switch_variable);
         current_instructions += PushArgument();
         current_instructions +=
-            InstanceCall(Symbols::EqualOperator(), Token::kILLEGAL, 2);
+            InstanceCall(Symbols::EqualOperator(), Token::kEQ, 2);
         current_instructions += BranchIfTrue(&then, &otherwise);
 
         Fragment then_fragment(then);
