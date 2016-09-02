@@ -4943,7 +4943,10 @@ void FlowGraphBuilder::VisitSwitchStatement(SwitchStatement* node) {
         current_instructions += LoadLocal(scopes_->switch_variable);
         current_instructions += PushArgument();
         current_instructions +=
-            InstanceCall(Symbols::EqualOperator(), Token::kEQ, 2);
+            InstanceCall(Symbols::EqualOperator(),
+                         Token::kEQ,
+                         /*argument_count=*/ 2,
+                         /*num_args_checked=*/ 2);
         current_instructions += BranchIfTrue(&then, &otherwise);
 
         Fragment then_fragment(then);
