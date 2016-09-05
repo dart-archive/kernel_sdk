@@ -22,6 +22,7 @@ accessor_conflict_import_prefixed2_test: RuntimeError
 accessor_conflict_import_prefixed_test: RuntimeError
 accessor_conflict_import_test: RuntimeError
 assertion_test: RuntimeError
+assign_static_type_test/02: Crash
 async_and_or_test: Crash
 async_await_catch_regression_test: Crash
 async_await_syntax_test/a05a: Crash
