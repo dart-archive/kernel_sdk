@@ -250,7 +250,7 @@ const Map<String, LibraryInfo> libraries = const {
       maturity: Maturity.DEPRECATED,
       documented: false),
 
-  "vmservice": const LibraryInfo(
+  "_vmservice": const LibraryInfo(
       "vmservice/vmservice.dart",
       implementation: true,
       documented: false,
