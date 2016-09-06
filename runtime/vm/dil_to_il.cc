@@ -4,6 +4,7 @@
 
 #include <map>
 #include <set>
+#include <string>
 
 #include "vm/dil_to_il.h"
 
@@ -871,8 +872,10 @@ const dart::String& TranslationHelper::DartSymbol(String* content) const {
 const dart::String& TranslationHelper::DartClassName(dil::Class* dil_klass) {
   if (dil_klass->name() != NULL) {
     ASSERT(dil_klass->IsNormalClass());
-    return DartSymbol(dil_klass->name());
+    dart::String& name = DartString(dil_klass->name());
+    return ManglePrivateName(dil_klass->parent(), &name);
   } else {
+    // Mixin class names are not mangled.
     ASSERT(dil_klass->IsMixinClass());
 
     // We construct the string from right to left:
@@ -947,7 +950,7 @@ const dart::String& TranslationHelper::DartSetterName(Name* dil_name) {
   }
   dart::String& name = dart::String::ZoneHandle(Z,
       dart::String::FromUTF8(content->buffer(), content->size() - skip));
-  ManglePrivateName(dil_name, &name, false);
+  ManglePrivateName(dil_name->library(), &name, false);
   name = dart::Field::SetterSymbol(name);
   return name;
 }
@@ -955,7 +958,7 @@ const dart::String& TranslationHelper::DartSetterName(Name* dil_name) {
 
 const dart::String& TranslationHelper::DartGetterName(Name* dil_name) {
   dart::String& name = DartString(dil_name->string());
-  ManglePrivateName(dil_name, &name, false);
+  ManglePrivateName(dil_name->library(), &name, false);
   name = dart::Field::GetterSymbol(name);
   return name;
 }
@@ -963,7 +966,7 @@ const dart::String& TranslationHelper::DartGetterName(Name* dil_name) {
 
 const dart::String& TranslationHelper::DartFieldName(Name* dil_name) {
   dart::String& name = DartString(dil_name->string());
-  return ManglePrivateName(dil_name, &name);
+  return ManglePrivateName(dil_name->library(), &name);
 }
 
 
@@ -977,17 +980,18 @@ const dart::String& TranslationHelper::DartInitializerName(Name* dil_name) {
 
 const dart::String& TranslationHelper::DartMethodName(Name* dil_name) {
   dart::String& name = DartString(dil_name->string());
-  return ManglePrivateName(dil_name, &name);
+  return ManglePrivateName(dil_name->library(), &name);
 }
 
 
 const dart::String& TranslationHelper::DartFactoryName(Class* klass,
                                                        Name* method_name) {
+  // [DartMethodName] will mangle the name.
   dart::String& name =
       dart::String::Handle(Z, DartMethodName(method_name).raw());
-  ManglePrivateName(method_name, &name, false);
 
   // We build a String which looks like <classname>.<constructor-name>.
+  // [DartClassName] will mangle the name.
   dart::String& temp = dart::String::Handle(Z, DartClassName(klass).raw());
   temp = dart::String::Concat(temp, Symbols::Dot());
   temp = dart::String::Concat(temp, name);
@@ -1139,11 +1143,10 @@ void TranslationHelper::ReportError(const Error& prev_error,
 
 
 dart::String& TranslationHelper::ManglePrivateName(
-    Name* dil_name, dart::String* name_to_modify, bool symbolize) {
-  // Mangle private names using library's private key.
-  if (dil_name->string()->buffer()[0] == '_') {   // NOLINT
-    const dart::Library& library = dart::Library::Handle(
-        LookupLibraryByDilLibrary(dil_name->library()));
+    Library* dil_library, dart::String* name_to_modify, bool symbolize) {
+  if (name_to_modify->Length() >= 1 && name_to_modify->CharAt(0) == '_') {
+    const dart::Library& library =
+        dart::Library::Handle(Z, LookupLibraryByDilLibrary(dil_library));
     *name_to_modify = library.PrivateName(*name_to_modify);
   } else if (symbolize) {
     *name_to_modify = Symbols::New(thread_, *name_to_modify);
@@ -2756,7 +2759,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     body += TranslateInitializers(dil_klass, &constructor->initializers());
   }
 
-  // The specificaion defines the result of `a == b` to be:
+  // The specification defines the result of `a == b` to be:
   //
   //   a) if either side is `null` then the result is `identical(a, b)`.
   //   b) else the result is `a.operator==(b)`
@@ -4558,7 +4561,7 @@ void FlowGraphBuilder::VisitReturnStatement(ReturnStatement* node) {
   } else {
     instructions += Return();
   }
-  fragment_ = instructions.closed();
+  fragment_ = instructions;
 }
 
 
@@ -5101,7 +5104,7 @@ void FlowGraphBuilder::VisitAssertStatement(AssertStatement* node) {
 
 
 void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
-  InlineBailout("dil::FlowgraphBuilder::VisitTryFinally()");
+  InlineBailout("dil::FlowgraphBuilder::VisitTryFinally");
 
   // There are 5 different cases where we need to execute the finally block:
   //
@@ -5172,7 +5175,7 @@ void FlowGraphBuilder::VisitTryFinally(TryFinally* node) {
 
 
 void FlowGraphBuilder::VisitTryCatch(class TryCatch* node) {
-  InlineBailout("dil::FlowgraphBuilder::VisitTryCatch()");
+  InlineBailout("dil::FlowgraphBuilder::VisitTryCatch");
 
   intptr_t try_handler_index = AllocateTryIndex();
   Fragment try_body = TryCatch(try_handler_index);
@@ -5305,7 +5308,6 @@ void FlowGraphBuilder::VisitYieldStatement(YieldStatement* node) {
   instructions += Drop();
   instructions += TranslateExpression(node->expression());
   instructions += Return();
-  instructions = instructions.closed();
 
   // Note: DropTempsInstr serves as an anchor instruction. It will not
   // be linked into the resulting graph.

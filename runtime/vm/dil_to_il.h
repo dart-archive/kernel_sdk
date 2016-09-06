@@ -181,7 +181,7 @@ class TranslationHelper {
  private:
   // This will mangle [dil_name] (if necessary) and make the result a symbol.
   // The result will be avilable in [name_to_modify] and it is also returned.
-  dart::String& ManglePrivateName(Name* dil_name,
+  dart::String& ManglePrivateName(Library* dil_library,
                                   dart::String* name_to_modify,
                                   bool symbolize = true);
 
