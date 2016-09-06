@@ -10,6 +10,7 @@
 #include "vm/compiler.h"
 #include "vm/dil_reader.h"
 #include "vm/intermediate_language.h"
+#include "vm/longjump.h"
 #include "vm/object_store.h"
 #include "vm/report.h"
 #include "vm/resolver.h"
@@ -1167,6 +1168,20 @@ Instance& ConstantEvaluator::EvaluateExpression(Expression* expression) {
   // We return a new `ZoneHandle` here on purpose: The intermediate language
   // instructions do not make a copy of the handle, so we do it.
   return dart::Instance::ZoneHandle(Z, result_.raw());
+}
+
+
+Object& ConstantEvaluator::EvaluateExpressionSafe(Expression* expression) {
+  LongJumpScope jump;
+  if (setjmp(*jump.Set()) == 0) {
+    return EvaluateExpression(expression);
+  } else {
+    Thread* thread = Thread::Current();
+    Error& error = Error::Handle();
+    error = thread->sticky_error();
+    thread->clear_sticky_error();
+    return error;
+  }
 }
 
 
@@ -4002,13 +4017,19 @@ void FlowGraphBuilder::VisitMethodInvocation(MethodInvocation* node) {
   const Token::Kind token_kind = MethodKind(name);
   if (IsNumberLiteral(node->receiver())) {
     if ((argument_count == 1) && (token_kind == Token::kNEGATE)) {
-      fragment_ = Constant(constant_evaluator_.EvaluateExpression(node));
-      return;
+      const Object& result = constant_evaluator_.EvaluateExpressionSafe(node);
+      if (!result.IsError()) {
+        fragment_ = Constant(result);
+        return;
+      }
     } else if ((argument_count == 2) &&
                Token::IsBinaryArithmeticOperator(token_kind) &&
                IsNumberLiteral(node->arguments()->positional()[0])) {
-      fragment_ = Constant(constant_evaluator_.EvaluateExpression(node));
-      return;
+      const Object& result = constant_evaluator_.EvaluateExpressionSafe(node);
+      if (!result.IsError()) {
+        fragment_ = Constant(result);
+        return;
+      }
     }
   }
 

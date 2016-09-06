@@ -292,6 +292,7 @@ class ConstantEvaluator : public ExpressionVisitor {
   virtual ~ConstantEvaluator() {}
 
   Instance& EvaluateExpression(Expression* node);
+  Object& EvaluateExpressionSafe(Expression* node);
   Instance& EvaluateConstructorInvocation(ConstructorInvocation* node);
   Instance& EvaluateListLiteral(ListLiteral* node);
   Instance& EvaluateMapLiteral(MapLiteral* node);

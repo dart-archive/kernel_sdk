@@ -412,7 +412,6 @@ LibTest/core/Invocation/isSetter_A01_t02: RuntimeError
 LibTest/core/Invocation/memberName_A01_t01: RuntimeError
 LibTest/core/Invocation/namedArguments_A01_t01: RuntimeError
 LibTest/core/Invocation/positionalArguments_A01_t01: RuntimeError
-LibTest/core/double/operator_truncating_division_A01_t06: CompileTimeError
 
 # dartk: precompilation failures
 [ $compiler == dartkp && $runtime == dart_precompiled ]
@@ -795,4 +794,3 @@ LibTest/core/Invocation/isSetter_A01_t02: Crash
 LibTest/core/Invocation/memberName_A01_t01: RuntimeError
 LibTest/core/Invocation/namedArguments_A01_t01: Crash
 LibTest/core/Invocation/positionalArguments_A01_t01: Crash
-LibTest/core/double/operator_truncating_division_A01_t06: CompileTimeError
