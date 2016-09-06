@@ -336,9 +336,9 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
           name,
           RawFunction::kConstructor,
           false,  // is_static
-          false,  // is_const
+          dil_constructor->IsConst(),
           false,  // is_abstract
-          false,  // is_external
+          dil_constructor->IsExternal(),
           false,  // is_native
           klass,
           pos));

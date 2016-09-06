@@ -550,7 +550,7 @@ class Field : public Member {
   enum Flags {
     kFlagFinal = 1 << 0,
     kFlagConst = 1 << 1,
-    kFlagStatic = 1 << 2
+    kFlagStatic = 1 << 2,
   };
 
   Field* ReadFrom(Reader* reader);
@@ -587,6 +587,11 @@ class Field : public Member {
 
 class Constructor : public Member {
  public:
+  enum Flags {
+    kFlagConst = 1 << 0,
+    kFlagExternal = 1 << 1,
+  };
+
   Constructor* ReadFrom(Reader* reader);
   void WriteTo(Writer* writer);
 
@@ -597,6 +602,9 @@ class Constructor : public Member {
   virtual void AcceptMemberVisitor(MemberVisitor* visitor);
   virtual void AcceptReferenceVisitor(MemberReferenceVisitor* visitor);
   virtual void VisitChildren(Visitor* visitor);
+
+  bool IsExternal() { return (flags_ & kFlagExternal) == kFlagExternal; }
+  bool IsConst() { return (flags_ & kFlagConst) == kFlagConst; }
 
   FunctionNode* function() { return function_; }
   List<Initializer>& initializers() { return initializers_; }
