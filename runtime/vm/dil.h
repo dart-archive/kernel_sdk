@@ -916,6 +916,7 @@ class PropertyGet : public Expression {
 
   Child<Expression> receiver_;
   Child<Name> name_;
+  Ref<Member> interfaceTarget_;
 };
 
 class PropertySet : public Expression {
@@ -941,6 +942,7 @@ class PropertySet : public Expression {
   Child<Expression> receiver_;
   Child<Name> name_;
   Child<Expression> value_;
+  Ref<Member> interfaceTarget_;
 };
 
 class DirectPropertyGet : public Expression {
@@ -1109,6 +1111,7 @@ class MethodInvocation : public Expression {
   Child<Expression> receiver_;
   Child<Name> name_;
   Child<Arguments> arguments_;
+  Ref<Member> interfaceTarget_;
 };
 
 class DirectMethodInvocation : public Expression {
@@ -2499,8 +2502,8 @@ class Program : public TreeNode {
 
 class Reference {
  public:
-  static Member* ReadMemberFrom(Reader* reader);
-  static void WriteMemberTo(Writer* writer, Member* member);
+  static Member* ReadMemberFrom(Reader* reader, bool allow_null = false);
+  static void WriteMemberTo(Writer* writer, Member* member, bool allow_null = false);
 
   static Class* ReadClassFrom(Reader* reader, bool allow_null = false);
   static void WriteClassTo(Writer* writer, Class* klass, bool allow_null = false);

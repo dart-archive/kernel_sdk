@@ -231,7 +231,7 @@ enum Tag {
   kSimpleInterfaceType = 96,
   kSimpleFunctionType = 97,
 
-  kNullClassReference = 99,
+  kNullReference = 99,
   kNormalClassReference = 100,
   kMixinClassReference = 101,
 
@@ -1002,7 +1002,7 @@ void MixinClass::WriteTo(Writer* writer) {
   constructors_.WriteTo(writer);
 }
 
-Member* Reference::ReadMemberFrom(Reader* reader) {
+Member* Reference::ReadMemberFrom(Reader* reader, bool allow_null) {
   TRACE_READ_OFFSET();
 
   Program* program = reader->helper()->program();
@@ -1036,6 +1036,12 @@ Member* Reference::ReadMemberFrom(Reader* reader) {
         return klass->procedures().GetOrCreate<Procedure>(procedure_idx, klass);
       }
     }
+    case kNullReference:
+      if (allow_null) {
+        return NULL;
+      } else {
+        FATAL("Expected a valid member reference, but got `null`");
+      }
     default:
       UNREACHABLE();
       break;
@@ -1045,8 +1051,16 @@ Member* Reference::ReadMemberFrom(Reader* reader) {
   return NULL;
 }
 
-void Reference::WriteMemberTo(Writer* writer, Member* member) {
+void Reference::WriteMemberTo(Writer* writer, Member* member, bool allow_null) {
   TRACE_WRITE_OFFSET();
+  if (member == NULL) {
+    if (allow_null) {
+      writer->WriteTag(kNullReference);
+      return;
+    } else {
+      FATAL("Expected a valid member reference but got `null`");
+    }
+  }
   TreeNode* node = member->parent();
 
   WriterHelper* helper = writer->helper();
@@ -1091,7 +1105,7 @@ Class* Reference::ReadClassFrom(Reader* reader, bool allow_null) {
   Program* program = reader->helper()->program();
 
   Tag klass_member_tag = reader->ReadTag();
-  if (klass_member_tag == kNullClassReference) {
+  if (klass_member_tag == kNullReference) {
     if (allow_null) {
       return NULL;
     } else {
@@ -1116,7 +1130,7 @@ void Reference::WriteClassTo(Writer* writer, Class* klass, bool allow_null) {
   TRACE_WRITE_OFFSET();
   if (klass == NULL) {
     if (allow_null) {
-      writer->WriteTag(kNullClassReference);
+      writer->WriteTag(kNullReference);
       return;
     } else {
       FATAL("Expected a valid class reference but got `null`.");
@@ -1424,6 +1438,7 @@ VariableGet* VariableGet::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   VariableGet* get = new VariableGet();
   get->variable_ = reader->helper()->variables().Lookup(reader->ReadUInt());
+  reader->ReadOptional<DartType>();  // Unused promoted type.
   return get;
 }
 
@@ -1442,6 +1457,7 @@ void VariableGet::WriteTo(Writer* writer) {
   } else {
     writer->WriteTag(kVariableGet);
     writer->WriteUInt(index);
+    writer->WriteOptional<DartType>(NULL);
   }
 }
 
@@ -1478,6 +1494,7 @@ PropertyGet* PropertyGet::ReadFrom(Reader* reader) {
   PropertyGet* get = new PropertyGet();
   get->receiver_ = Expression::ReadFrom(reader);
   get->name_ = Name::ReadFrom(reader);
+  get->interfaceTarget_ = Reference::ReadMemberFrom(reader, true);
   return get;
 }
 
@@ -1486,6 +1503,7 @@ void PropertyGet::WriteTo(Writer* writer) {
   writer->WriteTag(kPropertyGet);
   receiver_->WriteTo(writer);
   name_->WriteTo(writer);
+  Reference::WriteMemberTo(writer, interfaceTarget_, true);
 }
 
 PropertySet* PropertySet::ReadFrom(Reader* reader) {
@@ -1494,6 +1512,7 @@ PropertySet* PropertySet::ReadFrom(Reader* reader) {
   set->receiver_ = Expression::ReadFrom(reader);
   set->name_ = Name::ReadFrom(reader);
   set->value_= Expression::ReadFrom(reader);
+  set->interfaceTarget_ = Reference::ReadMemberFrom(reader, true);
   return set;
 }
 
@@ -1503,6 +1522,7 @@ void PropertySet::WriteTo(Writer* writer) {
   receiver_->WriteTo(writer);
   name_->WriteTo(writer);
   value_->WriteTo(writer);
+  Reference::WriteMemberTo(writer, interfaceTarget_, true);
 }
 
 DirectPropertyGet* DirectPropertyGet::ReadFrom(Reader* reader) {
@@ -1600,6 +1620,7 @@ MethodInvocation* MethodInvocation::ReadFrom(Reader* reader) {
   invocation->receiver_ = Expression::ReadFrom(reader);
   invocation->name_ = Name::ReadFrom(reader);
   invocation->arguments_ = Arguments::ReadFrom(reader);
+  invocation->interfaceTarget_ = Reference::ReadMemberFrom(reader, true);
   return invocation;
 }
 
@@ -1609,6 +1630,7 @@ void MethodInvocation::WriteTo(Writer* writer) {
   receiver_->WriteTo(writer);
   name_->WriteTo(writer);
   arguments_->WriteTo(writer);
+  Reference::WriteMemberTo(writer, interfaceTarget_, true);
 }
 
 DirectMethodInvocation* DirectMethodInvocation::ReadFrom(Reader* reader) {
@@ -1679,6 +1701,7 @@ LogicalExpression* LogicalExpression::ReadFrom(Reader* reader) {
   expr->left_ = Expression::ReadFrom(reader);
   expr->operator_ = static_cast<Operator>(reader->ReadByte());
   expr->right_ = Expression::ReadFrom(reader);
+  reader->ReadOptional<DartType>();  // Unused static type.
   return expr;
 }
 
@@ -1688,6 +1711,7 @@ void LogicalExpression::WriteTo(Writer* writer) {
   left_->WriteTo(writer);
   writer->WriteByte(operator_);
   right_->WriteTo(writer);
+  writer->WriteOptional<DartType>(NULL);  // Unused static type.
 }
 
 ConditionalExpression* ConditionalExpression::ReadFrom(Reader* reader) {
@@ -1696,6 +1720,7 @@ ConditionalExpression* ConditionalExpression::ReadFrom(Reader* reader) {
   expr->condition_ = Expression::ReadFrom(reader);
   expr->then_ = Expression::ReadFrom(reader);
   expr->otherwise_ = Expression::ReadFrom(reader);
+  reader->ReadOptional<DartType>();  // Unused static type.
   return expr;
 }
 
@@ -1705,6 +1730,7 @@ void ConditionalExpression::WriteTo(Writer* writer) {
   condition_->WriteTo(writer);
   then_->WriteTo(writer);
   otherwise_->WriteTo(writer);
+  writer->WriteOptional<DartType>(NULL);  // Unused static type.
 }
 
 StringConcatenation* StringConcatenation::ReadFrom(Reader* reader) {
