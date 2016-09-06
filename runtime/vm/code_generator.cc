@@ -1271,7 +1271,7 @@ DEFINE_RUNTIME_ENTRY(InvokeClosureNoSuchMethod, 3) {
 }
 
 
-DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
+void RealStackOverflow(Isolate* isolate, Thread* thread, Zone* zone) {
 #if defined(USING_SIMULATOR)
   uword stack_pos = Simulator::Current()->get_sp();
 #else
@@ -1467,6 +1467,11 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
       frame->set_pc_marker(optimized_code.raw());
     }
   }
+}
+
+
+DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
+  RealStackOverflow(isolate, thread, zone);
 }
 
 

@@ -34,6 +34,7 @@
 #include "vm/timeline.h"
 #include "vm/virtual_memory.h"
 #include "vm/zone.h"
+#include "vm/segv_handler.h"
 
 namespace dart {
 
@@ -141,6 +142,9 @@ char* Dart::InitOnce(const uint8_t* vm_isolate_snapshot,
   set_entropy_source_callback(entropy_source);
   OS::InitOnce();
   VirtualMemory::InitOnce();
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+  SegvHandler::InitOnce();
+#endif
   OSThread::InitOnce();
   if (FLAG_support_timeline) {
     Timeline::InitOnce();
@@ -457,6 +461,9 @@ const char* Dart::Cleanup() {
   OSThread* os_thread = OSThread::Current();
   OSThread::SetCurrent(NULL);
   delete os_thread;
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+  SegvHandler::TearDown();
+#endif
   if (FLAG_trace_shutdown) {
     OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Deleted os_thread\n",
                  timestamp());

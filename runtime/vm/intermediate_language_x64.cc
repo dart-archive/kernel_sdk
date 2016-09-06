@@ -2653,9 +2653,9 @@ LocationSummary* CheckStackOverflowInstr::MakeLocationSummary(Zone* zone,
   const intptr_t kNumInputs = 0;
   const intptr_t kNumTemps = 1;
   LocationSummary* summary = new(zone) LocationSummary(
-      zone, kNumInputs,
-                          kNumTemps,
-                          LocationSummary::kCallOnSlowPath);
+      zone, kNumInputs, kNumTemps, LocationSummary::kCallOnSlowPath);
+  // TODO(kustermann): Get rid of the temporary once we no longer have the
+  // slow path code for stackoverflow in precompiled mode.
   summary->set_temp(0, Location::RequiresRegister());
   return summary;
 }
@@ -2715,28 +2715,50 @@ class CheckStackOverflowSlowPath : public SlowPathCode {
 
 
 void CheckStackOverflowInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
-  CheckStackOverflowSlowPath* slow_path = new CheckStackOverflowSlowPath(this);
-  compiler->AddSlowPathCode(slow_path);
+  bool generate_slow_check = true;
+#if defined(USE_STACKOVERFLOW_TRAPS)
+  generate_slow_check = compiler->IsFirstStackoverflow();
 
-  Register temp = locs()->temp(0).reg();
-  // Generate stack overflow check.
-  __ cmpq(RSP, Address(THR, Thread::stack_limit_offset()));
-  __ j(BELOW_EQUAL, slow_path->entry_label());
-  if (compiler->CanOSRFunction() && in_loop()) {
-    // In unoptimized code check the usage counter to trigger OSR at loop
-    // stack checks.  Use progressively higher thresholds for more deeply
-    // nested loops to attempt to hit outer loops with OSR when possible.
-    __ LoadObject(temp, compiler->parsed_function().function());
-    int32_t threshold =
-        FLAG_optimization_counter_threshold * (loop_depth() + 1);
-    __ cmpl(FieldAddress(temp, Function::usage_counter_offset()),
-            Immediate(threshold));
-    __ j(GREATER_EQUAL, slow_path->osr_entry_label());
+  if (!generate_slow_check) {
+    // NOTE: Since the instruction will cause a POSIX signal, the signal handler
+    // will redirect to a stack-overflow runtime call.  The saved PC on the
+    // stack will still point to the same instruction which caused the signal
+    // (not the next instruction).  It is therefore different than normal calls
+    // which save the PC of the next instruction.  We therefore do the
+    // `RecordSafepoint` call before the actual read.
+    compiler->RecordSignalContinuationSafepoint(locs());
+
+    // Generate stack overflow check (if we are interrupted this will cause a
+    // SEGV).  Just issue a compare and don't destroy any register.
+    __ cmpq(RSP, Address(THR, Thread::kPollingAddressOffset));
   }
-  if (compiler->ForceSlowPathForStackOverflow()) {
-    __ jmp(slow_path->entry_label());
+#endif  // defined(USE_STACKOVERFLOW_TRAPS)
+
+  if (generate_slow_check) {
+    CheckStackOverflowSlowPath* slow_path =
+        new CheckStackOverflowSlowPath(this);
+    compiler->AddSlowPathCode(slow_path);
+
+    Register temp = locs()->temp(0).reg();
+    // Generate stack overflow check.
+    __ cmpq(RSP, Address(THR, Thread::stack_limit_offset()));
+    __ j(BELOW_EQUAL, slow_path->entry_label());
+    if (compiler->CanOSRFunction() && in_loop()) {
+      // In unoptimized code check the usage counter to trigger OSR at loop
+      // stack checks.  Use progressively higher thresholds for more deeply
+      // nested loops to attempt to hit outer loops with OSR when possible.
+      __ LoadObject(temp, compiler->parsed_function().function());
+      int32_t threshold =
+          FLAG_optimization_counter_threshold * (loop_depth() + 1);
+      __ cmpl(FieldAddress(temp, Function::usage_counter_offset()),
+              Immediate(threshold));
+      __ j(GREATER_EQUAL, slow_path->osr_entry_label());
+    }
+    if (compiler->ForceSlowPathForStackOverflow()) {
+      __ jmp(slow_path->entry_label());
+    }
+    __ Bind(slow_path->exit_label());
   }
-  __ Bind(slow_path->exit_label());
 }
 
 

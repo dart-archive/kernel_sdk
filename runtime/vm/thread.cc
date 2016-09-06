@@ -94,6 +94,11 @@ Thread::Thread(Isolate* isolate)
       pending_functions_(GrowableObjectArray::null()),
       sticky_error_(Error::null()),
       compiler_stats_(NULL),
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+      virtual_memory_(0),
+      virtual_memory_protected_(false),
+      saved_interrupt_pc_(0),
+#endif  // defined(DART_PRECOMPILED_RUNTIME) &&defined(USE_STACKOVERFLOW_TRAPS)
       REUSABLE_HANDLE_LIST(REUSABLE_HANDLE_INITIALIZERS)
       REUSABLE_HANDLE_LIST(REUSABLE_HANDLE_SCOPE_INIT)
       safepoint_state_(0),
@@ -404,6 +409,10 @@ void Thread::ScheduleInterruptsLocked(uword interrupt_bits) {
     }
   }
 
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+  MakeInterruptPageUnaccessable();
+#endif
+
   if (stack_limit_ == saved_stack_limit_) {
     stack_limit_ = kInterruptStackLimit & ~kInterruptsMask;
   }
@@ -413,6 +422,11 @@ void Thread::ScheduleInterruptsLocked(uword interrupt_bits) {
 
 uword Thread::GetAndClearInterrupts() {
   MonitorLocker ml(thread_lock_);
+
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+  MakeInterruptPageAccessable();
+#endif
+
   if (stack_limit_ == saved_stack_limit_) {
     return 0;  // No interrupt was requested.
   }
@@ -614,6 +628,7 @@ void Thread::VisitObjectPointers(ObjectPointerVisitor* visitor,
   StackFrameIterator frames_iterator(top_exit_frame_info(),
                                      validate_frames);
   StackFrame* frame = frames_iterator.NextFrame();
+  ASSERT(frame == NULL || frame->IsExitFrame());
   while (frame != NULL) {
     frame->VisitObjectPointers(visitor);
     frame = frames_iterator.NextFrame();

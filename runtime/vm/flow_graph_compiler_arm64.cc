@@ -93,6 +93,77 @@ void FlowGraphCompiler::ExitIntrinsicMode() {
 }
 
 
+#if defined(USE_STACKOVERFLOW_TRAPS)
+// This function must be in sync with `segv_continuation_arm64.S`!
+//
+// See StackFrame::VisitObjectPointers for the details of how stack map is
+// interpreted.
+//
+// A `Fat` safepoint is one where all registers (plus additional things) are
+// pushed onto the stack during a SEGV signal (used for interruptions).
+//
+// See `segv_handler.cc` for more details.
+void FlowGraphCompiler::RecordSignalContinuationSafepoint(
+    LocationSummary* locs) {
+  BitmapBuilder* bitmap = locs->stack_bitmap();
+  const intptr_t spill_area_size = is_optimizing() ?
+      flow_graph_.graph_entry()->spill_slot_count() : 0;
+
+  RegisterSet* registers = locs->live_registers();
+  ASSERT(registers != NULL);
+
+  // The [bitmap] will have been populated with `1`s for all live spill slots at
+  // this safepoint.  We will possibly extend that region with `0`s if there are
+  // non-live spill slots.
+  ASSERT(bitmap->Length() <= spill_area_size);
+  bitmap->SetLength(spill_area_size);
+
+  // Mark the bits in the stack map in the same order we push registers in
+  // the segv_continuation_arm.S:
+
+  // a) We push PC slot first.
+  bitmap->Set(bitmap->Length(), false);
+
+  // b) We push most GPRs.
+  PushRegisterToStackmap(bitmap, registers, R30);
+  PushRegisterToStackmap(bitmap, registers, R29);
+  PushRegisterToStackmap(bitmap, registers, R28);
+  PushRegisterToStackmap(bitmap, registers, R27);
+  PushRegisterToStackmap(bitmap, registers, R26);
+  PushRegisterToStackmap(bitmap, registers, R25);
+  PushRegisterToStackmap(bitmap, registers, R24);
+  PushRegisterToStackmap(bitmap, registers, R23);
+  PushRegisterToStackmap(bitmap, registers, R22);
+  PushRegisterToStackmap(bitmap, registers, R21);
+  PushRegisterToStackmap(bitmap, registers, R20);
+  PushRegisterToStackmap(bitmap, registers, R19);
+  PushRegisterToStackmap(bitmap, registers, R18);
+  PushRegisterToStackmap(bitmap, registers, R17);
+  PushRegisterToStackmap(bitmap, registers, R16);
+  PushRegisterToStackmap(bitmap, registers, R14);
+  PushRegisterToStackmap(bitmap, registers, R13);
+  PushRegisterToStackmap(bitmap, registers, R12);
+  PushRegisterToStackmap(bitmap, registers, R11);
+  PushRegisterToStackmap(bitmap, registers, R10);
+  PushRegisterToStackmap(bitmap, registers, R9);
+  PushRegisterToStackmap(bitmap, registers, R8);
+  PushRegisterToStackmap(bitmap, registers, R7);
+  PushRegisterToStackmap(bitmap, registers, R6);
+  PushRegisterToStackmap(bitmap, registers, R5);
+  PushRegisterToStackmap(bitmap, registers, R4);
+  PushRegisterToStackmap(bitmap, registers, R3);
+  PushRegisterToStackmap(bitmap, registers, R2);
+  PushRegisterToStackmap(bitmap, registers, R1);
+  PushRegisterToStackmap(bitmap, registers, R0);
+
+  intptr_t slow_path_bit_count = bitmap->Length() - spill_area_size;
+  stackmap_table_builder()->AddEntry(assembler()->CodeSize(),
+                                     bitmap,
+                                     slow_path_bit_count);
+}
+#endif  // defined(USE_STACKOVERFLOW_TRAPS)
+
+
 RawTypedData* CompilerDeoptInfo::CreateDeoptInfo(FlowGraphCompiler* compiler,
                                                  DeoptInfoBuilder* builder,
                                                  const Array& deopt_table) {

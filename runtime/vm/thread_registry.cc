@@ -4,10 +4,90 @@
 
 #include "vm/thread_registry.h"
 
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+#include <new>
+#endif  // defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+
 #include "vm/isolate.h"
 #include "vm/lockers.h"
 
 namespace dart {
+
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+void Thread::MakeInterruptPageUnaccessable() {
+  int page_size = VirtualMemory::PageSize();
+  if (!virtual_memory_protected_) {
+    if (!VirtualMemory::Protect(virtual_memory_->address(),
+                                page_size,
+                                VirtualMemory::kNoAccess)) {
+      FATAL("mprotect failed");
+    }
+    virtual_memory_protected_ = true;
+  }
+}
+
+
+void Thread::MakeInterruptPageAccessable() {
+  int page_size = VirtualMemory::PageSize();
+  if (virtual_memory_protected_) {
+    if (!VirtualMemory::Protect(virtual_memory_->address(),
+                                page_size,
+                                VirtualMemory::kReadWrite)) {
+      FATAL("mprotect failed");
+    }
+    virtual_memory_protected_ = false;
+  }
+}
+
+
+Thread* ThreadRegistry::CreateThread(Isolate* isolate) {
+  int page_size = VirtualMemory::PageSize();
+
+  VirtualMemory* virtual_memory = VirtualMemory::Reserve(2 * page_size);
+  if (virtual_memory == NULL) {
+    FATAL("Failed to allocate memory via mmap()");
+  }
+
+  if (!VirtualMemory::Protect(virtual_memory->address(),
+                              2 * page_size, VirtualMemory::kReadWrite)) {
+    FATAL("Failed to protect memory region via mprotect()");
+  }
+
+  void* thread_address =
+      reinterpret_cast<uint8_t*>(virtual_memory->address()) + page_size;
+
+  // Initialize it.
+  Thread* thread = new(thread_address) Thread(isolate);
+  thread->virtual_memory_ = virtual_memory;
+
+  return thread;
+}
+
+
+void ThreadRegistry::DestroyThread(Thread* thread) {
+  VirtualMemory* virtual_memory = thread->virtual_memory_;
+  thread->virtual_memory_ = NULL;
+
+  // Destroy it.
+  (*thread).~Thread();
+
+  // Free memory.
+  delete virtual_memory;
+}
+#else  // defined(DART_PRECOMPILED_RUNTIME) && defined(USE_STACKOVERFLOW_TRAPS)
+
+
+Thread* ThreadRegistry::CreateThread(Isolate* isolate) {
+  return new Thread(isolate);
+}
+
+
+void ThreadRegistry::DestroyThread(Thread* thread) {
+  delete thread;
+}
+
+#endif  // defined(DART_PRECOMPILED_RUNTIME) && defined(USE_STACKOVERFLOW_TRAPS)
+
 
 ThreadRegistry::~ThreadRegistry() {
   // Go over the free thread list and delete the thread objects.
@@ -16,13 +96,13 @@ ThreadRegistry::~ThreadRegistry() {
     // At this point the active list should be empty.
     ASSERT(active_list_ == NULL);
     // We have cached the mutator thread, delete it.
-    delete mutator_thread_;
+    DestroyThread(mutator_thread_);
     mutator_thread_ = NULL;
     // Now delete all the threads in the free list.
     while (free_list_ != NULL) {
       Thread* thread = free_list_;
       free_list_ = thread->next_;
-      delete thread;
+      DestroyThread(thread);
     }
   }
 
@@ -124,7 +204,7 @@ Thread* ThreadRegistry::GetFromFreelistLocked(Isolate* isolate) {
   Thread* thread = NULL;
   // Get thread structure from free list or create a new one.
   if (free_list_ == NULL) {
-    thread = new Thread(isolate);
+    thread = CreateThread(isolate);
   } else {
     thread = free_list_;
     free_list_ = thread->next_;

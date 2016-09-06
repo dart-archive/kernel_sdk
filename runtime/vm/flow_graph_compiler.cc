@@ -232,7 +232,8 @@ FlowGraphCompiler::FlowGraphCompiler(
         inline_id_to_function_(inline_id_to_function),
         inline_id_to_token_pos_(inline_id_to_token_pos),
         caller_inline_id_(caller_inline_id),
-        stats_(stats) {
+        stats_(stats),
+        is_first_stackoverflow_(true) {
   ASSERT(flow_graph->parsed_function().function().raw() ==
          parsed_function.function().raw());
   if (!is_optimizing) {
@@ -908,6 +909,14 @@ void FlowGraphCompiler::RecordSafepoint(LocationSummary* locs,
                                        slow_path_bit_count);
   }
 }
+
+void FlowGraphCompiler::PushRegisterToStackmap(BitmapBuilder* bitmap,
+                                               RegisterSet* registers,
+                                               Register reg) {
+  bitmap->Set(bitmap->Length(),
+              registers->ContainsRegister(reg) && registers->IsTagged(reg));
+}
+
 
 
 // This function must be kept in sync with:
