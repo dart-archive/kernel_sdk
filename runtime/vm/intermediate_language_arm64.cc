@@ -2587,12 +2587,17 @@ void CatchBlockEntryInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
 LocationSummary* CheckStackOverflowInstr::MakeLocationSummary(Zone* zone,
                                                               bool opt) const {
   const intptr_t kNumInputs = 0;
+#if defined(USE_STACKOVERFLOW_TRAPS)
+  const intptr_t kNumTemps = 0;
+#else
   const intptr_t kNumTemps = 1;
+#endif
   LocationSummary* summary = new(zone) LocationSummary(
       zone, kNumInputs, kNumTemps, LocationSummary::kCallOnSlowPath);
-  // TODO(kustermann): Get rid of the temporary once we no longer have the
-  // slow path code for stackoverflow in precompiled mode.
-  summary->set_temp(0, Location::RequiresRegister());
+
+  if (kNumTemps == 1) {
+    summary->set_temp(0, Location::RequiresRegister());
+  }
   return summary;
 }
 
@@ -2647,53 +2652,61 @@ class CheckStackOverflowSlowPath : public SlowPathCode {
 
 
 void CheckStackOverflowInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
-  bool generate_slow_check = true;
 #if defined(USE_STACKOVERFLOW_TRAPS)
-  generate_slow_check = compiler->IsFirstStackoverflow();
-
-  if (!generate_slow_check) {
-    // NOTE: Since the instruction will cause a POSIX signal, the signal handler
-    // will redirect to a stack-overflow runtime call.  The saved PC on the
-    // stack will still point to the same instruction which caused the signal
-    // (not the next instruction).  It is therefore different than normal calls
-    // which save the PC of the next instruction.  We therefore do the
-    // `RecordSafepoint` call before the actual read.
-    compiler->RecordSignalContinuationSafepoint(locs());
-
-    // Generate stack overflow check (if we are interrupted this will cause a
-    // SEGV).
-    __ ldr(TMP, Address(THR, Thread::kPollingAddressOffset));
+  bool generate_actual_stackoverflow_check = compiler->IsFirstStackoverflow();
+  if (generate_actual_stackoverflow_check) {
+    // We probe ahead and see if we hit the stackoverflow limit.  The reason to
+    // probe ahead by [OSThread::kMaximumRuntimeStackSize] is if this probe
+    // fails, then the SEGV signal handler will need to have space on the stack.
+    // The signal handler then redirects control flow to the runtime system -
+    // which also needs stack space.  Then the real (preallocated) stackoverflow
+    // exception gets thrown.
+    // NOTE: We don't need a safepoint here, because if this causes a trap an
+    // exception will be thrown and that will cause us to leave the frame
+    // (remember, this will be the very first SO check in function entry).
+    __ sub(TMP, SP, Operand(OSThread::kMaximumRuntimeStackSize));
+    __ ldr(TMP, Address(TMP));
   }
+
+  // NOTE: Since the instruction will cause a POSIX signal, the signal handler
+  // will redirect to a stack-overflow runtime call.  The saved PC on the
+  // stack will still point to the same instruction which caused the signal
+  // (not the next instruction).  It is therefore different than normal calls
+  // which save the PC of the next instruction.  We therefore do the
+  // `RecordSafepoint` call before the actual read.
+  compiler->RecordSignalContinuationSafepoint(locs());
+
+  // Generate an interrupt check (if we are interrupted this will cause a
+  // SEGV).  Just issue a compare and don't destroy any register.
+  __ ldr(TMP, Address(THR, Thread::kPollingAddressOffset));
+#else  // defined(USE_STACKOVERFLOW_TRAPS)
+  CheckStackOverflowSlowPath* slow_path =
+      new CheckStackOverflowSlowPath(this);
+  compiler->AddSlowPathCode(slow_path);
+
+  __ ldr(TMP, Address(THR, Thread::stack_limit_offset()));
+  // Compare to CSP not SP because CSP is closer to the stack limit. See
+  // Assembler::EnterFrame.
+  __ CompareRegisters(CSP, TMP);
+  __ b(slow_path->entry_label(), LS);
+  if (compiler->CanOSRFunction() && in_loop()) {
+    const Register temp = locs()->temp(0).reg();
+    // In unoptimized code check the usage counter to trigger OSR at loop
+    // stack checks.  Use progressively higher thresholds for more deeply
+    // nested loops to attempt to hit outer loops with OSR when possible.
+    __ LoadObject(temp, compiler->parsed_function().function());
+    intptr_t threshold =
+        FLAG_optimization_counter_threshold * (loop_depth() + 1);
+    __ LoadFieldFromOffset(
+        temp, temp, Function::usage_counter_offset(), kWord);
+    __ CompareImmediate(temp, threshold);
+    __ b(slow_path->osr_entry_label(), GE);
+  }
+  if (compiler->ForceSlowPathForStackOverflow()) {
+    __ b(slow_path->entry_label());
+  }
+  __ Bind(slow_path->exit_label());
 #endif  // defined(USE_STACKOVERFLOW_TRAPS)
-
-  if (generate_slow_check) {
-    CheckStackOverflowSlowPath* slow_path =
-        new CheckStackOverflowSlowPath(this);
-    compiler->AddSlowPathCode(slow_path);
-
-    __ ldr(TMP, Address(THR, Thread::stack_limit_offset()));
-    // Compare to CSP not SP because CSP is closer to the stack limit. See
-    // Assembler::EnterFrame.
-    __ CompareRegisters(CSP, TMP);
-    __ b(slow_path->entry_label(), LS);
-    if (compiler->CanOSRFunction() && in_loop()) {
-      const Register temp = locs()->temp(0).reg();
-      // In unoptimized code check the usage counter to trigger OSR at loop
-      // stack checks.  Use progressively higher thresholds for more deeply
-      // nested loops to attempt to hit outer loops with OSR when possible.
-      __ LoadObject(temp, compiler->parsed_function().function());
-      intptr_t threshold =
-          FLAG_optimization_counter_threshold * (loop_depth() + 1);
-      __ LoadFieldFromOffset(
-          temp, temp, Function::usage_counter_offset(), kWord);
-      __ CompareImmediate(temp, threshold);
-      __ b(slow_path->osr_entry_label(), GE);
-    }
-    if (compiler->ForceSlowPathForStackOverflow()) {
-      __ b(slow_path->entry_label());
-    }
-    __ Bind(slow_path->exit_label());
-  }
 }
 
 

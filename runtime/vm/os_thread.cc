@@ -36,8 +36,15 @@ OSThread::OSThread() :
     thread_interrupt_disabled_(1),  // Thread interrupts disabled by default.
     log_(new class Log()),
     stack_base_(0),
-    thread_(NULL) {
-}
+    thread_(NULL)
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+    ,
+    stack_(NULL),
+    stack_size_(-1),
+    guard_page_(NULL),
+    guard_page_is_active_(false)
+#endif
+    {}
 
 
 OSThread* OSThread::CreateOSThread() {
@@ -259,6 +266,58 @@ void OSThread::RemoveThreadFromList(OSThread* thread) {
 
 
 void OSThread::SetCurrent(OSThread* current) {
+#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+  intptr_t page_size = VirtualMemory::PageSize();
+  if (current == NULL) {
+    // The caller wants to remove it
+    OSThread* current = OSThread::Current();
+    ASSERT(current->guard_page_is_active_);
+    delete current->guard_page_;
+  } else if (!current->guard_page_is_active_) {
+    // NOTE: The current pthread might be an embedder thread or a VM thread.
+    // In either case a [OSThread] object will be created and attached via TLS.
+    pthread_t thread_id = pthread_self();
+
+#ifdef __APPLE__
+    current->stack_ =
+        reinterpret_cast<uint8_t*>(pthread_get_stackaddr_np(thread_id));
+    ASSERT(current->stack_ != NULL);
+
+    current->stack_size_ = pthread_get_stacksize_np(thread_id);
+    ASSERT(current->stack_size_ >= 4096);
+
+    // MACH reports the upper end (exclusive) of the stack.
+    current->stack_ -= current->stack_size_;
+#else
+    pthread_attr_t attr;
+    if (pthread_getattr_np(thread_id, &attr) != 0) {
+      FATAL("pthread_getattr_np failed");
+    }
+    if (pthread_attr_getstack(&attr,
+                              reinterpret_cast<void**>(&current->stack_),
+                              &current->stack_size_) != 0) {
+      FATAL("pthread_attr_getstack failed");
+    }
+    pthread_attr_destroy(&attr);
+#endif
+
+    if (!VirtualMemory::Protect(current->stack_,
+                                page_size,
+                                VirtualMemory::kNoAccess)) {
+      // We are on an old thread (which incrementally increases the virtual
+      // memory region downwards).  We need to `mmap()` a page explicitly.
+      VirtualMemory* guard_page = VirtualMemory::ReserveAt(
+          reinterpret_cast<intptr_t>(current->stack_), page_size);
+      if (guard_page == NULL) {
+        FATAL("Could not setup guard page");
+      }
+      current->guard_page_ = guard_page;
+    }
+
+    current->guard_page_is_active_ = true;
+  }
+#endif  // defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+
   OSThread::SetThreadLocal(thread_key_, reinterpret_cast<uword>(current));
 }
 

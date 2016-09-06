@@ -98,6 +98,7 @@ Thread::Thread(Isolate* isolate)
       virtual_memory_(0),
       virtual_memory_protected_(false),
       saved_interrupt_pc_(0),
+      has_stackoverflow_(false),
 #endif  // defined(DART_PRECOMPILED_RUNTIME) &&defined(USE_STACKOVERFLOW_TRAPS)
       REUSABLE_HANDLE_LIST(REUSABLE_HANDLE_INITIALIZERS)
       REUSABLE_HANDLE_LIST(REUSABLE_HANDLE_SCOPE_INIT)

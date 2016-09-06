@@ -664,6 +664,14 @@ LEAF_RUNTIME_ENTRY_LIST(DEFINE_OFFSET_METHOD)
     ASSERT(saved_interrupt_pc_ == 0 || pc == 0);
     saved_interrupt_pc_ = pc;
   }
+
+  void set_has_stackoverflow(bool so) {
+    has_stackoverflow_ = so;
+  }
+
+  bool has_stackoverflow() {
+    return has_stackoverflow_;
+  }
 #endif  // defined(DART_PRECOMPILED_RUNTIME) && defined(USE_STACKOVERFLOW_TRAPS)
 
  protected:
@@ -736,6 +744,7 @@ LEAF_RUNTIME_ENTRY_LIST(DECLARE_MEMBERS)
   bool virtual_memory_protected_;
 
   intptr_t saved_interrupt_pc_;
+  bool has_stackoverflow_;
 #endif  // defined(DART_PRECOMPILED_RUNTIME) &&defined(USE_STACKOVERFLOW_TRAPS)
 
   // Reusable handles support.

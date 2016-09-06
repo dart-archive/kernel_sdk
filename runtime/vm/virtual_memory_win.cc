@@ -34,6 +34,13 @@ VirtualMemory* VirtualMemory::ReserveInternal(intptr_t size) {
 }
 
 
+VirtualMemory* VirtualMemory::ReserveAtInternal(intptr_t address,
+                                                intptr_t size) {
+  UNIMPLEMENTED();
+  return NULL;
+}
+
+
 VirtualMemory::~VirtualMemory() {
   if (embedder_allocated() || (reserved_size_ == 0)) {
     return;

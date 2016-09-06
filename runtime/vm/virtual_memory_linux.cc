@@ -42,6 +42,20 @@ VirtualMemory* VirtualMemory::ReserveInternal(intptr_t size) {
 }
 
 
+VirtualMemory* VirtualMemory::ReserveAtInternal(intptr_t address,
+                                                intptr_t size) {
+  void* page_start = reinterpret_cast<void*>(address);
+  void* result = mmap(page_start, size, PROT_NONE,
+                      MAP_FIXED | MAP_PRIVATE | MAP_ANON | MAP_NORESERVE,
+                      -1, 0);
+  if (result != page_start) {
+    return NULL;
+  }
+  MemoryRegion region(page_start, size);
+  return new VirtualMemory(region);
+}
+
+
 static void unmap(void* address, intptr_t size) {
   if (size == 0) {
     return;

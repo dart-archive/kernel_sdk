@@ -19,6 +19,8 @@ class SegvHandler {
 
  private:
   static void SignalHandler(int signal, siginfo_t* siginfo, void* context);
+  static void SetContinuationPC(Thread* thread, void* context);
+  static intptr_t* GetPointerToSavedPc(void* context);
 };
 #endif  // defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
 

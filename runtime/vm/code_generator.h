@@ -15,7 +15,10 @@ template <typename T> class GrowableArray;
 class ICData;
 class Instance;
 
-void RealStackOverflow(Isolate* isolate, Thread* thread, Zone* zone);
+void RealStackOverflow(Isolate* isolate,
+                       Thread* thread,
+                       Zone* zone,
+                       bool force_throw_stackoverflow);
 
 const char* DeoptReasonToCString(ICData::DeoptReasonId deopt_reason);
 
