@@ -22,6 +22,7 @@ import '../resolution/tree_elements.dart';
 import '../tokens/token.dart';
 import '../tree/nodes.dart';
 import '../universe/selector.dart';
+import '../universe/feature.dart';
 import '../universe/use.dart';
 import '../util/util.dart';
 import 'resolved_ast_serialization.dart';
@@ -280,7 +281,8 @@ bool areSendStructuresEquivalent(SendStructure a, SendStructure b) {
       return areElementsEquivalent(ad.prefix, bd.prefix) &&
           areSendStructuresEquivalent(ad.sendStructure, bd.sendStructure);
 
-    semantics: case SendStructureKind.GET:
+    semantics:
+    case SendStructureKind.GET:
     case SendStructureKind.SET:
     case SendStructureKind.INDEX:
     case SendStructureKind.INDEX_SET:

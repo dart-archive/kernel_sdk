@@ -1772,13 +1772,11 @@ LocationSummary* GuardFieldLengthInstr::MakeLocationSummary(Zone* zone,
     // We need temporaries for field object.
     summary->set_temp(0, Location::RequiresRegister());
     return summary;
-  } else {
-    LocationSummary* summary = new(zone) LocationSummary(
-        zone, kNumInputs, 0, LocationSummary::kNoCall);
-    summary->set_in(0, Location::RequiresRegister());
-    return summary;
   }
-  UNREACHABLE();
+  LocationSummary* summary = new(zone) LocationSummary(
+      zone, kNumInputs, 0, LocationSummary::kNoCall);
+  summary->set_in(0, Location::RequiresRegister());
+  return summary;
 }
 
 
@@ -4063,15 +4061,6 @@ void BinaryInt32x4OpInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
 
 LocationSummary* MathUnaryInstr::MakeLocationSummary(Zone* zone,
                                                      bool opt) const {
-  if ((kind() == MathUnaryInstr::kSin) || (kind() == MathUnaryInstr::kCos)) {
-    const intptr_t kNumInputs = 1;
-    const intptr_t kNumTemps = 0;
-    LocationSummary* summary = new(zone) LocationSummary(
-        zone, kNumInputs, kNumTemps, LocationSummary::kCall);
-    summary->set_in(0, Location::FpuRegisterLocation(D6));
-    summary->set_out(0, Location::FpuRegisterLocation(D0));
-    return summary;
-  }
   ASSERT((kind() == MathUnaryInstr::kSqrt) ||
          (kind() == MathUnaryInstr::kDoubleSquare));
   const intptr_t kNumInputs = 1;
@@ -4092,7 +4081,7 @@ void MathUnaryInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
     DRegister result = locs()->out(0).fpu_reg();
     __ muld(result, val, val);
   } else {
-    __ CallRuntime(TargetFunction(), InputCount());
+    UNREACHABLE();
   }
 }
 

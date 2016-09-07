@@ -51,9 +51,18 @@ class WebSocketClient extends Client {
       return;
     }
     try {
-      socket.add(result);
-    } catch (_) {
+      if (result is String || result is Uint8List) {
+        socket.add(result);  // String or binary message.
+      } else {
+        // String message as external Uint8List.
+        assert(result is List);
+        Uint8List cstring = result[0];
+        socket.addUtf8Text(cstring);
+      }
+    } catch (e, st) {
       print("Ignoring error posting over WebSocket.");
+      print(e);
+      print(st);
     }
   }
 
@@ -70,8 +79,9 @@ class HttpRequestClient extends Client {
   static ContentType jsonContentType =
       new ContentType("application", "json", charset: "utf-8");
   final HttpRequest request;
+  final List<String> _allowedOrigins;
 
-  HttpRequestClient(this.request, VMService service)
+  HttpRequestClient(this.request, VMService service, this._allowedOrigins)
       : super(service, sendEvents:false);
 
   disconnect() {
@@ -79,14 +89,29 @@ class HttpRequestClient extends Client {
     close();
   }
 
-  void post(String result) {
+  void post(dynamic result) {
     if (result == null) {
       close();
       return;
     }
-    request.response..headers.contentType = jsonContentType
-                    ..write(result)
-                    ..close();
+    HttpResponse response = request.response;
+    response.headers.contentType = jsonContentType;
+    final origins = request.headers['Origin'];
+    if ((origins != null) && (origins.isNotEmpty)) {
+      final uri = Uri.parse(origins.first);
+      final noPortOrigin = new Uri(host: uri.host, scheme: uri.scheme).origin;
+      if (_allowedOrigins.contains(noPortOrigin)) {
+        response.headers.add('Access-Control-Allow-Origin', uri.origin);
+      }
+    }
+    if (result is String) {
+      response.write(result);
+    } else {
+      assert(result is List);
+      Uint8List cstring = result[0];  // Already in UTF-8.
+      response.add(cstring);
+    }
+    response.close();
     close();
   }
 
@@ -223,7 +248,7 @@ class Server {
     }
     // HTTP based service request.
     try {
-      var client = new HttpRequestClient(request, _service);
+      var client = new HttpRequestClient(request, _service, _allowedOrigins);
       var message = new Message.fromUri(client, request.uri);
       client.onMessage(null, message);
     } catch (e) {

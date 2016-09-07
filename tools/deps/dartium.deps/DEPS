@@ -9,7 +9,7 @@ execfile(os.path.join(path, 'src', 'dart', 'tools', 'deps', 'dartium.deps', 'DEP
 
 vars.update({
   "dartium_chromium_commit": "67a7ba9669f7bb0300ef35085d4e6bb98b1966cc",
-  "dartium_webkit_commit": "522da5fa29843cb44afdc20328be356f693685d6",
+  "dartium_webkit_commit": "1a294dcc3d47ae5e5ce58777df2e1b701b2b2b60",
   "chromium_base_revision": "338390",
 
   # We use mirrors of all github repos to guarantee reproducibility and
@@ -40,6 +40,7 @@ vars.update({
   "http_parser_rev" : "@8b179e36aba985208e4c5fb15cfddd386b6370a4",
   "http_throttle_rev" : "@a81f08be942cdd608883c7b67795c12226abc235",
   "json_rpc_2_rev": "@a38eefd116d910199de205f962af92fed87c164c",
+  "kernel_rev": "@9509d282a62fe025f8d6242bb233b02e0a7fee04",
   "logging_rev": "@85d83e002670545e9039ad3985f0018ab640e597",
   "matcher_tag": "@0.12.0",
   "mime_rev": "@75890811d4af5af080351ba8a2853ad4c8df98dd",
@@ -109,6 +110,8 @@ deps.update({
       (Var("github_mirror") % "http_parser") + Var("http_parser_rev"),
   "src/dart/third_party/pkg/http_throttle":
       (Var("github_mirror") % "http_throttle") + Var("http_throttle_rev"),
+  "src/dart/third_party/pkg/kernel":
+      (Var("github_mirror") % "kernel") + Var("kernel_rev"),
   "src/dart/third_party/pkg/logging":
       (Var("github_mirror") % "logging") + Var("logging_rev"),
   "src/dart/third_party/pkg/matcher":

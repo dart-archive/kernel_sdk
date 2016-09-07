@@ -15,6 +15,11 @@ config("libdart_vm_config") {
         libs += [ "rt" ]
       }
     }
+  } else {
+    libs = [
+      "magenta",
+      "runtime",
+    ]
   }
 }
 

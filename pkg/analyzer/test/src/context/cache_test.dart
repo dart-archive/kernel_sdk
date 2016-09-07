@@ -6,30 +6,31 @@ library analyzer.test.src.context.cache_test;
 
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/file_system/memory_file_system.dart';
+import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/source/package_map_resolver.dart';
 import 'package:analyzer/src/context/cache.dart';
+import 'package:analyzer/src/dart/sdk/sdk.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
-import 'package:analyzer/src/generated/sdk_io.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/utilities_collection.dart';
 import 'package:analyzer/src/task/model.dart';
 import 'package:analyzer/task/model.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 import 'package:typed_mock/typed_mock.dart';
 import 'package:unittest/unittest.dart';
 
 import '../../generated/test_support.dart';
-import '../../reflective_tests.dart';
 import '../../utils.dart';
 
 main() {
   initializeTestEnvironment();
-  runReflectiveTests(AnalysisCacheTest);
-  runReflectiveTests(CacheEntryTest);
-  runReflectiveTests(CacheFlushManagerTest);
-  runReflectiveTests(SdkCachePartitionTest);
-  runReflectiveTests(UniversalCachePartitionTest);
-  runReflectiveTests(ResultDataTest);
+  defineReflectiveTests(AnalysisCacheTest);
+  defineReflectiveTests(CacheEntryTest);
+  defineReflectiveTests(CacheFlushManagerTest);
+  defineReflectiveTests(SdkCachePartitionTest);
+  defineReflectiveTests(UniversalCachePartitionTest);
+  defineReflectiveTests(ResultDataTest);
 }
 
 AnalysisCache createCache({AnalysisContext context}) {
@@ -43,7 +44,7 @@ class AbstractCacheTest {
 
   void setUp() {
     context = new _InternalAnalysisContextMock();
-    when(context.priorityTargets).thenReturn([]);
+    when(context.prioritySources).thenReturn([]);
     cache = createCache(context: context);
     when(context.analysisCache).thenReturn(cache);
   }
@@ -770,6 +771,43 @@ class CacheEntryTest extends AbstractCacheTest {
     }
   }
 
+  test_setValue_flushResults_keepForPrioritySources() {
+    ResultCachingPolicy cachingPolicy = new SimpleResultCachingPolicy(2, 2);
+    ResultDescriptor newResult(String name) =>
+        new ResultDescriptor(name, null, cachingPolicy: cachingPolicy);
+    ResultDescriptor descriptor1 = newResult('result1');
+    ResultDescriptor descriptor2 = newResult('result2');
+    ResultDescriptor descriptor3 = newResult('result3');
+    TestSource source1 = new TestSource('/a.dart');
+    TestSource source2 = new TestSource('/b.dart');
+    TestSource source3 = new TestSource('/c.dart');
+    AnalysisTarget target1 =
+        new _TestAnalysisTarget(librarySource: source1, source: source1);
+    AnalysisTarget target2 =
+        new _TestAnalysisTarget(librarySource: source2, source: source2);
+    AnalysisTarget target3 =
+        new _TestAnalysisTarget(librarySource: source3, source: source3);
+    CacheEntry entry1 = new CacheEntry(target1);
+    CacheEntry entry2 = new CacheEntry(target2);
+    CacheEntry entry3 = new CacheEntry(target3);
+    cache.put(entry1);
+    cache.put(entry2);
+    cache.put(entry3);
+
+    // Set two results.
+    entry1.setValue(descriptor1, 1, TargetedResult.EMPTY_LIST);
+    entry2.setValue(descriptor2, 2, TargetedResult.EMPTY_LIST);
+    expect(entry1.getState(descriptor1), CacheState.VALID);
+    expect(entry2.getState(descriptor2), CacheState.VALID);
+
+    // Make source1 priority, so result2 is flushed instead.
+    when(context.prioritySources).thenReturn([source1]);
+    entry3.setValue(descriptor3, 3, TargetedResult.EMPTY_LIST);
+    expect(entry1.getState(descriptor1), CacheState.VALID);
+    expect(entry2.getState(descriptor2), CacheState.FLUSHED);
+    expect(entry3.getState(descriptor3), CacheState.VALID);
+  }
+
   test_setValue_keepDependent() {
     AnalysisTarget target = new TestSource();
     CacheEntry entry = new CacheEntry(target);
@@ -895,7 +933,7 @@ class CacheFlushManagerTest {
   test_new() {
     expect(manager.maxActiveSize, 15);
     expect(manager.maxIdleSize, 3);
-    expect(manager.maxSize, 3);
+    expect(manager.maxSize, 15);
     expect(manager.currentSize, 0);
     expect(manager.recentlyUsed, isEmpty);
   }
@@ -956,6 +994,8 @@ class CacheFlushManagerTest {
   }
 
   test_resultStored() {
+    CacheFlushManager manager = new CacheFlushManager(
+        new SimpleResultCachingPolicy(3, 3), (AnalysisTarget target) => false);
     ResultDescriptor descriptor1 = new ResultDescriptor('result1', null);
     ResultDescriptor descriptor2 = new ResultDescriptor('result2', null);
     ResultDescriptor descriptor3 = new ResultDescriptor('result3', null);
@@ -1177,8 +1217,10 @@ class SdkCachePartitionTest extends CachePartitionTest {
 
   void test_contains_true() {
     SdkCachePartition partition = new SdkCachePartition(null);
-    SourceFactory factory = new SourceFactory(
-        [new DartUriResolver(DirectoryBasedDartSdk.defaultSdk)]);
+    ResourceProvider resourceProvider = PhysicalResourceProvider.INSTANCE;
+    FolderBasedDartSdk sdk = new FolderBasedDartSdk(resourceProvider,
+        FolderBasedDartSdk.defaultSdkDirectory(resourceProvider));
+    SourceFactory factory = new SourceFactory([new DartUriResolver(sdk)]);
     AnalysisTarget target = factory.forUri("dart:core");
     expect(partition.isResponsibleFor(target), isTrue);
   }
@@ -1241,6 +1283,9 @@ class _KeepContinueDelta implements Delta {
   _KeepContinueDelta(this.source, this.keepDescriptor);
 
   @override
+  bool get shouldGatherChanges => false;
+
+  @override
   bool gatherChanges(InternalAnalysisContext context, AnalysisTarget target,
       ResultDescriptor descriptor, Object value) {
     return false;
@@ -1260,9 +1305,7 @@ class _KeepContinueDelta implements Delta {
 }
 
 class _TestAnalysisTarget implements AnalysisTarget {
-  @override
-  Source get librarySource => null;
-
-  @override
-  Source get source => null;
+  final Source librarySource;
+  final Source source;
+  _TestAnalysisTarget({this.librarySource, this.source});
 }

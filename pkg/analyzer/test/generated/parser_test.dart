@@ -19,20 +19,21 @@ import 'package:analyzer/src/generated/source.dart' show Source;
 import 'package:analyzer/src/generated/testing/ast_factory.dart';
 import 'package:analyzer/src/generated/testing/token_factory.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 import 'package:unittest/unittest.dart' hide Configuration;
 
-import '../reflective_tests.dart';
 import '../utils.dart';
 import 'test_support.dart';
 
 main() {
   initializeTestEnvironment();
-  runReflectiveTests(ComplexParserTest);
-  runReflectiveTests(ErrorParserTest);
-  runReflectiveTests(IncrementalParserTest);
-  runReflectiveTests(NonErrorParserTest);
-  runReflectiveTests(RecoveryParserTest);
-  runReflectiveTests(SimpleParserTest);
+  defineReflectiveTests(ComplexParserTest);
+  defineReflectiveTests(ErrorParserTest);
+  // ignore: deprecated_member_use
+  defineReflectiveTests(IncrementalParserTest);
+  defineReflectiveTests(NonErrorParserTest);
+  defineReflectiveTests(RecoveryParserTest);
+  defineReflectiveTests(SimpleParserTest);
 }
 
 class AnalysisErrorListener_SimpleParserTest_computeStringValue
@@ -2366,6 +2367,7 @@ void main() {
   }
 }
 
+@deprecated
 @reflectiveTest
 class IncrementalParserTest extends EngineTestCase {
   void fail_replace_identifier_with_functionLiteral_in_initializer_interp() {
@@ -2770,6 +2772,12 @@ class ParserTestCase extends EngineTestCase {
   static bool parseFunctionBodies = true;
 
   /**
+   * A flag indicating whether the parser is to parse asserts in the initializer
+   * list of a constructor.
+   */
+  bool enableAssertInitializer = false;
+
+  /**
    * A flag indicating whether parser is to parse async.
    */
   bool parseAsync = true;
@@ -2842,6 +2850,7 @@ class ParserTestCase extends EngineTestCase {
     // Parse the source.
     //
     Parser parser = createParser(listener);
+    parser.enableAssertInitializer = enableAssertInitializer;
     parser.parseAsync = parseAsync;
     parser.parseGenericMethods = enableGenericMethods;
     parser.parseGenericMethodComments = enableGenericMethodComments;
@@ -2971,6 +2980,7 @@ class ParserTestCase extends EngineTestCase {
     listener.setLineInfo(new TestSource(), scanner.lineStarts);
     Token token = scanner.tokenize();
     Parser parser = createParser(listener);
+    parser.enableAssertInitializer = enableAssertInitializer;
     parser.parseAsync = parseAsync;
     parser.parseFunctionBodies = parseFunctionBodies;
     parser.parseGenericMethods = enableGenericMethods;
@@ -6524,6 +6534,46 @@ void''');
     expect(reference.offset, 16);
   }
 
+  void test_parseCommentReferences_skipCodeBlock_gitHub_multiLine() {
+    List<DocumentationCommentToken> tokens = <DocumentationCommentToken>[
+      new DocumentationCommentToken(
+          TokenType.MULTI_LINE_COMMENT,
+          r'''
+/**
+ * First.
+ * ```dart
+ * Some [int] reference.
+ * ```
+ * Last.
+ */
+''',
+          3)
+    ];
+    List<CommentReference> references =
+        parse("parseCommentReferences", <Object>[tokens], "")
+        as List<CommentReference>;
+    expect(references, isEmpty);
+  }
+
+  void test_parseCommentReferences_skipCodeBlock_gitHub_multiLine_lines() {
+    String commentText = r'''
+/// First.
+/// ```dart
+/// Some [int] reference.
+/// ```
+/// Last.
+''';
+    List<DocumentationCommentToken> tokens = commentText
+        .split('\n')
+        .map((line) => new DocumentationCommentToken(
+            TokenType.SINGLE_LINE_COMMENT, line, 0))
+        .toList();
+    List<CommentReference> references =
+        parse("parseCommentReferences", <Object>[tokens], "")
+        as List<CommentReference>;
+    expect(references, isEmpty);
+  }
+
   void test_parseCommentReferences_skipCodeBlock_gitHub_notTerminated() {
     List<DocumentationCommentToken> tokens = <DocumentationCommentToken>[
       new DocumentationCommentToken(
@@ -7090,6 +7140,16 @@ void''');
 //        Token.class, Token.class, SimpleIdentifier.class, Token.class,
 //        SimpleIdentifier.class, FormalParameterList.class}, new Object[] {emptyCommentAndMetadata(),
 //        null, null, null, null, null, null}, "");
+  }
+
+  void test_parseConstructor_assert() {
+    enableAssertInitializer = true;
+    ClassMember classMember = parse("parseClassMember", <Object>["C"],
+        "C(x, y) : _x = x, assert (x < y), _y = y;");
+    expect(classMember, new isInstanceOf<ConstructorDeclaration>());
+    ConstructorDeclaration constructor = classMember as ConstructorDeclaration;
+    NodeList<ConstructorInitializer> initializers = constructor.initializers;
+    expect(initializers, hasLength(2));
   }
 
   void test_parseConstructor_with_pseudo_function_literal() {

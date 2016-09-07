@@ -740,6 +740,7 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
           registry.registerInstantiatedClass(classElement);
         }
       }
+
       register(helpers.jsPlainJavaScriptObjectClass);
       register(helpers.jsUnknownJavaScriptObjectClass);
 
@@ -1930,14 +1931,13 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
     registerForeignTypes(node);
   }
 
-  visitForeignNew(HForeignNew node) {
+  visitCreate(HCreate node) {
     js.Expression jsClassReference =
         backend.emitter.constructorAccess(node.element);
     List<js.Expression> arguments = visitArguments(node.inputs, start: 0);
     push(new js.New(jsClassReference, arguments)
         .withSourceInformation(node.sourceInformation));
-    registerForeignTypes(node);
-    // We also use ForeignNew to instantiate closure classes that belong to
+    // We also use HCreate to instantiate closure classes that belong to
     // function expressions. We have to register their use here, as otherwise
     // code for them might not be emitted.
     if (node.element.isClosure) {
@@ -2854,6 +2854,75 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
     }
   }
 
+  void visitTypeInfoReadRaw(HTypeInfoReadRaw node) {
+    use(node.inputs[0]);
+    js.Expression receiver = pop();
+    push(js.js(r'#.#', [receiver, backend.namer.rtiFieldName]));
+  }
+
+  void visitTypeInfoReadVariable(HTypeInfoReadVariable node) {
+    TypeVariableElement element = node.variable.element;
+    ClassElement context = element.enclosingClass;
+
+    int index = element.index;
+    use(node.inputs[0]);
+    js.Expression receiver = pop();
+
+    if (needsSubstitutionForTypeVariableAccess(context)) {
+      js.Expression typeName =
+          js.quoteName(backend.namer.runtimeTypeName(context));
+      Element helperElement = helpers.getRuntimeTypeArgument;
+      registry.registerStaticUse(
+          new StaticUse.staticInvoke(helperElement, CallStructure.THREE_ARGS));
+      js.Expression helper =
+          backend.emitter.staticFunctionAccess(helperElement);
+      push(js.js(
+          r'#(#, #, #)', [helper, receiver, typeName, js.js.number(index)]));
+    } else {
+      Element helperElement = helpers.getTypeArgumentByIndex;
+      registry.registerStaticUse(
+          new StaticUse.staticInvoke(helperElement, CallStructure.TWO_ARGS));
+      js.Expression helper =
+          backend.emitter.staticFunctionAccess(helperElement);
+      push(js.js(r'#(#, #)', [helper, receiver, js.js.number(index)]));
+    }
+  }
+
+  void visitTypeInfoExpression(HTypeInfoExpression node) {
+    List<js.Expression> arguments = <js.Expression>[];
+    for (HInstruction input in node.inputs) {
+      use(input);
+      arguments.add(pop());
+    }
+
+    switch (node.kind) {
+      case TypeInfoExpressionKind.COMPLETE:
+        int index = 0;
+        js.Expression result = backend.rtiEncoder.getTypeRepresentation(
+            node.dartType, (TypeVariableType variable) => arguments[index++]);
+        assert(index == node.inputs.length);
+        push(result);
+        return;
+
+      case TypeInfoExpressionKind.INSTANCE:
+        // We expect only flat types for the INSTANCE representation.
+        assert(
+            node.dartType == (node.dartType.element as ClassElement).thisType);
+        registry.registerInstantiatedClass(coreClasses.listClass);
+        push(new js.ArrayInitializer(arguments)
+            .withSourceInformation(node.sourceInformation));
+    }
+  }
+
+  bool needsSubstitutionForTypeVariableAccess(ClassElement cls) {
+    ClassWorld classWorld = compiler.world;
+    if (classWorld.isUsedAsMixin(cls)) return true;
+
+    return compiler.world.anyStrictSubclassOf(cls, (ClassElement subclass) {
+      return !backend.rti.isTrivialSubstitution(subclass, cls);
+    });
+  }
+
   void visitReadTypeVariable(HReadTypeVariable node) {
     TypeVariableElement element = node.dartType.element;
     Element helperElement = helpers.convertRtiToRuntimeType;
@@ -2867,8 +2936,15 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
         js.Expression receiver = pop();
         js.Expression helper =
             backend.emitter.staticFunctionAccess(helperElement);
-        push(js.js(r'#(#.$builtinTypeInfo && #.$builtinTypeInfo[#])',
-            [helper, receiver, receiver, js.js.number(index)]));
+        js.Expression rtiFieldName = backend.namer.rtiFieldName;
+        push(js.js(r'#(#.# && #.#[#])', [
+          helper,
+          receiver,
+          rtiFieldName,
+          receiver,
+          rtiFieldName,
+          js.js.number(index)
+        ]));
       } else {
         backend.emitter.registerReadTypeVariable(element);
         push(js.js(

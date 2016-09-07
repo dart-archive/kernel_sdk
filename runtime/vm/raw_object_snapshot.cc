@@ -1516,6 +1516,24 @@ void RawContextScope::WriteTo(SnapshotWriter* writer,
 }
 
 
+RawSingleTargetCache* SingleTargetCache::ReadFrom(SnapshotReader* reader,
+                                                  intptr_t object_id,
+                                                  intptr_t tags,
+                                                  Snapshot::Kind kind,
+                                                  bool as_reference) {
+  UNREACHABLE();
+  return SingleTargetCache::null();
+}
+
+
+void RawSingleTargetCache::WriteTo(SnapshotWriter* writer,
+                                   intptr_t object_id,
+                                   Snapshot::Kind kind,
+                                   bool as_reference) {
+  UNREACHABLE();
+}
+
+
 RawICData* ICData::ReadFrom(SnapshotReader* reader,
                             intptr_t object_id,
                             intptr_t tags,
@@ -2636,7 +2654,8 @@ RawExternalTypedData* ExternalTypedData::ReadFrom(SnapshotReader* reader,
   Dart_WeakPersistentHandleFinalizer callback =
       reinterpret_cast<Dart_WeakPersistentHandleFinalizer>(
           reader->ReadRawPointerValue());
-  obj.AddFinalizer(peer, callback);
+  intptr_t external_size = obj.LengthInBytes();
+  obj.AddFinalizer(peer, callback, external_size);
   return obj.raw();
 }
 

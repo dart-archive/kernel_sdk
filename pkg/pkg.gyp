@@ -13,15 +13,15 @@
           'inputs': [
             '../tools/make_links.py',
             '<!@(["python", "../tools/list_pkg_directories.py", "."])',
+            # Exclude DDC's old location in case folks didn't remove it.
             '<!@(["python", "../tools/list_pkg_directories.py", '
-                '"../third_party/pkg"])',
+                '"../third_party/pkg", "--exclude=dev_compiler"])',
             '<!@(["python", "../tools/list_pkg_directories.py", '
                 '"../third_party/pkg_tested"])',
             '<!@(["python", "../tools/list_pkg_directories.py", '
                 '"../runtime"])',
             '../sdk/lib/_internal/js_runtime/lib',
             '../sdk/lib/_internal/sdk_library_metadata/lib',
-            '../site/try',
             '../third_party/observatory_pub_packages/packages/charted/lib',
           ],
           'outputs': [

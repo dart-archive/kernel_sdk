@@ -673,6 +673,104 @@ class ConstClass {
 }
 ''',
   }),
+
+  const Test('Multi variable declaration', const {
+    'main.dart': '''
+import 'a.dart';
+
+main() => y;
+''',
+  }, preserializedSourceFiles: const {
+    'a.dart': '''
+var x, y = 2;
+''',
+  }),
+
+  const Test('Double values', const {},
+      preserializedSourceFiles: const {
+  'main.dart': '''
+const a = 1e+400;
+main() => a;
+''',
+  }),
+
+  const Test('Erroneous constructor', const {},
+      preserializedSourceFiles: const {
+    'main.dart': '''
+main() => new Null();
+'''}),
+
+  const Test('Metadata on imports', const {},
+      preserializedSourceFiles: const {
+        'main.dart': '''
+@deprecated
+import 'main.dart';
+
+main() {}
+'''}),
+
+  const Test('Metadata on exports', const {},
+      preserializedSourceFiles: const {
+        'main.dart': '''
+@deprecated
+export 'main.dart';
+
+main() {}
+'''}),
+
+  const Test('Metadata on part tags', const {},
+      preserializedSourceFiles: const {
+        'main.dart': '''
+library main;
+
+@deprecated
+part 'a.dart';
+
+main() {}
+'''},
+      unserializedSourceFiles: const {
+        'a.dart': '''
+part of main;
+'''}),
+
+  const Test('Metadata on part-of tags', const {},
+      preserializedSourceFiles: const {
+        'main.dart': '''
+library main;
+
+part 'a.dart';
+
+main() {}
+'''},
+      unserializedSourceFiles: const {
+        'a.dart': '''
+@deprecated
+part of main;
+'''}),
+
+  const Test('Ambiguous elements', const {},
+      preserializedSourceFiles: const {
+        'main.dart': '''
+import 'a.dart';
+import 'b.dart';
+
+main() => new foo();
+''',
+        'a.dart': '''
+var foo;
+''',
+        'b.dart': '''
+var foo;
+''',}),
+
+  const Test('html and mirrors', const {},
+      preserializedSourceFiles: const {
+        'main.dart': '''
+import 'dart:html';
+import 'dart:mirrors';
+main() {}
+'''},
+      expectedWarningCount: 1),
 ];
 
 class Test {

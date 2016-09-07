@@ -432,6 +432,7 @@ regress_26133_test: RuntimeError
 regress_26175_test: Crash
 regress_26668_test: Crash
 regress_26948_test: Crash
+regress_27164_test: CompileTimeError
 regress_r24720_test: RuntimeError
 reify_typevar_static_test/00: MissingCompileTimeError
 reify_typevar_test: RuntimeError
@@ -493,6 +494,7 @@ vm/optimized_await_regress_test: Crash
 vm/reflect_core_vm_test: CompileTimeError
 vm/type_cast_vm_test: RuntimeError
 vm/type_vm_test: RuntimeError
+yieldstar_pause_test: Crash
 
 # dartk: precompilation failures
 [ $compiler == dartkp && $runtime == dart_precompiled ]
@@ -757,6 +759,7 @@ generic_sends_test: CompileTimeError
 generic_test: RuntimeError
 getter_closure_execution_order_test: RuntimeError
 getter_setter_in_lib_test: RuntimeError
+if_null_assignment_static_test/35: Crash
 inferrer_closure_test: RuntimeError
 initializing_formal_access_test: CompileTimeError
 initializing_formal_capture_test: CompileTimeError
@@ -916,6 +919,7 @@ regress_26133_test: RuntimeError
 regress_26175_test: Crash
 regress_26668_test: Crash
 regress_26948_test: Crash
+regress_27164_test: CompileTimeError
 regress_r24720_test: RuntimeError
 reify_typevar_static_test/00: MissingCompileTimeError
 reify_typevar_test: RuntimeError
@@ -983,3 +987,4 @@ vm/optimized_await_regress_test: Crash
 vm/reflect_core_vm_test: CompileTimeError
 vm/type_cast_vm_test: RuntimeError
 vm/type_vm_test: RuntimeError
+yieldstar_pause_test: Crash

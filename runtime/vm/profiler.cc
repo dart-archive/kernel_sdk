@@ -203,14 +203,14 @@ class ReturnAddressLocator : public ValueObject {
 
   // Returns offset into code object.
   intptr_t RelativePC() {
-    ASSERT(pc() >= code_.EntryPoint());
-    return static_cast<intptr_t>(pc() - code_.EntryPoint());
+    ASSERT(pc() >= code_.PayloadStart());
+    return static_cast<intptr_t>(pc() - code_.PayloadStart());
   }
 
   uint8_t* CodePointer(intptr_t offset) {
     const intptr_t size = code_.Size();
     ASSERT(offset < size);
-    uint8_t* code_pointer = reinterpret_cast<uint8_t*>(code_.EntryPoint());
+    uint8_t* code_pointer = reinterpret_cast<uint8_t*>(code_.PayloadStart());
     code_pointer += offset;
     return code_pointer;
   }
@@ -335,11 +335,9 @@ static void DumpStackFrame(intptr_t frame_index, uword pc) {
   char* native_symbol_name =
       NativeSymbolResolver::LookupSymbolName(pc, &start);
   if (native_symbol_name == NULL) {
-    OS::PrintErr("Frame[%" Pd "] = `unknown symbol` [0x%" Px "]\n",
-                 frame_index, pc);
+    OS::PrintErr("  [0x%" Pp "] Unknown symbol\n", pc);
   } else {
-    OS::PrintErr("Frame[%" Pd "] = `%s` [0x%" Px "]\n",
-                 frame_index, native_symbol_name, pc);
+    OS::PrintErr("  [0x%" Pp "] %s\n", pc, native_symbol_name);
     NativeSymbolResolver::FreeSymbolName(native_symbol_name);
   }
 }
@@ -529,8 +527,9 @@ class ProfilerDartStackWalker : public ProfilerStackWalker {
       return NextExit();
     }
     uword* new_fp = CallerFP();
-    if (new_fp <= fp_) {
-      // FP didn't move to a higher address.
+    if (!IsCalleeFrameOf(reinterpret_cast<uword>(new_fp),
+                         reinterpret_cast<uword>(fp_))) {
+      // FP didn't move to a caller (higher address on most architectures).
       return false;
     }
     // Success, update fp and pc.
@@ -859,10 +858,18 @@ static bool GetAndValidateIsolateStackBounds(Thread* thread,
     return false;
   }
 #endif
+
+#if defined(TARGET_ARCH_DBC)
+  if (!in_dart_code && (sp > *stack_lower)) {
+    // The stack pointer gives us a tighter lower bound.
+    *stack_lower = sp;
+  }
+#else
   if (sp > *stack_lower) {
     // The stack pointer gives us a tighter lower bound.
     *stack_lower = sp;
   }
+#endif
 
   if (*stack_lower >= *stack_upper) {
     // Stack boundary is invalid.
@@ -948,6 +955,14 @@ static uintptr_t __attribute__((noinline)) GetProgramCounter() {
 
 
 void Profiler::DumpStackTrace(bool native_stack_trace) {
+  // Allow only one stack trace to prevent recursively printing stack traces if
+  // we hit an assert while printing the stack.
+  static uintptr_t started_dump = 0;
+  if (AtomicOperations::FetchAndIncrement(&started_dump) != 0) {
+    OS::PrintErr("Aborting re-entrant request for stack trace.\n");
+    return;
+  }
+
   Thread* thread = Thread::Current();
   if (thread == NULL) {
     return;
@@ -1016,7 +1031,7 @@ void Profiler::DumpStackTrace(bool native_stack_trace) {
                                               fp,
                                               sp);
   }
-  OS::PrintErr("-- End of DumpStackTrace");
+  OS::PrintErr("-- End of DumpStackTrace\n");
 }
 
 
@@ -1117,11 +1132,6 @@ void Profiler::SampleThreadSingleFrame(Thread* thread, uintptr_t pc) {
 
 void Profiler::SampleThread(Thread* thread,
                             const InterruptedThreadState& state) {
-#if defined(TARGET_ARCH_DBC)
-  // TODO(vegorov) implement simulator stack sampling.
-  return;
-#endif
-
   ASSERT(thread != NULL);
   OSThread* os_thread = thread->os_thread();
   ASSERT(os_thread != NULL);
@@ -1147,14 +1157,17 @@ void Profiler::SampleThread(Thread* thread,
   uintptr_t sp = 0;
   uintptr_t fp = state.fp;
   uintptr_t pc = state.pc;
-#if defined(USING_SIMULATOR) && !defined(TARGET_ARCH_DBC)
+#if defined(USING_SIMULATOR)
   Simulator* simulator = NULL;
 #endif
 
   if (in_dart_code) {
     // If we're in Dart code, use the Dart stack pointer.
 #if defined(TARGET_ARCH_DBC)
-    UNIMPLEMENTED();
+    simulator = isolate->simulator();
+    sp = simulator->get_sp();
+    fp = simulator->get_fp();
+    pc = simulator->get_pc();
 #elif defined(USING_SIMULATOR)
     simulator = isolate->simulator();
     sp = simulator->get_register(SPREG);
@@ -1261,8 +1274,8 @@ CodeDescriptor::CodeDescriptor(const Code& code) : code_(code) {
 }
 
 
-uword CodeDescriptor::Entry() const {
-  return code_.EntryPoint();
+uword CodeDescriptor::Start() const {
+  return code_.PayloadStart();
 }
 
 
@@ -1337,11 +1350,11 @@ void CodeLookupTable::Build(Thread* thread) {
   for (intptr_t i = 0; i < length() - 1; i++) {
     const CodeDescriptor* a = At(i);
     const CodeDescriptor* b = At(i + 1);
-    ASSERT(a->Entry() < b->Entry());
-    ASSERT(FindCode(a->Entry()) == a);
-    ASSERT(FindCode(b->Entry()) == b);
-    ASSERT(FindCode(a->Entry() + a->Size() - 1) == a);
-    ASSERT(FindCode(b->Entry() + b->Size() - 1) == b);
+    ASSERT(a->Start() < b->Start());
+    ASSERT(FindCode(a->Start()) == a);
+    ASSERT(FindCode(b->Start()) == b);
+    ASSERT(FindCode(a->Start() + a->Size() - 1) == a);
+    ASSERT(FindCode(b->Start() + b->Size() - 1) == b);
   }
 #endif
 }
@@ -1362,7 +1375,7 @@ const CodeDescriptor* CodeLookupTable::FindCode(uword pc) const {
     intptr_t step = count / 2;
     current += step;
     const CodeDescriptor* cd = At(current);
-    if (pc >= cd->Entry()) {
+    if (pc >= cd->Start()) {
       first = ++current;
       count -= step + 1;
     } else {

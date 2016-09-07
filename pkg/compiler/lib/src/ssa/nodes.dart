@@ -36,13 +36,13 @@ abstract class HVisitor<R> {
   R visitBreak(HBreak node);
   R visitConstant(HConstant node);
   R visitContinue(HContinue node);
+  R visitCreate(HCreate node);
   R visitDivide(HDivide node);
   R visitExit(HExit node);
   R visitExitTry(HExitTry node);
   R visitFieldGet(HFieldGet node);
   R visitFieldSet(HFieldSet node);
   R visitForeignCode(HForeignCode node);
-  R visitForeignNew(HForeignNew node);
   R visitGoto(HGoto node);
   R visitGreater(HGreater node);
   R visitGreaterEqual(HGreaterEqual node);
@@ -99,6 +99,10 @@ abstract class HVisitor<R> {
   R visitVoidType(HVoidType node);
   R visitInterfaceType(HInterfaceType node);
   R visitDynamicType(HDynamicType node);
+
+  R visitTypeInfoReadRaw(HTypeInfoReadRaw node);
+  R visitTypeInfoReadVariable(HTypeInfoReadVariable node);
+  R visitTypeInfoExpression(HTypeInfoExpression node);
 }
 
 abstract class HGraphVisitor {
@@ -160,6 +164,12 @@ class HGraph {
   bool isRecursiveMethod = false;
   bool calledInLoop = false;
   final List<HBasicBlock> blocks = <HBasicBlock>[];
+
+  /// Nodes containing list allocations for which there is a known fixed length.
+  // TODO(sigmund,sra): consider not storing this explicitly here (e.g. maybe
+  // store it on HInstruction, or maybe this can be computed on demand).
+  final Set<HInstruction> allocatedFixedLists = new Set<HInstruction>();
+
   SourceInformation sourceInformation;
 
   // We canonicalize all constants used within a graph so we do not
@@ -324,13 +334,13 @@ class HBaseVisitor extends HGraphVisitor implements HVisitor {
   visitContinue(HContinue node) => visitJump(node);
   visitCheck(HCheck node) => visitInstruction(node);
   visitConstant(HConstant node) => visitInstruction(node);
+  visitCreate(HCreate node) => visitInstruction(node);
   visitDivide(HDivide node) => visitBinaryArithmetic(node);
   visitExit(HExit node) => visitControlFlow(node);
   visitExitTry(HExitTry node) => visitControlFlow(node);
   visitFieldGet(HFieldGet node) => visitFieldAccess(node);
   visitFieldSet(HFieldSet node) => visitFieldAccess(node);
   visitForeignCode(HForeignCode node) => visitInstruction(node);
-  visitForeignNew(HForeignNew node) => visitInstruction(node);
   visitGoto(HGoto node) => visitControlFlow(node);
   visitGreater(HGreater node) => visitRelational(node);
   visitGreaterEqual(HGreaterEqual node) => visitRelational(node);
@@ -394,6 +404,11 @@ class HBaseVisitor extends HGraphVisitor implements HVisitor {
   visitDynamicType(HDynamicType node) => visitInstruction(node);
   visitAwait(HAwait node) => visitInstruction(node);
   visitYield(HYield node) => visitInstruction(node);
+
+  visitTypeInfoReadRaw(HTypeInfoReadRaw node) => visitInstruction(node);
+  visitTypeInfoReadVariable(HTypeInfoReadVariable node) =>
+      visitInstruction(node);
+  visitTypeInfoExpression(HTypeInfoExpression node) => visitInstruction(node);
 }
 
 class SubGraph {
@@ -674,7 +689,8 @@ class HBasicBlock extends HInstructionList {
 
     if (better.isEmpty) return rewrite(from, to);
 
-    L1: for (HInstruction user in from.usedBy) {
+    L1:
+    for (HInstruction user in from.usedBy) {
       for (HCheck check in better) {
         if (check.dominates(user)) {
           user.rewriteInput(from, check);
@@ -852,6 +868,10 @@ abstract class HInstruction implements Spannable {
   static const int DYNAMIC_TYPE_TYPECODE = 35;
   static const int TRUNCATING_DIVIDE_TYPECODE = 36;
   static const int IS_VIA_INTERCEPTOR_TYPECODE = 37;
+
+  static const int TYPE_INFO_READ_RAW_TYPECODE = 38;
+  static const int TYPE_INFO_READ_VARIABLE_TYPECODE = 39;
+  static const int TYPE_INFO_EXPRESSION_TYPECODE = 40;
 
   HInstruction(this.inputs, this.instructionType)
       : id = idCounter++,
@@ -1248,8 +1268,9 @@ abstract class HInstruction implements Spannable {
     HBasicBlock otherBlock = other.block;
     for (int i = 0, length = usedBy.length; i < length; i++) {
       HInstruction current = usedBy[i];
-      if (otherBlock.dominates(current.block)) {
-        if (identical(current.block, otherBlock)) usersInCurrentBlock++;
+      HBasicBlock currentBlock = current.block;
+      if (otherBlock.dominates(currentBlock)) {
+        if (identical(currentBlock, otherBlock)) usersInCurrentBlock++;
         users.add(current);
       }
     }
@@ -1477,6 +1498,27 @@ abstract class HControlFlow extends HInstruction {
   HControlFlow(inputs) : super(inputs, const TypeMask.nonNullEmpty());
   bool isControlFlow() => true;
   bool isJsStatement() => true;
+}
+
+// Allocates and initializes an instance.
+class HCreate extends HInstruction {
+  final ClassElement element;
+
+  /// If this field is not `null`, this call is from an inlined constructor and
+  /// we have to register the instantiated type in the code generator. The
+  /// [instructionType] of this node is not enough, because we also need the
+  /// type arguments. See also [SsaFromAstMixin.currentInlinedInstantiations].
+  List<DartType> instantiatedTypes;
+
+  HCreate(this.element, List<HInstruction> inputs, TypeMask type,
+      [this.instantiatedTypes])
+      : super(inputs, type);
+
+  accept(HVisitor visitor) => visitor.visitCreate(this);
+
+  bool get isAllocation => true;
+
+  String toString() => 'HCreate($element)';
 }
 
 abstract class HInvoke extends HInstruction {
@@ -1869,26 +1911,6 @@ class HForeignCode extends HForeign {
       nativeBehavior != null && nativeBehavior.isAllocation && !canBeNull();
 
   String toString() => 'HForeignCode("${codeTemplate.source}",$inputs)';
-}
-
-class HForeignNew extends HForeign {
-  ClassElement element;
-
-  /// If this field is not `null`, this call is from an inlined constructor and
-  /// we have to register the instantiated type in the code generator. The
-  /// [instructionType] of this node is not enough, because we also need the
-  /// type arguments. See also [SsaFromAstMixin.currentInlinedInstantiations].
-  List<DartType> instantiatedTypes;
-
-  HForeignNew(this.element, TypeMask type, List<HInstruction> inputs,
-      [this.instantiatedTypes])
-      : super(type, inputs);
-
-  accept(HVisitor visitor) => visitor.visitForeignNew(this);
-
-  bool get isAllocation => true;
-
-  String toString() => 'HForeignNew($element)';
 }
 
 abstract class HInvokeBinary extends HInstruction {
@@ -3179,6 +3201,137 @@ class HSwitchBlockInformation implements HStatementInformation {
 
   bool accept(HStatementInformationVisitor visitor) =>
       visitor.visitSwitchInfo(this);
+}
+
+/// Reads raw reified type info from an object.
+class HTypeInfoReadRaw extends HInstruction {
+  HTypeInfoReadRaw(HInstruction receiver, TypeMask instructionType)
+      : super(<HInstruction>[receiver], instructionType) {
+    setUseGvn();
+  }
+
+  accept(HVisitor visitor) => visitor.visitTypeInfoReadRaw(this);
+
+  bool canThrow() => false;
+
+  int typeCode() => HInstruction.TYPE_INFO_READ_RAW_TYPECODE;
+  bool typeEquals(HInstruction other) => other is HTypeInfoReadRaw;
+
+  bool dataEquals(HTypeInfoReadRaw other) {
+    return true;
+  }
+}
+
+/// Reads a type variable from an object. The read may be a simple indexing of
+/// the type parameters or it may require 'substitution'.
+class HTypeInfoReadVariable extends HInstruction {
+  /// The type variable being read.
+  final TypeVariableType variable;
+
+  HTypeInfoReadVariable(
+      this.variable, HInstruction receiver, TypeMask instructionType)
+      : super(<HInstruction>[receiver], instructionType) {
+    setUseGvn();
+  }
+
+  HInstruction get object => inputs.single;
+
+  accept(HVisitor visitor) => visitor.visitTypeInfoReadVariable(this);
+
+  bool canThrow() => false;
+
+  int typeCode() => HInstruction.TYPE_INFO_READ_VARIABLE_TYPECODE;
+  bool typeEquals(HInstruction other) => other is HTypeInfoReadVariable;
+
+  bool dataEquals(HTypeInfoReadVariable other) {
+    return variable.element == other.variable.element;
+  }
+
+  String toString() => 'HTypeInfoReadVariable($variable)';
+}
+
+enum TypeInfoExpressionKind { COMPLETE, INSTANCE }
+
+/// Constructs a representation of a closed or ground-term type (that is, a type
+/// without type variables).
+///
+/// There are two forms:
+///
+/// - COMPLETE: A complete form that is self contained, used for the values of
+///   type parameters and non-raw is-checks.
+///
+/// - INSTANCE: A headless flat form for representing the sequence of values of
+///   the type parameters of an instance of a generic type.
+///
+/// The COMPLETE form value is constructed from [dartType] by replacing the type
+/// variables with consecutive values from [inputs], in the order generated by
+/// [DartType.forEachTypeVariable].  The type variables in [dartType] are
+/// treated as 'holes' in the term, which means that it must be ensured at
+/// construction, that duplicate occurences of a type variable in [dartType] are
+/// assigned the same value.
+///
+/// The INSTANCE form is constructed as a list of [inputs]. This is the same as
+/// the COMPLETE form for the 'thisType', except the root term's type is
+/// missing; this is implicit as the raw type of instance.  The [dartType] of
+/// the INSTANCE form must be the thisType of some class.
+///
+/// We want to remove the constrains on the INSTANCE form. In the meantime we
+/// get by with a tree of TypeExpressions.  Consider:
+///
+///     class Foo<T> {
+///       ... new Set<List<T>>()
+///     }
+///     class Set<E1> {
+///       factory Set() => new _LinkedHashSet<E1>();
+///     }
+///     class List<E2> { ... }
+///     class _LinkedHashSet<E3> { ... }
+///
+/// After inlining the factory constructor for `Set<E1>`, the HCreate should
+/// have type `_LinkedHashSet<List<T>>` and the TypeExpression should be a tree:
+///
+///    HCreate(dartType: _LinkedHashSet<List<T>>,
+///        [], // No arguments
+///        HTypeInfoExpression(INSTANCE,
+///            dartType: _LinkedHashSet<E3>, // _LinkedHashSet's thisType
+///            HTypeInfoExpression(COMPLETE,  // E3 = List<T>
+///                dartType: List<E2>,
+///                HTypeInfoReadVariable(this, T)))) // E2 = T
+
+// TODO(sra): The INSTANCE form requires the actual instance for full
+// interpretation. If the COMPLETE form was used on instances, then we could
+// simplify HTypeInfoReadVariable without an object.
+
+class HTypeInfoExpression extends HInstruction {
+  final TypeInfoExpressionKind kind;
+  final DartType dartType;
+  HTypeInfoExpression(this.kind, this.dartType, List<HInstruction> inputs,
+      TypeMask instructionType)
+      : super(inputs, instructionType) {
+    setUseGvn();
+  }
+
+  accept(HVisitor visitor) => visitor.visitTypeInfoExpression(this);
+
+  bool canThrow() => false;
+
+  int typeCode() => HInstruction.TYPE_INFO_EXPRESSION_TYPECODE;
+  bool typeEquals(HInstruction other) => other is HTypeInfoExpression;
+
+  bool dataEquals(HTypeInfoExpression other) {
+    return kind == other.kind && dartType == other.dartType;
+  }
+
+  String toString() => 'HTypeInfoExpression $kindAsString $dartType';
+
+  String get kindAsString {
+    switch (kind) {
+      case TypeInfoExpressionKind.COMPLETE:
+        return 'COMPLETE';
+      case TypeInfoExpressionKind.INSTANCE:
+        return 'INSTANCE';
+    }
+  }
 }
 
 class HReadTypeVariable extends HInstruction {

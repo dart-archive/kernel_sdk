@@ -731,7 +731,7 @@ FinalizablePersistentHandle* FinalizablePersistentHandle::Cast(
 void FinalizablePersistentHandle::Finalize(
     Isolate* isolate, FinalizablePersistentHandle* handle) {
   if (!handle->raw()->IsHeapObject()) {
-    return;
+    return;  // Free handle.
   }
   Dart_WeakPersistentHandleFinalizer callback = handle->callback();
   ASSERT(callback != NULL);
@@ -1035,6 +1035,9 @@ static Dart_WeakPersistentHandle AllocateFinalizableHandle(
   REUSABLE_OBJECT_HANDLESCOPE(thread);
   Object& ref = thread->ObjectHandle();
   ref = Api::UnwrapHandle(object);
+  if (!ref.raw()->IsHeapObject()) {
+    return NULL;
+  }
   FinalizablePersistentHandle* finalizable_ref =
       FinalizablePersistentHandle::New(thread->isolate(),
                                        ref,
@@ -2555,7 +2558,7 @@ DART_EXPORT Dart_Handle Dart_StringStorageSize(Dart_Handle str,
 
 DART_EXPORT Dart_Handle Dart_MakeExternalString(Dart_Handle str,
                                                 void* array,
-                                                intptr_t length,
+                                                intptr_t external_size,
                                                 void* peer,
                                                 Dart_PeerFinalizer cback) {
   DARTSCOPE(Thread::Current());
@@ -2574,9 +2577,9 @@ DART_EXPORT Dart_Handle Dart_MakeExternalString(Dart_Handle str,
     RETURN_NULL_ERROR(array);
   }
   intptr_t str_size = (str_obj.Length() * str_obj.CharSize());
-  if ((length < str_size) || (length > String::kMaxElements)) {
+  if ((external_size < str_size) || (external_size > String::kMaxElements)) {
     return Api::NewError("Dart_MakeExternalString "
-                         "expects argument length to be in the range"
+                         "expects argument external_size to be in the range"
                          "[%" Pd "..%" Pd "].",
                          str_size, String::kMaxElements);
   }
@@ -2588,24 +2591,25 @@ DART_EXPORT Dart_Handle Dart_MakeExternalString(Dart_Handle str,
     // the peer from the Peer table.
     intptr_t copy_len = str_obj.Length();
     if (str_obj.IsOneByteString()) {
-      ASSERT(length >= copy_len);
+      ASSERT(external_size >= copy_len);
       uint8_t* latin1_array = reinterpret_cast<uint8_t*>(array);
       for (intptr_t i = 0; i < copy_len; i++) {
         latin1_array[i] = static_cast<uint8_t>(str_obj.CharAt(i));
       }
-      OneByteString::SetPeer(str_obj, peer, cback);
+      OneByteString::SetPeer(str_obj, external_size, peer, cback);
     } else {
       ASSERT(str_obj.IsTwoByteString());
-      ASSERT(length >= (copy_len * str_obj.CharSize()));
+      ASSERT(external_size >= (copy_len * str_obj.CharSize()));
       uint16_t* utf16_array = reinterpret_cast<uint16_t*>(array);
       for (intptr_t i = 0; i < copy_len; i++) {
         utf16_array[i] = str_obj.CharAt(i);
       }
-      TwoByteString::SetPeer(str_obj, peer, cback);
+      TwoByteString::SetPeer(str_obj, external_size, peer, cback);
     }
     return str;
   }
-  return Api::NewHandle(T, str_obj.MakeExternal(array, length, peer, cback));
+  return Api::NewHandle(T, str_obj.MakeExternal(array, external_size,
+                                                peer, cback));
 }
 
 
@@ -6156,7 +6160,7 @@ static bool StreamTraceEvents(Dart_StreamConsumer consumer,
   // Steal output from JSONStream.
   char* output = NULL;
   intptr_t output_length = 0;
-  js->Steal(const_cast<const char**>(&output), &output_length);
+  js->Steal(&output, &output_length);
   if (output_length < 3) {
     // Empty JSON array.
     free(output);
@@ -6487,8 +6491,8 @@ DART_EXPORT Dart_Handle Dart_CreatePrecompiledSnapshotBlob(
   writer.WriteFullSnapshot();
   *vm_isolate_snapshot_size = writer.VmIsolateSnapshotSize();
   *isolate_snapshot_size = writer.IsolateSnapshotSize();
-  *instructions_blob_size = instructions_writer.read_execute_binary_size();
-  *rodata_blob_size = instructions_writer.read_only_binary_size();
+  *instructions_blob_size = instructions_writer.text_size();
+  *rodata_blob_size = instructions_writer.data_size();
 
   return Api::Success();
 #endif
@@ -6594,8 +6598,8 @@ DART_EXPORT Dart_Handle Dart_CreateAppJITSnapshot(
   writer.WriteFullSnapshot();
   *vm_isolate_snapshot_size = writer.VmIsolateSnapshotSize();
   *isolate_snapshot_size = writer.IsolateSnapshotSize();
-  *instructions_blob_size = instructions_writer.read_execute_binary_size();
-  *rodata_blob_size = instructions_writer.read_only_binary_size();
+  *instructions_blob_size = instructions_writer.text_size();
+  *rodata_blob_size = instructions_writer.data_size();
 
   return Api::Success();
 #endif

@@ -1526,9 +1526,10 @@ class CodeDeserializationCluster : public DeserializationCluster {
       int32_t text_offset = d->Read<int32_t>();
       RawInstructions* instr = reinterpret_cast<RawInstructions*>(
           d->GetInstructionsAt(text_offset) + kHeapObjectTag);
-      uword entry_point = Instructions::EntryPoint(instr);
 
-      code->ptr()->entry_point_ = entry_point;
+      code->ptr()->entry_point_ = Instructions::UncheckedEntryPoint(instr);
+      code->ptr()->checked_entry_point_ =
+          Instructions::CheckedEntryPoint(instr);
       code->ptr()->active_instructions_ = instr;
       code->ptr()->instructions_ = instr;
       code->ptr()->object_pool_ =
@@ -2130,29 +2131,6 @@ class ICDataDeserializationCluster : public DeserializationCluster {
 #if defined(TAG_IC_DATA)
       ic->ptr()->tag_ = d->Read<int32_t>();
 #endif
-    }
-  }
-
-  void PostLoad(const Array& refs, Snapshot::Kind kind, Zone* zone) {
-    NOT_IN_PRODUCT(TimelineDurationScope tds(Thread::Current(),
-        Timeline::GetIsolateStream(), "PostLoadICData"));
-
-    if (kind == Snapshot::kAppNoJIT) {
-      ICData& ic = ICData::Handle(zone);
-      Object& funcOrCode = Object::Handle(zone);
-      Code& code = Code::Handle(zone);
-      Smi& entry_point = Smi::Handle(zone);
-      for (intptr_t i = start_index_; i < stop_index_; i++) {
-        ic ^= refs.At(i);
-        for (intptr_t j = 0; j < ic.NumberOfChecks(); j++) {
-          funcOrCode = ic.GetTargetOrCodeAt(j);
-          if (funcOrCode.IsCode()) {
-            code ^= funcOrCode.raw();
-            entry_point = Smi::FromAlignedAddress(code.EntryPoint());
-            ic.SetEntryPointAt(j, entry_point);
-          }
-        }
-      }
     }
   }
 };
@@ -3581,6 +3559,7 @@ class ExternalTypedDataDeserializationCluster : public DeserializationCluster {
       data->ptr()->length_ = Smi::New(length);
       data->ptr()->data_ = const_cast<uint8_t*>(d->CurrentBufferAddress());
       d->Advance(length * element_size);
+      // No finalizer / external size 0.
     }
   }
 
@@ -5001,14 +4980,14 @@ void FullSnapshotWriter::WriteFullSnapshot() {
     OS::Print("Isolate(CodeSize): %" Pd "\n", IsolateSnapshotSize());
     OS::Print("Instructions(Count): %" Pd "\n",
               instructions_writer_->instructions_count());
-    OS::Print("InstructionsRX(CodeSize): %" Pd "\n",
-              instructions_writer_->read_execute_binary_size());
-    OS::Print("InstructionsRO(CodeSize): %" Pd "\n",
-              instructions_writer_->read_only_binary_size());
-
+    OS::Print("ReadOnlyData(CodeSize): %" Pd "\n",
+              instructions_writer_->data_size());
+    OS::Print("Instructions(CodeSize): %" Pd "\n",
+              instructions_writer_->text_size());
     intptr_t total = VmIsolateSnapshotSize() +
                      IsolateSnapshotSize() +
-                     instructions_writer_->binary_size();
+                     instructions_writer_->data_size() +
+                     instructions_writer_->text_size();
     OS::Print("Total(CodeSize): %" Pd "\n", total);
 
     if (FLAG_dump_instructions_sizes) {

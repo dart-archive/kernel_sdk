@@ -35,17 +35,32 @@ const Map<String, List/*<String|MessageKind>*/> WHITE_LIST = const {
 const List<String> SKIP_LIST = const <String>[
   // Helper files:
   "/data/",
-  "http_launch_data/",
+  "quarantined/http_launch_data/",
   "mirrors_helper.dart",
   "path%20with%20spaces/",
-  "cps_ir/input/",
-  // No longer maintained:
-  "backend_dart/",
   // Broken tests:
   "quarantined/http_test.dart",
   // Package directory
   "packages/",
 ];
+
+List<Uri> computeInputUris({String filter}) {
+  List<Uri> uriList = <Uri>[];
+  Directory dir =
+      new Directory.fromUri(Uri.base.resolve('tests/compiler/dart2js/'));
+  for (FileSystemEntity entity in dir.listSync(recursive: true)) {
+    if (entity is File && entity.path.endsWith('.dart')) {
+      Uri file = Uri.base.resolve(nativeToUriPath(entity.path));
+      if (filter != null && !'$file'.contains(filter)) {
+        continue;
+      }
+      if (!SKIP_LIST.any((skip) => file.path.contains(skip))) {
+        uriList.add(file);
+      }
+    }
+  }
+  return uriList;
+}
 
 main(List<String> arguments) {
   List<String> options = <String>[];
@@ -81,19 +96,7 @@ main(List<String> arguments) {
 
   asyncTest(() async {
     if (uriList.isEmpty) {
-      Directory dir =
-          new Directory.fromUri(Uri.base.resolve('tests/compiler/dart2js/'));
-      for (FileSystemEntity entity in dir.listSync(recursive: true)) {
-        if (entity is File && entity.path.endsWith('.dart')) {
-          Uri file = Uri.base.resolve(nativeToUriPath(entity.path));
-          if (filter != null && !'$file'.contains(filter)) {
-            continue;
-          }
-          if (!SKIP_LIST.any((skip) => file.path.contains(skip))) {
-            uriList.add(file);
-          }
-        }
-      }
+      uriList = computeInputUris(filter: filter);
     }
     await analyze(
         uriList,

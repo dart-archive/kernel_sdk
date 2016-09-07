@@ -341,9 +341,6 @@ class Value : public ZoneAllocated {
 
   bool IsSmiValue() { return Type()->ToCid() == kSmiCid; }
 
-  // Returns true if this value binds to the constant: 0xFFFFFFFF.
-  bool BindsTo32BitMaskConstant() const;
-
   // Return true if the value represents a constant.
   bool BindsToConstant() const;
 
@@ -3313,7 +3310,6 @@ class StaticCallInstr : public TemplateDefinition<0, Throws> {
         arguments_(arguments),
         result_cid_(kDynamicCid),
         is_known_list_constructor_(false),
-        is_native_list_factory_(false),
         identity_(AliasIdentity::Unknown()) {
     ic_data_ = GetICData(ic_data_array);
     ASSERT(function.IsZoneHandle());
@@ -3333,7 +3329,6 @@ class StaticCallInstr : public TemplateDefinition<0, Throws> {
         arguments_(arguments),
         result_cid_(kDynamicCid),
         is_known_list_constructor_(false),
-        is_native_list_factory_(false),
         identity_(AliasIdentity::Unknown()) {
     ASSERT(function.IsZoneHandle());
     ASSERT(argument_names.IsZoneHandle() ||  argument_names.InVMHeap());
@@ -3379,13 +3374,8 @@ class StaticCallInstr : public TemplateDefinition<0, Throws> {
     is_known_list_constructor_ = value;
   }
 
-  bool is_native_list_factory() const { return is_native_list_factory_; }
-  void set_is_native_list_factory(bool value) {
-    is_native_list_factory_ = value;
-  }
-
   bool IsRecognizedFactory() const {
-    return is_known_list_constructor() || is_native_list_factory();
+    return is_known_list_constructor();
   }
 
   virtual AliasIdentity Identity() const { return identity_; }
@@ -3403,7 +3393,6 @@ class StaticCallInstr : public TemplateDefinition<0, Throws> {
 
   // 'True' for recognized list constructors.
   bool is_known_list_constructor_;
-  bool is_native_list_factory_;
 
   AliasIdentity identity_;
 
@@ -5153,8 +5142,6 @@ class MathUnaryInstr : public TemplateDefinition<1, NoThrow, Pure> {
  public:
   enum MathUnaryKind {
     kIllegal,
-    kSin,
-    kCos,
     kSqrt,
     kDoubleSquare,
   };
@@ -5165,7 +5152,6 @@ class MathUnaryInstr : public TemplateDefinition<1, NoThrow, Pure> {
 
   Value* value() const { return inputs_[0]; }
   MathUnaryKind kind() const { return kind_; }
-  const RuntimeEntry& TargetFunction() const;
 
   virtual bool CanDeoptimize() const { return false; }
 
@@ -7747,7 +7733,7 @@ class MergedMathInstr : public PureDefinition {
     return (*inputs_)[i];
   }
 
-  static intptr_t OutputIndexOf(intptr_t kind);
+  static intptr_t OutputIndexOf(MethodRecognizer::Kind kind);
   static intptr_t OutputIndexOf(Token::Kind token);
 
   virtual CompileType ComputeType() const;

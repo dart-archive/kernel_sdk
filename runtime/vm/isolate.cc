@@ -1109,6 +1109,10 @@ bool Isolate::ReloadSources(JSONStream* js,
 
 
 void Isolate::DeleteReloadContext() {
+  // Another thread may be in the middle of GetClassForHeapWalkAt.
+  Thread* thread = Thread::Current();
+  SafepointOperationScope safepoint_scope(thread);
+
   delete reload_context_;
   reload_context_ = NULL;
 }
@@ -1732,20 +1736,10 @@ void Isolate::Shutdown() {
   if (heap_ != NULL) {
     // Wait for any concurrent GC tasks to finish before shutting down.
     // TODO(koda): Support faster sweeper shutdown (e.g., after current page).
-    {
-      PageSpace* old_space = heap_->old_space();
-      MonitorLocker ml(old_space->tasks_lock());
-      while (old_space->tasks() > 0) {
-        ml.Wait();
-      }
-    }
-
-    // Wait for background finalization to finish before shutting down.
-    {
-      MonitorLocker ml(heap_->finalization_tasks_lock());
-      while (heap_->finalization_tasks() > 0) {
-        ml.Wait();
-      }
+    PageSpace* old_space = heap_->old_space();
+    MonitorLocker ml(old_space->tasks_lock());
+    while (old_space->tasks() > 0) {
+      ml.Wait();
     }
   }
 
@@ -1891,7 +1885,10 @@ RawClass* Isolate::GetClassForHeapWalkAt(intptr_t cid) {
   raw_class = class_table()->At(cid);
 #endif  // !PRODUCT
   ASSERT(raw_class != NULL);
+#if !defined(DART_PRECOMPILER)
+  // This is temporarily untrue during a class id remap.
   ASSERT(raw_class->ptr()->id_ == cid);
+#endif
   return raw_class;
 }
 
@@ -1979,7 +1976,7 @@ void Isolate::PrintJSON(JSONStream* stream, bool ref) {
     jsobj.AddProperty("rootLib", lib);
   }
 
-  {
+  if (FLAG_profiler) {
     JSONObject tagCounters(&jsobj, "_tagCounters");
     vm_tag_counters()->PrintToJSONObject(&tagCounters);
   }
@@ -2188,12 +2185,10 @@ RawObject* Isolate::InvokePendingServiceExtensionCalls() {
           "[+%" Pd64 "ms] Isolate %s : _runExtension complete for %s\n",
           Dart::timestamp(), name(), method_name.ToCString());
     }
+    // Propagate the error.
     if (result.IsError()) {
-      if (result.IsUnwindError()) {
-        // Propagate the unwind error. Remaining service extension calls
-        // are dropped.
-        return result.raw();
-      } else {
+      // Remaining service extension calls are dropped.
+      if (!result.IsUnwindError()) {
         // Send error back over the protocol.
         Service::PostError(method_name,
                            parameter_keys,
@@ -2202,9 +2197,13 @@ RawObject* Isolate::InvokePendingServiceExtensionCalls() {
                            id,
                            Error::Cast(result));
       }
+      return result.raw();
     }
+    // Drain the microtask queue.
     result = DartLibraryCalls::DrainMicrotaskQueue();
+    // Propagate the error.
     if (result.IsError()) {
+      // Remaining service extension calls are dropped.
       return result.raw();
     }
   }

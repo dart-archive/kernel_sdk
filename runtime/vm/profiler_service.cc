@@ -5,6 +5,7 @@
 #include "vm/profiler_service.h"
 
 #include "vm/growable_array.h"
+#include "vm/handles_impl.h"
 #include "vm/hash_map.h"
 #include "vm/log.h"
 #include "vm/native_symbol.h"
@@ -815,6 +816,7 @@ class ProfileCodeTable : public ZoneAllocated {
       return hi;
     }
     UNREACHABLE();
+    return -1;
   }
 
  private:
@@ -1181,7 +1183,7 @@ class ProfileCodeInlinedFunctionsCache : public ValueObject {
                        const Code& code,
                        ProcessedSample* sample,
                        intptr_t frame_index) {
-    intptr_t offset = pc - code.EntryPoint();
+    intptr_t offset = pc - code.PayloadStart();
     if (frame_index != 0) {
       // The PC of frames below the top frame is a call's return address,
       // which can belong to a different inlining interval than the call.
@@ -1341,8 +1343,8 @@ class ProfileBuilder : public ValueObject {
       ASSERT(!code.IsNull());
       RegisterLiveProfileCode(
           new ProfileCode(ProfileCode::kDartCode,
-                          code.EntryPoint(),
-                          code.EntryPoint() + code.Size(),
+                          code.PayloadStart(),
+                          code.PayloadStart() + code.Size(),
                           code.compile_timestamp(),
                           code));
     }
@@ -2639,6 +2641,7 @@ const char* ProfileTrieWalker::CurrentName() {
     return func->Name();
   }
   UNREACHABLE();
+  return NULL;
 }
 
 
@@ -2662,6 +2665,7 @@ intptr_t ProfileTrieWalker::CurrentInclusiveTicks() {
     return func->inclusive_ticks();
   }
   UNREACHABLE();
+  return -1;
 }
 
 
@@ -2677,6 +2681,7 @@ intptr_t ProfileTrieWalker::CurrentExclusiveTicks() {
     return func->exclusive_ticks();
   }
   UNREACHABLE();
+  return -1;
 }
 
 

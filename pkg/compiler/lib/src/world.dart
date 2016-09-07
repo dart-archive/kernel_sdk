@@ -18,14 +18,23 @@ import 'elements/elements.dart'
         MixinApplicationElement,
         TypedefElement,
         VariableElement;
+import 'js_backend/backend.dart' show JavaScriptBackend;
 import 'ordered_typeset.dart';
-import 'types/types.dart' as ti;
+import 'types/masks.dart' show TypeMask, FlatTypeMask;
 import 'universe/class_set.dart';
 import 'universe/function_set.dart' show FunctionSet;
 import 'universe/selector.dart' show Selector;
 import 'universe/side_effects.dart' show SideEffects;
 import 'util/util.dart' show Link;
 
+/// The [ClassWorld] represents the information known about a program when
+/// compiling with closed-world semantics.
+///
+/// Given the entrypoint of an application, we can track what's reachable from
+/// it, what functions are called, what classes are allocated, which native
+/// JavaScript types are touched, what language features are used, and so on.
+/// This precise knowledge about what's live in the program is later used in
+/// optimizations and other compiler decisions during code generation.
 abstract class ClassWorld {
   // TODO(johnniwinther): Refine this into a `BackendClasses` interface.
   Backend get backend;
@@ -159,6 +168,13 @@ abstract class ClassWorld {
   /// of [superclass].
   bool hasAnySubclassThatMixes(ClassElement superclass, ClassElement mixin);
 
+  /// Returns `true` if [cls] or any superclass mixes in [mixin].
+  bool isSubclassOfMixinUseOf(ClassElement cls, ClassElement mixin);
+
+  /// Returns `true` if every subtype of [x] is a subclass of [y] or a subclass
+  /// of a mixin application of [y].
+  bool everySubtypeIsSubclassOfOrMixinUseOf(ClassElement x, ClassElement y);
+
   /// Returns `true` if any subclass of [superclass] implements [type].
   bool hasAnySubclassThatImplements(ClassElement superclass, ClassElement type);
 
@@ -182,10 +198,10 @@ class World implements ClassWorld {
   ClassElement get stringClass => coreClasses.stringClass;
   ClassElement get nullClass => coreClasses.nullClass;
 
-  /// Cache of [ti.FlatTypeMask]s grouped by the 8 possible values of the
-  /// [ti.FlatTypeMask.flags] property.
-  List<Map<ClassElement, ti.TypeMask>> canonicalizedTypeMasks =
-      new List<Map<ClassElement, ti.TypeMask>>.filled(8, null);
+  /// Cache of [FlatTypeMask]s grouped by the 8 possible values of the
+  /// `FlatTypeMask.flags` property.
+  List<Map<ClassElement, TypeMask>> canonicalizedTypeMasks =
+      new List<Map<ClassElement, TypeMask>>.filled(8, null);
 
   bool checkInvariants(ClassElement cls, {bool mustBeInstantiated: true}) {
     return invariant(cls, cls.isDeclaration,
@@ -390,6 +406,9 @@ class World implements ClassWorld {
 
   @override
   ClassElement getLubOfInstantiatedSubclasses(ClassElement cls) {
+    if (backend.isJsInterop(cls)) {
+      return backend.helpers.jsJavaScriptObjectClass;
+    }
     ClassHierarchyNode hierarchy = _classHierarchyNodes[cls.declaration];
     return hierarchy != null
         ? hierarchy.getLubOfInstantiatedSubclasses()
@@ -398,6 +417,9 @@ class World implements ClassWorld {
 
   @override
   ClassElement getLubOfInstantiatedSubtypes(ClassElement cls) {
+    if (backend.isJsInterop(cls)) {
+      return backend.helpers.jsJavaScriptObjectClass;
+    }
     ClassSet classSet = _classSets[cls.declaration];
     return classSet != null ? classSet.getLubOfInstantiatedSubtypes() : null;
   }
@@ -425,7 +447,8 @@ class World implements ClassWorld {
     } while (iterator.moveNext());
 
     List<ClassElement> commonSupertypes = <ClassElement>[];
-    OUTER: for (Link<DartType> link = typeSet[depth];
+    OUTER:
+    for (Link<DartType> link = typeSet[depth];
         link.head.element != objectClass;
         link = link.tail) {
       ClassElement cls = link.head.element;
@@ -495,6 +518,34 @@ class World implements ClassWorld {
     return mixinUsesOf(mixin).any((each) => each.isSubclassOf(superclass));
   }
 
+  /// Returns `true` if [cls] or any superclass mixes in [mixin].
+  bool isSubclassOfMixinUseOf(ClassElement cls, ClassElement mixin) {
+    if (isUsedAsMixin(mixin)) {
+      ClassElement current = cls.declaration;
+      mixin = mixin.declaration;
+      while (current != null) {
+        current = current.declaration;
+        if (current.isMixinApplication) {
+          MixinApplicationElement application = current;
+          if (application.mixin.declaration == mixin) return true;
+        }
+        current = current.superclass;
+      }
+    }
+    return false;
+  }
+
+  /// Returns `true` if every subtype of [x] is a subclass of [y] or a subclass
+  /// of a mixin application of [y].
+  bool everySubtypeIsSubclassOfOrMixinUseOf(ClassElement x, ClassElement y) {
+    x = x.declaration;
+    y = y.declaration;
+    Map<ClassElement, bool> secondMap =
+        _subtypeCoveredByCache[x] ??= <ClassElement, bool>{};
+    return secondMap[y] ??= subtypesOf(x).every((ClassElement cls) =>
+        isSubclassOf(cls, y) || isSubclassOfMixinUseOf(cls, y));
+  }
+
   /// Returns `true` if any subclass of [superclass] implements [type].
   bool hasAnySubclassThatImplements(
       ClassElement superclass, ClassElement type) {
@@ -504,7 +555,7 @@ class World implements ClassWorld {
   }
 
   final Compiler compiler;
-  Backend get backend => compiler.backend;
+  JavaScriptBackend get backend => compiler.backend;
   final FunctionSet allFunctions;
   final Set<Element> functionsCalledInLoop = new Set<Element>();
   final Map<Element, SideEffects> sideEffects = new Map<Element, SideEffects>();
@@ -523,6 +574,9 @@ class World implements ClassWorld {
   final Map<ClassElement, ClassHierarchyNode> _classHierarchyNodes =
       <ClassElement, ClassHierarchyNode>{};
   final Map<ClassElement, ClassSet> _classSets = <ClassElement, ClassSet>{};
+
+  final Map<ClassElement, Map<ClassElement, bool>> _subtypeCoveredByCache =
+      <ClassElement, Map<ClassElement, bool>>{};
 
   final Set<Element> sideEffectsFreeElements = new Set<Element>();
 
@@ -701,7 +755,7 @@ class World implements ClassWorld {
     users.add(mixinApplication);
   }
 
-  bool hasAnyUserDefinedGetter(Selector selector, ti.TypeMask mask) {
+  bool hasAnyUserDefinedGetter(Selector selector, TypeMask mask) {
     return allFunctions.filter(selector, mask).any((each) => each.isGetter);
   }
 
@@ -711,23 +765,23 @@ class World implements ClassWorld {
     }
   }
 
-  VariableElement locateSingleField(Selector selector, ti.TypeMask mask) {
+  VariableElement locateSingleField(Selector selector, TypeMask mask) {
     Element result = locateSingleElement(selector, mask);
     return (result != null && result.isField) ? result : null;
   }
 
-  Element locateSingleElement(Selector selector, ti.TypeMask mask) {
-    mask = mask == null ? compiler.typesTask.dynamicType : mask;
-    return mask.locateSingleElement(selector, mask, compiler);
+  Element locateSingleElement(Selector selector, TypeMask mask) {
+    mask ??= compiler.commonMasks.dynamicType;
+    return mask.locateSingleElement(selector, compiler);
   }
 
-  ti.TypeMask extendMaskIfReachesAll(Selector selector, ti.TypeMask mask) {
+  TypeMask extendMaskIfReachesAll(Selector selector, TypeMask mask) {
     bool canReachAll = true;
     if (mask != null) {
       canReachAll = compiler.enabledInvokeOn &&
           mask.needsNoSuchMethodHandling(selector, this);
     }
-    return canReachAll ? compiler.typesTask.dynamicType : mask;
+    return canReachAll ? compiler.commonMasks.dynamicType : mask;
   }
 
   void addFunctionCalledInLoop(Element element) {
@@ -782,7 +836,7 @@ class World implements ClassWorld {
     sideEffectsFreeElements.add(element);
   }
 
-  SideEffects getSideEffectsOfSelector(Selector selector, ti.TypeMask mask) {
+  SideEffects getSideEffectsOfSelector(Selector selector, TypeMask mask) {
     // We're not tracking side effects of closures.
     if (selector.isClosureCall) return new SideEffects();
     SideEffects sideEffects = new SideEffects.empty();

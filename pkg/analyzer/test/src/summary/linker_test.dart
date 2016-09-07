@@ -7,14 +7,14 @@ import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/summary/format.dart';
 import 'package:analyzer/src/summary/idl.dart';
 import 'package:analyzer/src/summary/link.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 import 'package:unittest/unittest.dart';
 
-import '../../reflective_tests.dart';
 import 'summarize_ast_test.dart';
 
 main() {
   groupSep = ' | ';
-  runReflectiveTests(LinkerUnitTest);
+  defineReflectiveTests(LinkerUnitTest);
 }
 
 @reflectiveTest
@@ -233,6 +233,25 @@ const x = [const C()];
     testLibrary.libraryCycleForLink.ensureLinked();
     ClassElementForLink classC = testLibrary.getContainedName('C');
     expect(classC.unnamedConstructor.isCycleFree, false);
+  }
+
+  void test_createPackageBundle_withPackageUri() {
+    PackageBundle bundle = createPackageBundle(
+        '''
+class B {
+  void f(int i) {}
+}
+class C extends B {
+  f(i) {} // Inferred param type: int
+}
+''',
+        uri: 'package:foo/bar.dart');
+    UnlinkedExecutable cf = bundle.unlinkedUnits[0].classes[1].executables[0];
+    UnlinkedParam cfi = cf.parameters[0];
+    expect(cfi.inferredTypeSlot, isNot(0));
+    EntityRef typeRef =
+        bundle.linkedLibraries[0].units[0].types[cfi.inferredTypeSlot];
+    expect(bundle.unlinkedUnits[0].references[typeRef.reference].name, 'int');
   }
 
   void test_getContainedName_nonStaticField() {

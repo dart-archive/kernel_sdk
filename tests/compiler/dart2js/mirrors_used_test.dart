@@ -58,7 +58,7 @@ void main() {
     CompilerImpl compiler = result.compiler;
     print('');
     List generatedCode =
-        Elements.sortedByPosition(compiler.enqueuer.codegen.generatedCode.keys);
+        Elements.sortedByPosition(compiler.enqueuer.codegen.processedEntities);
     for (var element in generatedCode) {
       print(element);
     }
@@ -69,7 +69,7 @@ void main() {
     // 2. Some code was refactored, and there are more methods.
     // Either situation could be problematic, but in situation 2, it is often
     // acceptable to increase [expectedMethodCount] a little.
-    int expectedMethodCount = 432;
+    int expectedMethodCount = 466;
     Expect.isTrue(
         generatedCode.length <= expectedMethodCount,
         'Too many compiled methods: '

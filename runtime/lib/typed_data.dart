@@ -1276,7 +1276,7 @@ class Int16List extends _TypedList with _IntListMixin implements List<int>, Type
   }
 
   void setRange(int start, int end, Iterable iterable, [int skipCount = 0]) {
-    if (ClassID.getID(iterable) == CodeUnits.cid) {
+    if (iterable is CodeUnits) {
       end = RangeError.checkValidRange(start, end, this.length);
       int length = end - start;
       int byteStart = this.offsetInBytes + start * Int16List.BYTES_PER_ELEMENT;
@@ -1342,7 +1342,7 @@ class Uint16List extends _TypedList with _IntListMixin implements List<int>, Typ
   }
 
   void setRange(int start, int end, Iterable iterable, [int skipCount = 0]) {
-    if (ClassID.getID(iterable) == CodeUnits.cid) {
+    if (iterable is CodeUnits) {
       end = RangeError.checkValidRange(start, end, this.length);
       int length = end - start;
       int byteStart = this.offsetInBytes + start * Uint16List.BYTES_PER_ELEMENT;
@@ -1876,10 +1876,6 @@ class Float64x2List extends _TypedList with _Float64x2ListMixin implements List<
 
 
 class _ExternalInt8Array extends _TypedList with _IntListMixin implements Int8List {
-  // Factory constructors.
-
-  factory _ExternalInt8Array(int length) native "ExternalTypedData_Int8Array_new";
-
   // Method(s) implementing the List interface.
   int operator[](int index) {
     if (index < 0 || index >= length) {
@@ -1912,10 +1908,6 @@ class _ExternalInt8Array extends _TypedList with _IntListMixin implements Int8Li
 
 
 class _ExternalUint8Array extends _TypedList with _IntListMixin implements Uint8List {
-  // Factory constructors.
-
-  factory _ExternalUint8Array(int length) native "ExternalTypedData_Uint8Array_new";
-
   // Method(s) implementing the List interface.
 
   int operator[](int index) {
@@ -1949,10 +1941,6 @@ class _ExternalUint8Array extends _TypedList with _IntListMixin implements Uint8
 
 
 class _ExternalUint8ClampedArray extends _TypedList with _IntListMixin implements Uint8ClampedList {
-  // Factory constructors.
-
-  factory _ExternalUint8ClampedArray(int length) native "ExternalTypedData_Uint8ClampedArray_new";
-
   // Method(s) implementing the List interface.
 
   int operator[](int index) {
@@ -1986,10 +1974,6 @@ class _ExternalUint8ClampedArray extends _TypedList with _IntListMixin implement
 
 
 class _ExternalInt16Array extends _TypedList with _IntListMixin implements Int16List {
-  // Factory constructors.
-
-  factory _ExternalInt16Array(int length) native "ExternalTypedData_Int16Array_new";
-
   // Method(s) implementing the List interface.
 
   int operator[](int index) {
@@ -2031,10 +2015,6 @@ class _ExternalInt16Array extends _TypedList with _IntListMixin implements Int16
 
 
 class _ExternalUint16Array extends _TypedList with _IntListMixin implements Uint16List {
-  // Factory constructors.
-
-  factory _ExternalUint16Array(int length) native "ExternalTypedData_Uint16Array_new";
-
   // Method(s) implementing the List interface.
 
   int operator[](int index) {
@@ -2076,10 +2056,6 @@ class _ExternalUint16Array extends _TypedList with _IntListMixin implements Uint
 
 
 class _ExternalInt32Array extends _TypedList with _IntListMixin implements Int32List {
-  // Factory constructors.
-
-  factory _ExternalInt32Array(int length) native "ExternalTypedData_Int32Array_new";
-
   // Method(s) implementing the List interface.
 
   int operator[](int index) {
@@ -2121,10 +2097,6 @@ class _ExternalInt32Array extends _TypedList with _IntListMixin implements Int32
 
 
 class _ExternalUint32Array extends _TypedList with _IntListMixin implements Uint32List {
-  // Factory constructors.
-
-  factory _ExternalUint32Array(int length) native "ExternalTypedData_Uint32Array_new";
-
   // Method(s) implementing the List interface.
 
   int operator[](int index) {
@@ -2166,10 +2138,6 @@ class _ExternalUint32Array extends _TypedList with _IntListMixin implements Uint
 
 
 class _ExternalInt64Array extends _TypedList with _IntListMixin implements Int64List {
-  // Factory constructors.
-
-  factory _ExternalInt64Array(int length) native "ExternalTypedData_Int64Array_new";
-
   // Method(s) implementing the List interface.
 
   int operator[](int index) {
@@ -2211,10 +2179,6 @@ class _ExternalInt64Array extends _TypedList with _IntListMixin implements Int64
 
 
 class _ExternalUint64Array extends _TypedList with _IntListMixin implements Uint64List {
-  // Factory constructors.
-
-  factory _ExternalUint64Array(int length) native "ExternalTypedData_Uint64Array_new";
-
   // Method(s) implementing the List interface.
 
   int operator[](int index) {
@@ -2256,10 +2220,6 @@ class _ExternalUint64Array extends _TypedList with _IntListMixin implements Uint
 
 
 class _ExternalFloat32Array extends _TypedList with _DoubleListMixin implements Float32List {
-  // Factory constructors.
-
-  factory _ExternalFloat32Array(int length) native "ExternalTypedData_Float32Array_new";
-
   // Method(s) implementing the List interface.
 
   double operator[](int index) {
@@ -2301,10 +2261,6 @@ class _ExternalFloat32Array extends _TypedList with _DoubleListMixin implements 
 
 
 class _ExternalFloat64Array extends _TypedList with _DoubleListMixin implements Float64List {
-  // Factory constructors.
-
-  factory _ExternalFloat64Array(int length) native "ExternalTypedData_Float64Array_new";
-
   // Method(s) implementing the List interface.
 
   double operator[](int index) {
@@ -2346,10 +2302,6 @@ class _ExternalFloat64Array extends _TypedList with _DoubleListMixin implements 
 
 
 class _ExternalFloat32x4Array extends _TypedList with _Float32x4ListMixin implements Float32x4List {
-  // Factory constructors.
-
-  factory _ExternalFloat32x4Array(int length) native "ExternalTypedData_Float32x4Array_new";
-
   // Method(s) implementing the List interface.
 
   Float32x4 operator[](int index) {
@@ -2391,10 +2343,6 @@ class _ExternalFloat32x4Array extends _TypedList with _Float32x4ListMixin implem
 
 
 class _ExternalInt32x4Array extends _TypedList with _Int32x4ListMixin implements Int32x4List {
-  // Factory constructors.
-
-  factory _ExternalInt32x4Array(int length) native "ExternalTypedData_Int32x4Array_new";
-
   // Method(s) implementing the List interface.
 
   Int32x4 operator[](int index) {
@@ -2436,10 +2384,6 @@ class _ExternalInt32x4Array extends _TypedList with _Int32x4ListMixin implements
 
 
 class _ExternalFloat64x2Array extends _TypedList with _Float64x2ListMixin implements Float64x2List {
-  // Factory constructors.
-
-  factory _ExternalFloat64x2Array(int length) native "ExternalTypedData_Float64x2Array_new";
-
   // Method(s) implementing the List interface.
 
   Float64x2 operator[](int index) {
@@ -3443,7 +3387,7 @@ class _Int16ArrayView extends _TypedListView with _IntListMixin implements Int16
   }
 
   void setRange(int start, int end, Iterable iterable, [int skipCount = 0]) {
-    if (ClassID.getID(iterable) == CodeUnits.cid) {
+    if (iterable is CodeUnits) {
       end = RangeError.checkValidRange(start, end, this.length);
       int length = end - start;
       int byteStart = this.offsetInBytes + start * Int16List.BYTES_PER_ELEMENT;
@@ -3501,7 +3445,7 @@ class _Uint16ArrayView extends _TypedListView with _IntListMixin implements Uint
   }
 
   void setRange(int start, int end, Iterable iterable, [int skipCount = 0]) {
-    if (ClassID.getID(iterable) == CodeUnits.cid) {
+    if (iterable is CodeUnits) {
       end = RangeError.checkValidRange(start, end, this.length);
       int length = end - start;
       int byteStart = this.offsetInBytes + start * Uint16List.BYTES_PER_ELEMENT;

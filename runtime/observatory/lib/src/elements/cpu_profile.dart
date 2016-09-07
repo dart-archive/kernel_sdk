@@ -29,7 +29,6 @@ class CpuProfileElement  extends HtmlElement implements Renderable {
                                               NavVMMenuElement.tag,
                                               NavIsolateMenuElement.tag,
                                               NavMenuElement.tag,
-                                              NavMenuElement.tag,
                                               NavRefreshElement.tag,
                                               NavNotifyElement.tag,
                                               SampleBufferControlElement.tag,
@@ -90,7 +89,8 @@ class CpuProfileElement  extends HtmlElement implements Renderable {
 
   @override
   detached() {
-    super.detached(); _r.disable(notify: true);
+    super.detached();
+    _r.disable(notify: true);
     children = [];
   }
 
@@ -101,7 +101,7 @@ class CpuProfileElement  extends HtmlElement implements Renderable {
           new NavTopMenuElement(queue: _r.queue),
           new NavVMMenuElement(_vm, _events, queue: _r.queue),
           new NavIsolateMenuElement(_isolate, _events, queue: _r.queue),
-          new NavMenuElement('cpu profile', link: Uris.profiler(_isolate),
+          new NavMenuElement('cpu profile', link: Uris.cpuProfiler(_isolate),
               last: true, queue: _r.queue),
           new NavRefreshElement(queue: _r.queue)
               ..onRefresh.listen(_refresh),
@@ -131,9 +131,9 @@ class CpuProfileElement  extends HtmlElement implements Renderable {
             })
             ..onFilterChange.listen((e) {
               _filter = e.element.filter.trim();
-              tree.filter = _filter.isNotEmpty
-                ? (node) { return node.name.contains(_filter); }
-                : null;
+              tree.filters = _filter.isNotEmpty
+                ? [(node) { return node.name.contains(_filter); }]
+                : const [];
             })
             ..onDirectionChange.listen((e) {
               _direction = tree.direction = e.element.direction;

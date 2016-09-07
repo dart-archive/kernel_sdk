@@ -5,10 +5,12 @@
 library analyzer.src.generated.sdk2;
 
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/file_system/file_system.dart';
+import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/src/context/context.dart';
 import 'package:analyzer/src/dart/scanner/reader.dart';
 import 'package:analyzer/src/dart/scanner/scanner.dart';
@@ -62,6 +64,8 @@ abstract class AbstractDartSdk implements DartSdk {
    */
   Map<String, Source> _uriToSourceMap = new HashMap<String, Source>();
 
+  PackageBundle _sdkBundle;
+
   /**
    * Set the [options] for this SDK analysis context.  Throw [StateError] if the
    * context has been already created.
@@ -82,7 +86,7 @@ abstract class AbstractDartSdk implements DartSdk {
       _analysisContext.sourceFactory = factory;
       if (_useSummary) {
         bool strongMode = _analysisOptions?.strongMode ?? false;
-        PackageBundle sdkBundle = getSummarySdkBundle(strongMode);
+        PackageBundle sdkBundle = getLinkedBundle();
         if (sdkBundle != null) {
           _analysisContext.resultProvider = new SdkSummaryResultProvider(
               _analysisContext, sdkBundle, strongMode);
@@ -126,8 +130,7 @@ abstract class AbstractDartSdk implements DartSdk {
    */
   void addExtensions(Map<String, String> extensions) {
     extensions.forEach((String uri, String path) {
-      String shortName = uri.substring(uri.indexOf(':') + 1);
-      SdkLibraryImpl library = new SdkLibraryImpl(shortName);
+      SdkLibraryImpl library = new SdkLibraryImpl(uri);
       library.path = path;
       libraryMap.setLibrary(uri, library);
     });
@@ -149,6 +152,13 @@ abstract class AbstractDartSdk implements DartSdk {
           new CaughtException(exception, stackTrace));
     }
     return null;
+  }
+
+  @override
+  PackageBundle getLinkedBundle() {
+    bool strongMode = _analysisOptions?.strongMode ?? false;
+    _sdkBundle ??= getSummarySdkBundle(strongMode);
+    return _sdkBundle;
   }
 
   String getRelativePathFromFile(File file);
@@ -256,10 +266,16 @@ class EmbedderSdk extends AbstractDartSdk {
   static const String _EMBEDDED_LIB_MAP_KEY = 'embedded_libs';
   final Map<String, String> _urlMappings = new HashMap<String, String>();
 
+  PackageBundle _embedderBundle;
+
   EmbedderSdk(
       ResourceProvider resourceProvider, Map<Folder, YamlMap> embedderYamls) {
     this.resourceProvider = resourceProvider;
     embedderYamls?.forEach(_processEmbedderYaml);
+    if (embedderYamls?.length == 1) {
+      Folder libFolder = embedderYamls.keys.first;
+      _loadEmbedderBundle(libFolder);
+    }
   }
 
   @override
@@ -275,7 +291,12 @@ class EmbedderSdk extends AbstractDartSdk {
   String getRelativePathFromFile(File file) => file.path;
 
   @override
-  PackageBundle getSummarySdkBundle(bool strongMode) => null;
+  PackageBundle getSummarySdkBundle(bool strongMode) {
+    if (strongMode) {
+      return _embedderBundle;
+    }
+    return null;
+  }
 
   @override
   Source internalMapDartUri(String dartUri) {
@@ -314,6 +335,16 @@ class EmbedderSdk extends AbstractDartSdk {
       return file.createSource(parseUriWithException(dartUri));
     } on URISyntaxException {
       return null;
+    }
+  }
+
+  void _loadEmbedderBundle(Folder libFolder) {
+    File bundleFile = libFolder.parent.getChildAssumingFile('sdk.ds');
+    if (bundleFile.exists) {
+      try {
+        List<int> bytes = bundleFile.readAsBytesSync();
+        _embedderBundle = new PackageBundle.fromBuffer(bytes);
+      } on FileSystemException {}
     }
   }
 
@@ -584,9 +615,13 @@ class FolderBasedDartSdk extends AbstractDartSdk {
         lastStackTrace = stackTrace;
       }
     }
+    StringBuffer buffer = new StringBuffer();
+    buffer.writeln('Could not initialize the library map from $searchedPaths');
+    if (resourceProvider is MemoryResourceProvider) {
+      (resourceProvider as MemoryResourceProvider).writeOn(buffer);
+    }
     AnalysisEngine.instance.logger.logError(
-        "Could not initialize the library map from $searchedPaths",
-        new CaughtException(lastException, lastStackTrace));
+        buffer.toString(), new CaughtException(lastException, lastStackTrace));
     return new LibraryMap();
   }
 
@@ -638,7 +673,7 @@ class FolderBasedDartSdk extends AbstractDartSdk {
   }
 
   static String getSdkProperty(ResourceProvider resourceProvider) {
-    String exec = io.Platform.executable;
+    String exec = io.Platform.resolvedExecutable;
     if (exec.length == 0) {
       return null;
     }
@@ -651,6 +686,128 @@ class FolderBasedDartSdk extends AbstractDartSdk {
     }
     // probably be "dart-sdk/bin/dart"
     return pathContext.dirname(pathContext.dirname(exec));
+  }
+}
+
+/**
+ * An object used to locate SDK extensions.
+ *
+ * Given a package map, it will check in each package's `lib` directory for the
+ * existence of a `_sdkext` file. This file must contain a JSON encoded map.
+ * Each key in the map is a `dart:` library name. Each value is a path (relative
+ * to the directory containing `_sdkext`) to a dart script for the given
+ * library. For example:
+ * ```
+ * {
+ *   "dart:sky": "../sdk_ext/dart_sky.dart"
+ * }
+ * ```
+ * If a key doesn't begin with `dart:` it is ignored.
+ */
+class SdkExtensionFinder {
+  /**
+   * The name of the extension file.
+   */
+  static const String SDK_EXT_NAME = '_sdkext';
+
+  /**
+   * The prefix required for all keys in an extension file that will not be
+   * ignored.
+   */
+  static const String DART_COLON_PREFIX = 'dart:';
+
+  /**
+   * A table mapping the names of extensions to the paths where those extensions
+   * can be found.
+   */
+  final Map<String, String> _urlMappings = <String, String>{};
+
+  /**
+   * The absolute paths of the extension files that contributed to the
+   * [_urlMappings].
+   */
+  final List<String> extensionFilePaths = <String>[];
+
+  /**
+   * Initialize a newly created finder to look in the packages in the given
+   * [packageMap] for SDK extension files.
+   */
+  SdkExtensionFinder(Map<String, List<Folder>> packageMap) {
+    if (packageMap == null) {
+      return;
+    }
+    packageMap.forEach(_processPackage);
+  }
+
+  /**
+   * Return a table mapping the names of extensions to the paths where those
+   * extensions can be found.
+   */
+  Map<String, String> get urlMappings =>
+      new Map<String, String>.from(_urlMappings);
+
+  /**
+   * Given a package [name] and a list of folders ([libDirs]), add any found sdk
+   * extensions.
+   */
+  void _processPackage(String name, List<Folder> libDirs) {
+    for (var libDir in libDirs) {
+      var sdkExt = _readDotSdkExt(libDir);
+      if (sdkExt != null) {
+        _processSdkExt(sdkExt, libDir);
+      }
+    }
+  }
+
+  /**
+   * Given the JSON for an SDK extension ([sdkExtJSON]) and a folder ([libDir]),
+   * setup the uri mapping.
+   */
+  void _processSdkExt(String sdkExtJSON, Folder libDir) {
+    var sdkExt;
+    try {
+      sdkExt = JSON.decode(sdkExtJSON);
+    } catch (e) {
+      return;
+    }
+    if ((sdkExt == null) || (sdkExt is! Map)) {
+      return;
+    }
+    bool contributed = false;
+    sdkExt.forEach((k, v) {
+      if (k is String && v is String && _processSdkExtension(libDir, k, v)) {
+        contributed = true;
+      }
+    });
+    if (contributed) {
+      extensionFilePaths.add(libDir.getChild(SDK_EXT_NAME).path);
+    }
+  }
+
+  /**
+   * Install the mapping from [name] to [libDir]/[file].
+   */
+  bool _processSdkExtension(Folder libDir, String name, String file) {
+    if (!name.startsWith(DART_COLON_PREFIX)) {
+      // SDK extensions must begin with 'dart:'.
+      return false;
+    }
+    _urlMappings[name] = libDir.canonicalizePath(file);
+    return true;
+  }
+
+  /**
+   * Read the contents of [libDir]/[SDK_EXT_NAME] as a string, or `null` if the
+   * file doesn't exist.
+   */
+  String _readDotSdkExt(Folder libDir) {
+    File file = libDir.getChild(SDK_EXT_NAME);
+    try {
+      return file.readAsStringSync();
+    } on FileSystemException {
+      // File can't be read.
+      return null;
+    }
   }
 }
 

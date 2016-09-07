@@ -453,11 +453,8 @@ bool FlowGraphCompiler::GenerateInstantiatedTypeNoArgumentsTest(
   } else {
     __ b(is_not_instance_lbl, EQ);
   }
-  // Compare if the classes are equal.
   const Register kClassIdReg = R2;
   __ LoadClassId(kClassIdReg, kInstanceReg);
-  __ CompareImmediate(kClassIdReg, type_class.id());
-  __ b(is_instance_lbl, EQ);
   // See ClassFinalizer::ResolveSuperTypeAndInterfaces for list of restricted
   // interfaces.
   // Bool interface can be implemented only by core class Bool.
@@ -467,15 +464,9 @@ bool FlowGraphCompiler::GenerateInstantiatedTypeNoArgumentsTest(
     __ b(is_not_instance_lbl);
     return false;
   }
-  if (type.IsDartFunctionType()) {
-    // Check if instance is a closure.
-    __ CompareImmediate(kClassIdReg, kClosureCid);
-    __ b(is_instance_lbl, EQ);
-  }
   // Custom checking for numbers (Smi, Mint, Bigint and Double).
   // Note that instance is not Smi (checked above).
-  if (type.IsSubtypeOf(
-          Type::Handle(zone(), Type::Number()), NULL, NULL, Heap::kOld)) {
+  if (type.IsNumberType() || type.IsIntType() || type.IsDoubleType()) {
     GenerateNumberTypeCheck(
         kClassIdReg, type, is_instance_lbl, is_not_instance_lbl);
     return false;
@@ -483,6 +474,17 @@ bool FlowGraphCompiler::GenerateInstantiatedTypeNoArgumentsTest(
   if (type.IsStringType()) {
     GenerateStringTypeCheck(kClassIdReg, is_instance_lbl, is_not_instance_lbl);
     return false;
+  }
+  if (type.IsDartFunctionType()) {
+    // Check if instance is a closure.
+    __ CompareImmediate(kClassIdReg, kClosureCid);
+    __ b(is_instance_lbl, EQ);
+    return true;  // Fall through
+  }
+  // Compare if the classes are equal.
+  if (!type_class.is_abstract()) {
+    __ CompareImmediate(kClassIdReg, type_class.id());
+    __ b(is_instance_lbl, EQ);
   }
   // Otherwise fallthrough.
   return true;
@@ -1385,9 +1387,8 @@ void FlowGraphCompiler::EmitMegamorphicInstanceCall(
   }
 
   __ LoadObject(R5, cache);
-  __ ldr(LR, Address(THR, Thread::megamorphic_lookup_entry_point_offset()));
+  __ ldr(LR, Address(THR, Thread::megamorphic_call_checked_entry_offset()));
   __ blr(LR);
-  __ blr(R1);
 
   __ Bind(&done);
   RecordSafepoint(locs, slow_path_argument_count);
@@ -1424,12 +1425,16 @@ void FlowGraphCompiler::EmitSwitchableInstanceCall(
     intptr_t deopt_id,
     TokenPosition token_pos,
     LocationSummary* locs) {
-  __ Comment("SwitchableCall");
-  __ LoadFromOffset(R0, SP, (argument_count - 1) * kWordSize);
   ASSERT(ic_data.NumArgsTested() == 1);
+  const Code& initial_stub = Code::ZoneHandle(
+      StubCode::ICCallThroughFunction_entry()->code());
+  __ Comment("SwitchableCall");
+
+  __ LoadFromOffset(R0, SP, (argument_count - 1) * kWordSize);
   __ LoadUniqueObject(R5, ic_data);
-  __ BranchLinkPatchable(*StubCode::ICLookupThroughFunction_entry());
-  __ blr(R1);
+  __ LoadUniqueObject(CODE_REG, initial_stub);
+  __ ldr(TMP, FieldAddress(CODE_REG, Code::checked_entry_point_offset()));
+  __ blr(TMP);
 
   AddCurrentDescriptor(RawPcDescriptors::kOther,
       Thread::kNoDeoptId, token_pos);

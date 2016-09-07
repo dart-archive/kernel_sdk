@@ -586,13 +586,6 @@ DART_EXPORT Dart_Handle Dart_SetGcCallbacks(
     Dart_GcPrologueCallback prologue_callback,
     Dart_GcEpilogueCallback epilogue_callback);
 
-typedef void (*Dart_GcPrologueWeakHandleCallback)(void* isolate_callback_data,
-                                                  Dart_WeakPersistentHandle obj,
-                                                  intptr_t num_native_fields,
-                                                  intptr_t* native_fields);
-
-DART_EXPORT Dart_Handle Dart_VisitPrologueWeakHandles(
-    Dart_GcPrologueWeakHandleCallback callback);
 
 /*
  * ==========================
@@ -690,13 +683,6 @@ typedef Dart_Isolate (*Dart_IsolateCreateCallback)(const char* script_uri,
                                                    Dart_IsolateFlags* flags,
                                                    void* callback_data,
                                                    char** error);
-
-/**
- * An isolate interrupt callback function.
- *
- * This callback has been DEPRECATED.
- */
-typedef bool (*Dart_IsolateInterruptCallback)();
 
 /**
  * An isolate unhandled exception callback function.
@@ -1042,7 +1028,7 @@ DART_EXPORT Dart_Handle Dart_CreateLibrarySnapshot(Dart_Handle library,
  *
  * When the isolate is interrupted, the isolate interrupt callback
  * will be invoked with 'isolate' as the current isolate (see
- * Dart_IsolateInterruptCallback).
+ * Dart_SetIsolateEventHandler).
  *
  * \param isolate The isolate to be interrupted.
  */
@@ -1823,7 +1809,8 @@ DART_EXPORT Dart_Handle Dart_StringStorageSize(Dart_Handle str, intptr_t* size);
  *
  * \param array External space into which the string data will be
  *   copied into. This must not move.
- * \param length The size in bytes of the provided external space (array).
+ * \param external_allocation_size The size in bytes of the provided external
+ *   space (array). Used to inform the garbage collector.
  * \param peer An external pointer to associate with this string.
  * \param cback A callback to be called when this string is finalized.
  *
@@ -1842,11 +1829,12 @@ DART_EXPORT Dart_Handle Dart_StringStorageSize(Dart_Handle str, intptr_t* size);
  *  result = Dart_MakeExternalString(str, data, size, NULL, NULL);
  *
  */
-DART_EXPORT Dart_Handle Dart_MakeExternalString(Dart_Handle str,
-                                                void* array,
-                                                intptr_t length,
-                                                void* peer,
-                                                Dart_PeerFinalizer cback);
+DART_EXPORT Dart_Handle Dart_MakeExternalString(
+    Dart_Handle str,
+    void* array,
+    intptr_t external_allocation_size,
+    void* peer,
+    Dart_PeerFinalizer cback);
 
 /**
  * Retrieves some properties associated with a String.

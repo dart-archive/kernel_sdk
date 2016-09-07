@@ -51,8 +51,6 @@ namespace dart {
 
 DEFINE_FLAG(int, huge_method_cutoff_in_code_size, 200000,
     "Huge method cutoff in unoptimized code size (in bytes).");
-DEFINE_FLAG(int, huge_method_cutoff_in_tokens, 20000,
-    "Huge method cutoff in tokens: Disables optimizations for huge methods.");
 DEFINE_FLAG(bool, overlap_type_arguments, true,
     "When possible, partially or fully overlap the type arguments of a type "
     "with the type arguments of its super type.");
@@ -153,6 +151,8 @@ RawClass* Object::exception_handlers_class_ =
     reinterpret_cast<RawClass*>(RAW_NULL);
 RawClass* Object::context_class_ = reinterpret_cast<RawClass*>(RAW_NULL);
 RawClass* Object::context_scope_class_ = reinterpret_cast<RawClass*>(RAW_NULL);
+RawClass* Object::singletargetcache_class_ =
+    reinterpret_cast<RawClass*>(RAW_NULL);
 RawClass* Object::icdata_class_ = reinterpret_cast<RawClass*>(RAW_NULL);
 RawClass* Object::megamorphic_cache_class_ =
     reinterpret_cast<RawClass*>(RAW_NULL);
@@ -653,6 +653,9 @@ void Object::InitOnce(Isolate* isolate) {
   cls = Class::New<ContextScope>();
   context_scope_class_ = cls.raw();
 
+  cls = Class::New<SingleTargetCache>();
+  singletargetcache_class_ = cls.raw();
+
   cls = Class::New<ICData>();
   icdata_class_ = cls.raw();
 
@@ -994,6 +997,7 @@ void Object::FinalizeVMIsolate(Isolate* isolate) {
   SET_CLASS_NAME(exception_handlers, ExceptionHandlers);
   SET_CLASS_NAME(context, Context);
   SET_CLASS_NAME(context_scope, ContextScope);
+  SET_CLASS_NAME(singletargetcache, SingleTargetCache);
   SET_CLASS_NAME(icdata, ICData);
   SET_CLASS_NAME(megamorphic_cache, MegamorphicCache);
   SET_CLASS_NAME(subtypetestcache, SubtypeTestCache);
@@ -3089,6 +3093,13 @@ RawObject* Class::Evaluate(const String& expr,
                            const Array& param_names,
                            const Array& param_values) const {
   ASSERT(Thread::Current()->IsMutatorThread());
+  if (id() < kInstanceCid) {
+    const Instance& exception = Instance::Handle(String::New(
+        "Cannot evaluate against a VM internal class"));
+    const Instance& stacktrace = Instance::Handle();
+    return UnhandledException::New(exception, stacktrace);
+  }
+
   const Function& eval_func =
       Function::Handle(EvaluateHelper(*this, expr, param_names, true));
   const Object& result =
@@ -3423,6 +3434,8 @@ NOT_IN_PRODUCT(
       return Symbols::Context().raw();
     case kContextScopeCid:
       return Symbols::ContextScope().raw();
+    case kSingleTargetCacheCid:
+      return Symbols::SingleTargetCache().raw();
     case kICDataCid:
       return Symbols::ICData().raw();
     case kMegamorphicCacheCid:
@@ -5266,7 +5279,7 @@ void Function::SetInstructions(const Code& value) const {
 
 void Function::SetInstructionsSafe(const Code& value) const {
   StorePointer(&raw_ptr()->code_, value.raw());
-  StoreNonPointer(&raw_ptr()->entry_point_, value.EntryPoint());
+  StoreNonPointer(&raw_ptr()->entry_point_, value.UncheckedEntryPoint());
 }
 
 
@@ -5317,7 +5330,7 @@ void Function::SwitchToUnoptimizedCode() const {
   if (FLAG_trace_deoptimization_verbose) {
     THR_Print("Disabling optimized code: '%s' entry: %#" Px "\n",
       ToFullyQualifiedCString(),
-      current_code.EntryPoint());
+      current_code.UncheckedEntryPoint());
   }
   current_code.DisableDartCode();
   const Error& error = Error::Handle(zone,
@@ -5898,6 +5911,9 @@ bool Function::IsOptimizable() const {
   if (is_native()) {
     // Native methods don't need to be optimized.
     return false;
+  }
+  if (FLAG_precompiled_mode) {
+    return true;
   }
   const intptr_t function_length = end_token_pos().Pos() - token_pos().Pos();
   if (is_optimizable() && (script() != Script::null()) &&
@@ -6585,7 +6601,7 @@ RawFunction* Function::NewClosureFunction(const String& name,
                     /* is_const = */ false,
                     /* is_abstract = */ false,
                     /* is_external = */ false,
-                    parent.is_native(),
+                    /* is_native = */ false,
                     parent_owner,
                     token_pos));
   result.set_parent_function(parent);
@@ -7466,13 +7482,14 @@ void Field::InitializeNew(const Field& result,
   // Use field guards if they are enabled and the isolate has never reloaded.
   // TODO(johnmccutchan): The reload case assumes the worst case (everything is
   // dynamic and possibly null). Attempt to relax this later.
-  const bool use_field_guards =
-      FLAG_use_field_guards && !isolate->HasAttemptedReload();
-  result.set_guarded_cid(use_field_guards ? kIllegalCid : kDynamicCid);
-  result.set_is_nullable(use_field_guards ? false : true);
+  const bool use_guarded_cid =
+      FLAG_precompiled_mode ||
+      (FLAG_use_field_guards && !isolate->HasAttemptedReload());
+  result.set_guarded_cid(use_guarded_cid ? kIllegalCid : kDynamicCid);
+  result.set_is_nullable(use_guarded_cid ? false : true);
   result.set_guarded_list_length_in_object_offset(Field::kUnknownLengthOffset);
   // Presently, we only attempt to remember the list length for final fields.
-  if (is_final && use_field_guards) {
+  if (is_final && use_guarded_cid) {
     result.set_guarded_list_length(Field::kUnknownFixedLength);
   } else {
     result.set_guarded_list_length(Field::kNoFixedLength);
@@ -8312,7 +8329,7 @@ RawTokenStream* TokenStream::New(intptr_t len) {
       zone,
       ExternalTypedData::New(kExternalTypedDataUint8ArrayCid,
                              data, len, Heap::kOld));
-  stream.AddFinalizer(data, DataFinalizer);
+  stream.AddFinalizer(data, DataFinalizer, len);
   const TokenStream& result = TokenStream::Handle(zone, TokenStream::New());
   result.SetStream(stream);
   return result.raw();
@@ -8505,7 +8522,8 @@ RawTokenStream* TokenStream::New(const String& source,
       zone,
       ExternalTypedData::New(kExternalTypedDataUint8ArrayCid,
                              data.GetStream(), data.Length(), Heap::kOld));
-  stream.AddFinalizer(data.GetStream(), DataFinalizer);
+  intptr_t external_size = data.Length();
+  stream.AddFinalizer(data.GetStream(), DataFinalizer, external_size);
   const TokenStream& result = TokenStream::Handle(zone, New());
   result.SetPrivateKey(private_key);
   {
@@ -11496,7 +11514,7 @@ static intptr_t DecodeSLEB128(const uint8_t* data,
   } while ((part & 0x80) != 0);
 
   if ((shift < (sizeof(value) * 8)) && ((part & 0x40) != 0)) {
-    value |= static_cast<intptr_t>(-1) << shift;
+    value |= static_cast<intptr_t>(kUwordMax << shift);
   }
   return value;
 }
@@ -12490,6 +12508,40 @@ bool DeoptInfo::VerifyDecompression(const GrowableArray<DeoptInstr*>& original,
 }
 
 
+void SingleTargetCache::set_target(const Code& value) const {
+  StorePointer(&raw_ptr()->target_, value.raw());
+}
+
+
+const char* SingleTargetCache::ToCString() const {
+  return "SingleTargetCache";
+}
+
+
+RawSingleTargetCache* SingleTargetCache::New() {
+  SingleTargetCache& result = SingleTargetCache::Handle();
+  {
+    // IC data objects are long living objects, allocate them in old generation.
+    RawObject* raw = Object::Allocate(SingleTargetCache::kClassId,
+                                      SingleTargetCache::InstanceSize(),
+                                      Heap::kOld);
+    NoSafepointScope no_safepoint;
+    result ^= raw;
+  }
+  result.set_target(Code::Handle());
+  result.set_entry_point(0);
+  result.set_lower_limit(kIllegalCid);
+  result.set_upper_limit(kIllegalCid);
+  return result.raw();
+}
+
+
+void ICData::ResetSwitchable(Zone* zone) const {
+  ASSERT(NumArgsTested() == 1);
+  set_ic_data_array(Array::Handle(zone, CachedEmptyICDataArray(1)));
+}
+
+
 const char* ICData::ToCString() const {
   const String& name = String::Handle(target_name());
   const intptr_t num_args = NumArgsTested();
@@ -13013,7 +13065,7 @@ void ICData::AddReceiverCheck(intptr_t receiver_class_id,
     ASSERT(target.HasCode());
     const Code& code = Code::Handle(target.CurrentCode());
     const Smi& entry_point =
-        Smi::Handle(Smi::FromAlignedAddress(code.EntryPoint()));
+        Smi::Handle(Smi::FromAlignedAddress(code.UncheckedEntryPoint()));
     data.SetAt(data_pos + 1, code);
     data.SetAt(data_pos + 2, entry_point);
   }
@@ -13686,7 +13738,7 @@ RawTypedData* Code::GetDeoptInfoAtPc(uword pc,
                                      uint32_t* deopt_flags) const {
   ASSERT(is_optimized());
   const Instructions& instrs = Instructions::Handle(instructions());
-  uword code_entry = instrs.EntryPoint();
+  uword code_entry = instrs.PayloadStart();
   const Array& table = Array::Handle(deopt_info_array());
   if (table.IsNull()) {
     ASSERT(Dart::snapshot_kind() == Snapshot::kAppNoJIT);
@@ -13714,7 +13766,7 @@ RawTypedData* Code::GetDeoptInfoAtPc(uword pc,
 intptr_t Code::BinarySearchInSCallTable(uword pc) const {
   NoSafepointScope no_safepoint;
   const Array& table = Array::Handle(raw_ptr()->static_calls_target_table_);
-  RawObject* key = reinterpret_cast<RawObject*>(Smi::New(pc - EntryPoint()));
+  RawObject* key = reinterpret_cast<RawObject*>(Smi::New(pc - PayloadStart()));
   intptr_t imin = 0;
   intptr_t imax = table.Length() / kSCallTableEntryLength;
   while (imax >= imin) {
@@ -13793,7 +13845,7 @@ void Code::Disassemble(DisassemblyFormatter* formatter) const {
     return;
   }
   const Instructions& instr = Instructions::Handle(instructions());
-  uword start = instr.EntryPoint();
+  uword start = instr.PayloadStart();
   if (formatter == NULL) {
     Disassembler::Disassemble(start, start + instr.size(), *this);
   } else {
@@ -13979,15 +14031,15 @@ RawCode* Code::FinalizeCode(const char* name,
 
   // Copy the instructions into the instruction area and apply all fixups.
   // Embedded pointers are still in handles at this point.
-  MemoryRegion region(reinterpret_cast<void*>(instrs.EntryPoint()),
+  MemoryRegion region(reinterpret_cast<void*>(instrs.PayloadStart()),
                       instrs.size());
   assembler->FinalizeInstructions(region);
-  CPU::FlushICache(instrs.EntryPoint(), instrs.size());
+  CPU::FlushICache(instrs.PayloadStart(), instrs.size());
 
   code.set_compile_timestamp(OS::GetCurrentMonotonicMicros());
 #ifndef PRODUCT
   CodeObservers::NotifyAll(name,
-                           instrs.EntryPoint(),
+                           instrs.PayloadStart(),
                            assembler->prologue_offset(),
                            instrs.size(),
                            optimized);
@@ -14093,13 +14145,13 @@ RawCode* Code::LookupCodeInVmIsolate(uword pc) {
 RawCode* Code::FindCode(uword pc, int64_t timestamp) {
   Code& code = Code::Handle(Code::LookupCode(pc));
   if (!code.IsNull() && (code.compile_timestamp() == timestamp) &&
-      (code.EntryPoint() == pc)) {
+      (code.PayloadStart() == pc)) {
     // Found code in isolate.
     return code.raw();
   }
   code ^= Code::LookupCodeInVmIsolate(pc);
   if (!code.IsNull() && (code.compile_timestamp() == timestamp) &&
-      (code.EntryPoint() == pc)) {
+      (code.PayloadStart() == pc)) {
     // Found code in VM isolate.
     return code.raw();
   }
@@ -14108,7 +14160,7 @@ RawCode* Code::FindCode(uword pc, int64_t timestamp) {
 
 
 TokenPosition Code::GetTokenIndexOfPC(uword pc) const {
-  uword pc_offset = pc - EntryPoint();
+  uword pc_offset = pc - PayloadStart();
   const PcDescriptors& descriptors = PcDescriptors::Handle(pc_descriptors());
   PcDescriptors::Iterator iter(descriptors, RawPcDescriptors::kAnyKind);
   while (iter.MoveNext()) {
@@ -14127,7 +14179,7 @@ uword Code::GetPcForDeoptId(intptr_t deopt_id,
   while (iter.MoveNext()) {
     if (iter.DeoptId() == deopt_id) {
       uword pc_offset = iter.PcOffset();
-      uword pc = EntryPoint() + pc_offset;
+      uword pc = PayloadStart() + pc_offset;
       ASSERT(ContainsInstructionAt(pc));
       return pc;
     }
@@ -14137,7 +14189,7 @@ uword Code::GetPcForDeoptId(intptr_t deopt_id,
 
 
 intptr_t Code::GetDeoptIdForOsr(uword pc) const {
-  uword pc_offset = pc - EntryPoint();
+  uword pc_offset = pc - PayloadStart();
   const PcDescriptors& descriptors = PcDescriptors::Handle(pc_descriptors());
   PcDescriptors::Iterator iter(descriptors, RawPcDescriptors::kOsrEntry);
   while (iter.MoveNext()) {
@@ -14152,10 +14204,10 @@ intptr_t Code::GetDeoptIdForOsr(uword pc) const {
 const char* Code::ToCString() const {
   Zone* zone = Thread::Current()->zone();
   if (IsStubCode()) {
-    const char* name = StubCode::NameOfStub(EntryPoint());
+    const char* name = StubCode::NameOfStub(UncheckedEntryPoint());
     return zone->PrintToString("[stub: %s]", name);
   } else {
-    return zone->PrintToString("Code entry:%" Px, EntryPoint());
+    return zone->PrintToString("Code entry: 0x%" Px, UncheckedEntryPoint());
   }
 }
 
@@ -14166,7 +14218,7 @@ RawString* Code::Name() const {
     // Regular stub.
     Thread* thread = Thread::Current();
     Zone* zone = thread->zone();
-    const char* name = StubCode::NameOfStub(EntryPoint());
+    const char* name = StubCode::NameOfStub(UncheckedEntryPoint());
     ASSERT(name != NULL);
     char* stub_name = OS::SCreate(zone,
         "%s%s", Symbols::StubPrefix().ToCString(), name);
@@ -14245,14 +14297,15 @@ void Code::SetActiveInstructions(RawInstructions* instructions) const {
   // store buffer update is not needed here.
   StorePointer(&raw_ptr()->active_instructions_, instructions);
   StoreNonPointer(&raw_ptr()->entry_point_,
-                  reinterpret_cast<uword>(instructions->ptr()) +
-                  Instructions::HeaderSize());
+                  Instructions::UncheckedEntryPoint(instructions));
+  StoreNonPointer(&raw_ptr()->checked_entry_point_,
+                  Instructions::CheckedEntryPoint(instructions));
 }
 
 
 uword Code::GetLazyDeoptPc() const {
   return (lazy_deopt_pc_offset() != kInvalidPc)
-      ? EntryPoint() + lazy_deopt_pc_offset() : 0;
+      ? PayloadStart() + lazy_deopt_pc_offset() : 0;
 }
 
 
@@ -20433,11 +20486,10 @@ void String::ToUTF8(uint8_t* utf8_array, intptr_t array_len) const {
 static FinalizablePersistentHandle* AddFinalizer(
     const Object& referent,
     void* peer,
-    Dart_WeakPersistentHandleFinalizer callback) {
+    Dart_WeakPersistentHandleFinalizer callback,
+    intptr_t external_size) {
   ASSERT((callback != NULL && peer != NULL) ||
          (callback == NULL && peer == NULL));
-  // TODO(19482): Make API consistent for external size of strings/typed data.
-  const intptr_t external_size = 0;
   return FinalizablePersistentHandle::New(Isolate::Current(),
                                           referent,
                                           peer,
@@ -20447,7 +20499,7 @@ static FinalizablePersistentHandle* AddFinalizer(
 
 
 RawString* String::MakeExternal(void* array,
-                                intptr_t length,
+                                intptr_t external_size,
                                 void* peer,
                                 Dart_PeerFinalizer cback) const {
   ASSERT(FLAG_support_externalizable_strings);
@@ -20458,7 +20510,7 @@ RawString* String::MakeExternal(void* array,
     NoSafepointScope no_safepoint;
     ASSERT(array != NULL);
     intptr_t str_length = this->Length();
-    ASSERT(length >= (str_length * this->CharSize()));
+    ASSERT(external_size >= (str_length * this->CharSize()));
     intptr_t class_id = raw()->GetClassId();
 
     ASSERT(!InVMHeap());
@@ -20537,7 +20589,7 @@ RawString* String::MakeExternal(void* array,
       finalizer = ExternalTwoByteString::Finalize;
     }
   }  // NoSafepointScope
-  AddFinalizer(result, external_data, finalizer);
+  AddFinalizer(result, external_data, finalizer, external_size);
   return this->raw();
 }
 
@@ -20986,13 +21038,14 @@ RawOneByteString* OneByteString::SubStringUnchecked(const String& str,
 
 
 void OneByteString::SetPeer(const String& str,
+                            intptr_t external_size,
                             void* peer,
                             Dart_PeerFinalizer cback) {
   ASSERT(!str.IsNull() && str.IsOneByteString());
   ASSERT(peer != NULL);
   ExternalStringData<uint8_t>* ext_data =
       new ExternalStringData<uint8_t>(NULL, peer, cback);
-  AddFinalizer(str, ext_data, OneByteString::Finalize);
+  AddFinalizer(str, ext_data, OneByteString::Finalize, external_size);
   Isolate::Current()->heap()->SetPeer(str.raw(), peer);
 }
 
@@ -21197,13 +21250,14 @@ RawTwoByteString* TwoByteString::Transform(int32_t (*mapping)(int32_t ch),
 
 
 void TwoByteString::SetPeer(const String& str,
+                            intptr_t external_size,
                             void* peer,
                             Dart_PeerFinalizer cback) {
   ASSERT(!str.IsNull() && str.IsTwoByteString());
   ASSERT(peer != NULL);
   ExternalStringData<uint16_t>* ext_data =
       new ExternalStringData<uint16_t>(NULL, peer, cback);
-  AddFinalizer(str, ext_data, TwoByteString::Finalize);
+  AddFinalizer(str, ext_data, TwoByteString::Finalize, external_size);
   Isolate::Current()->heap()->SetPeer(str.raw(), peer);
 }
 
@@ -21241,7 +21295,9 @@ RawExternalOneByteString* ExternalOneByteString::New(
     result.SetHash(0);
     SetExternalData(result, external_data);
   }
-  AddFinalizer(result, external_data, ExternalOneByteString::Finalize);
+  intptr_t external_size = len;
+  AddFinalizer(result, external_data, ExternalOneByteString::Finalize,
+               external_size);
   return ExternalOneByteString::raw(result);
 }
 
@@ -21279,7 +21335,9 @@ RawExternalTwoByteString* ExternalTwoByteString::New(
     result.SetHash(0);
     SetExternalData(result, external_data);
   }
-  AddFinalizer(result, external_data, ExternalTwoByteString::Finalize);
+  intptr_t external_size = len * 2;
+  AddFinalizer(result, external_data, ExternalTwoByteString::Finalize,
+               external_size);
   return ExternalTwoByteString::raw(result);
 }
 
@@ -22073,8 +22131,10 @@ const char* TypedData::ToCString() const {
 
 
 FinalizablePersistentHandle* ExternalTypedData::AddFinalizer(
-    void* peer, Dart_WeakPersistentHandleFinalizer callback) const {
-  return dart::AddFinalizer(*this, peer, callback);
+    void* peer,
+    Dart_WeakPersistentHandleFinalizer callback,
+    intptr_t external_size) const {
+  return dart::AddFinalizer(*this, peer, callback, external_size);
 }
 
 
@@ -22366,7 +22426,7 @@ const char* Stacktrace::ToCStringInternal(intptr_t* frame_index,
     } else {
       code = CodeAtFrame(i);
       ASSERT(function.raw() == code.function());
-      uword pc = code.EntryPoint() + Smi::Value(PcOffsetAtFrame(i));
+      uword pc = code.PayloadStart() + Smi::Value(PcOffsetAtFrame(i));
       if (code.is_optimized() &&
           expand_inlined() &&
           !FLAG_precompiled_runtime) {
@@ -22379,8 +22439,8 @@ const char* Stacktrace::ToCStringInternal(intptr_t* frame_index,
             ASSERT(function.raw() == code.function());
             uword pc = it.pc();
             ASSERT(pc != 0);
-            ASSERT(code.EntryPoint() <= pc);
-            ASSERT(pc < (code.EntryPoint() + code.Size()));
+            ASSERT(code.PayloadStart() <= pc);
+            ASSERT(pc < (code.PayloadStart() + code.Size()));
             total_len += PrintOneStacktrace(
                 zone, &frame_strings, pc, function, code, *frame_index);
             (*frame_index)++;  // To account for inlined frames.

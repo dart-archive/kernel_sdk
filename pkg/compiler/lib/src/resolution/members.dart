@@ -6,7 +6,7 @@ library dart2js.resolution.members;
 
 import '../common.dart';
 import '../common/names.dart' show Selectors;
-import '../common/resolution.dart' show Feature, Resolution;
+import '../common/resolution.dart' show Resolution;
 import '../compile_time_constants.dart';
 import '../constants/constructors.dart'
     show RedirectingFactoryConstantConstructor;
@@ -30,6 +30,7 @@ import '../options.dart';
 import '../tokens/token.dart' show isUserDefinableOperator;
 import '../tree/tree.dart';
 import '../universe/call_structure.dart' show CallStructure;
+import '../universe/feature.dart' show Feature;
 import '../universe/selector.dart' show Selector;
 import '../universe/use.dart' show DynamicUse, StaticUse, TypeUse;
 import '../util/util.dart' show Link;
@@ -2622,12 +2623,12 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     // of parse errors to make [element] erroneous. Fix this!
     member.computeType(resolution);
 
-    if (member == resolution.mirrorSystemGetNameFunction &&
+    if (resolution.commonElements.isMirrorSystemGetNameFunction(member) &&
         !resolution.mirrorUsageAnalyzerTask.hasMirrorUsage(enclosingElement)) {
-      reporter
-          .reportHintMessage(node.selector, MessageKind.STATIC_FUNCTION_BLOAT, {
-        'class': resolution.mirrorSystemClass.name,
-        'name': resolution.mirrorSystemGetNameFunction.name
+      reporter.reportHintMessage(
+          node.selector, MessageKind.STATIC_FUNCTION_BLOAT, {
+        'class': resolution.commonElements.mirrorSystemClass.name,
+        'name': member.name
       });
     }
 
@@ -2653,7 +2654,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
             registry.registerStaticUse(
                 new StaticUse.staticInvoke(semantics.element, callStructure));
             handleForeignCall(node, semantics.element, callStructure);
-            if (method == resolution.identicalFunction &&
+            if (method == resolution.commonElements.identicalFunction &&
                 argumentsResult.isValidAsConstant) {
               result = new ConstantResult(
                   node,
@@ -3676,7 +3677,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     registry.registerTypeUse(new TypeUse.instantiation(redirectionTarget
         .enclosingClass.thisType
         .subst(type.typeArguments, targetClass.typeVariables)));
-    if (enclosingElement == resolution.symbolConstructor) {
+    if (resolution.commonElements.isSymbolConstructor(enclosingElement)) {
       registry.registerFeature(Feature.SYMBOL_CONSTRUCTOR);
     }
     if (isValidAsConstant) {
@@ -3749,6 +3750,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
       reporter.reportErrorMessage(modifierNode, MessageKind.EXTRANEOUS_MODIFIER,
           {'modifier': modifier});
     }
+
     if (modifiers.isFinal && (modifiers.isConst || modifiers.isVar)) {
       reportExtraModifier('final');
     }
@@ -3885,7 +3887,8 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     if (node.isConst) {
       bool isValidAsConstant = !isInvalid && constructor.isConst;
 
-      if (constructor == resolution.symbolConstructor) {
+      CommonElements commonElements = resolution.commonElements;
+      if (commonElements.isSymbolConstructor(constructor)) {
         Node argumentNode = node.send.arguments.head;
         ConstantExpression constant = resolver.constantCompiler
             .compileNode(argumentNode, registry.mapping);
@@ -3901,7 +3904,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
             registry.registerConstSymbol(nameString);
           }
         }
-      } else if (constructor == resolution.mirrorsUsedConstructor) {
+      } else if (commonElements.isMirrorsUsedConstructor(constructor)) {
         resolution.mirrorUsageAnalyzerTask.validate(node, registry.mapping);
       }
 
@@ -3961,7 +3964,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
       analyzeConstantDeferred(node, onAnalyzed: onAnalyzed);
     } else {
       // Not constant.
-      if (constructor == resolution.symbolConstructor &&
+      if (resolution.commonElements.isSymbolConstructor(constructor) &&
           !resolution.mirrorUsageAnalyzerTask
               .hasMirrorUsage(enclosingElement)) {
         reporter.reportHintMessage(node.newToken, MessageKind.NON_CONST_BLOAT,

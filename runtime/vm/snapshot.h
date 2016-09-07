@@ -752,19 +752,15 @@ class InstructionsWriter : public ZoneAllocated {
 
   virtual void Write() = 0;
 
-  virtual intptr_t read_only_binary_size() const = 0;
-  virtual intptr_t read_execute_binary_size() const = 0;
-
   intptr_t instructions_count() const {
     return instructions_.length();
   }
 
-  intptr_t binary_size() const {
-    return read_only_binary_size() + read_execute_binary_size();
-  }
-
   void DumpInstructionsSizes() const;
   void DumpCombinedCodeStatistics() const;
+
+  virtual intptr_t text_size() = 0;
+  virtual intptr_t data_size() = 0;
 
  protected:
   struct InstructionsData {
@@ -811,61 +807,47 @@ class AssemblyInstructionsWriter : public InstructionsWriter {
                              intptr_t initial_size)
     : InstructionsWriter(),
       assembly_stream_(assembly_buffer, alloc, initial_size),
-      current_section_size_(NULL),
-      read_only_binary_size_(0),
-      read_execute_binary_size_(0) {
+      text_size_(0),
+      data_size_(0) {
   }
 
   virtual void Write();
+  virtual intptr_t text_size() { return text_size_; }
+  virtual intptr_t data_size() { return data_size_; }
 
   intptr_t AssemblySize() const { return assembly_stream_.bytes_written(); }
 
-  virtual intptr_t read_execute_binary_size() const {
-    return read_execute_binary_size_;
-  }
-
-  virtual intptr_t read_only_binary_size() const {
-    return read_only_binary_size_;
-  }
-
  private:
-  enum SectionKind {
-    kROSection, kRXSection
-  };
-
-  void SetSection(SectionKind section) {
-    switch (section) {
-      case kROSection:
-        current_section_size_ = &read_only_binary_size_;
-        break;
-
-      case kRXSection:
-        current_section_size_ = &read_execute_binary_size_;
-        break;
-    }
-  }
-
-  void WriteWordLiteral(uword value) {
+  void WriteWordLiteralText(uword value) {
     // Padding is helpful for comparing the .S with --disassemble.
 #if defined(ARCH_IS_64_BIT)
     assembly_stream_.Print(".quad 0x%0.16" Px "\n", value);
 #else
     assembly_stream_.Print(".long 0x%0.8" Px "\n", value);
 #endif
-    *current_section_size_ += sizeof(value);
+    text_size_ += sizeof(value);
   }
 
-  void WriteByteLiteral(uword value) {
+  void WriteWordLiteralData(uword value) {
+    // Padding is helpful for comparing the .S with --disassemble.
+#if defined(ARCH_IS_64_BIT)
+    assembly_stream_.Print(".quad 0x%0.16" Px "\n", value);
+#else
+    assembly_stream_.Print(".long 0x%0.8" Px "\n", value);
+#endif
+    data_size_ += sizeof(value);
+  }
+
+  void WriteByteLiteralText(uword value) {
     assembly_stream_.Print(".byte 0x%0.8" Px "\n", value);
-    *current_section_size_ += 1;
+		text_size_ += sizeof(value);
   }
 
-  void WriteByteSequence(uword start, uword end);
+  void WriteByteSequenceText(uword start, uword end);
 
   WriteStream assembly_stream_;
-  intptr_t* current_section_size_;
-  intptr_t read_only_binary_size_;
-  intptr_t read_execute_binary_size_;
+  intptr_t text_size_;
+  intptr_t data_size_;
 
   DISALLOW_COPY_AND_ASSIGN(AssemblyInstructionsWriter);
 };
@@ -884,13 +866,16 @@ class BlobInstructionsWriter : public InstructionsWriter {
 
   virtual void Write();
 
-  virtual intptr_t read_execute_binary_size() const {
-    return instructions_blob_stream_.bytes_written();
-  }
+  virtual intptr_t text_size() { return InstructionsBlobSize(); }
+  virtual intptr_t data_size() { return RodataBlobSize(); }
 
-  virtual intptr_t read_only_binary_size() const {
-    return rodata_blob_stream_.bytes_written();
-  }
+	intptr_t InstructionsBlobSize() const {
+		return instructions_blob_stream_.bytes_written();
+	}
+
+	intptr_t RodataBlobSize() const {
+		return rodata_blob_stream_.bytes_written();
+	}
 
  private:
   WriteStream instructions_blob_stream_;

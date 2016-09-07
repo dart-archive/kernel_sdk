@@ -2135,6 +2135,12 @@ class Parser {
   int _errorListenerLock = 0;
 
   /**
+   * A flag indicating whether the parser is to parse asserts in the initializer
+   * list of a constructor.
+   */
+  bool _enableAssertInitializer = false;
+
+  /**
    * A flag indicating whether the parser is to parse the async support.
    */
   bool _parseAsync = true;
@@ -2199,6 +2205,20 @@ class Parser {
    */
   void set currentToken(Token token) {
     this._currentToken = token;
+  }
+
+  /**
+   * Return `true` if the parser is to parse asserts in the initializer list of
+   * a constructor.
+   */
+  bool get enableAssertInitializer => _enableAssertInitializer;
+
+  /**
+   * Set whether the parser is to parse asserts in the initializer list of a
+   * constructor to match the given [enable] flag.
+   */
+  void set enableAssertInitializer(bool enable) {
+    _enableAssertInitializer = enable;
   }
 
   /**
@@ -2862,6 +2882,7 @@ class Parser {
                 "parseDirective invoked in an invalid state (currentToken = $_currentToken)");
           }
         }
+
         Directive directive = parseDirective();
         if (declarations.length > 0 && !directiveFoundAfterDeclaration) {
           _reportErrorForToken(ParserErrorCode.DIRECTIVE_AFTER_DECLARATION,
@@ -4346,6 +4367,31 @@ class Parser {
   }
 
   /**
+   * Parse an assert within a constructor's initializer list. Return the assert.
+   *
+   * This method assumes that the current token matches `Keyword.ASSERT`.
+   *
+   *     assertInitializer ::=
+   *         'assert' '(' expression [',' expression] ')'
+   */
+  void _parseAssertInitializer() {
+    // TODO(brianwilkerson) Capture the syntax in the AST using a new class,
+    // such as AssertInitializer
+    Token keyword = getAndAdvance();
+    Token leftParen = _expect(TokenType.OPEN_PAREN);
+    Expression expression = parseExpression2();
+    Token comma;
+    Expression message;
+    if (_matches(TokenType.COMMA)) {
+      comma = getAndAdvance();
+      message = parseExpression2();
+    }
+    Token rightParen = _expect(TokenType.CLOSE_PAREN);
+//    return new AssertInitializer(
+//        keyword, leftParen, expression, comma, message, rightParen);
+  }
+
+  /**
    * Parse an assert statement. Return the assert statement.
    *
    * This method assumes that the current token matches `Keyword.ASSERT`.
@@ -5132,9 +5178,22 @@ class Parser {
   List<CommentReference> _parseCommentReferences(
       List<DocumentationCommentToken> tokens) {
     List<CommentReference> references = <CommentReference>[];
+    bool isInGitHubCodeBlock = false;
     for (DocumentationCommentToken token in tokens) {
       String comment = token.lexeme;
-      comment = _removeCodeBlocksGitHub(comment);
+      // Skip GitHub code blocks.
+      // https://help.github.com/articles/creating-and-highlighting-code-blocks/
+      if (tokens.length != 1) {
+        if (comment.indexOf('```') != -1) {
+          isInGitHubCodeBlock = !isInGitHubCodeBlock;
+        }
+        if (isInGitHubCodeBlock) {
+          continue;
+        }
+      }
+      // Remove GitHub include code.
+      comment = _removeGitHubInlineCode(comment);
+      // Find references.
       int length = comment.length;
       List<List<int>> codeBlockRanges = _getCodeBlockRanges(comment);
       int leftIndex = comment.indexOf('[');
@@ -5502,6 +5561,9 @@ class Parser {
         } else if (_matches(TokenType.OPEN_CURLY_BRACKET) ||
             _matches(TokenType.FUNCTION)) {
           _reportErrorForCurrentToken(ParserErrorCode.MISSING_INITIALIZER);
+        } else if (_enableAssertInitializer &&
+            _matchesKeyword(Keyword.ASSERT)) {
+          _parseAssertInitializer();
         } else {
           initializers.add(_parseConstructorFieldInitializer(false));
         }
@@ -8283,6 +8345,7 @@ class Parser {
             Keyword keyword = _currentToken.keyword;
             return keyword == Keyword.CASE || keyword == Keyword.DEFAULT;
           }
+
           while (!atEndOrNextMember()) {
             _advance();
           }
@@ -8626,6 +8689,7 @@ class Parser {
             type == TokenType.INT ||
             type == TokenType.DOUBLE;
       }
+
       while ((_tokenMatchesIdentifier(token) && !isKeywordAfterUri(token)) ||
           isValidInUri(token)) {
         token = token.next;
@@ -8833,7 +8897,7 @@ class Parser {
     return token;
   }
 
-  String _removeCodeBlocksGitHub(String comment) {
+  String _removeGitHubInlineCode(String comment) {
     int index = 0;
     while (true) {
       int beginIndex = comment.indexOf('`', index);

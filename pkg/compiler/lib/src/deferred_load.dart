@@ -89,7 +89,8 @@ class DeferredLoadTask extends CompilerTask {
   String get name => 'Deferred Loading';
 
   /// DeferredLibrary from dart:async
-  ClassElement get deferredLibraryClass => compiler.deferredLibraryClass;
+  ClassElement get deferredLibraryClass =>
+      compiler.commonElements.deferredLibraryClass;
 
   /// A synthetic import representing the loading of the main program.
   final _DeferredImport _fakeMainImport = const _DeferredImport();
@@ -404,6 +405,7 @@ class DeferredLoadTask extends CompilerTask {
         elements.add(element);
         collectDependencies(element);
       }
+
       ClassElement cls = element.declaration;
       cls.forEachLocalMember(addLiveInstanceMember);
       if (cls.implementation != cls) {
@@ -460,8 +462,9 @@ class DeferredLoadTask extends CompilerTask {
         iterateTags(library.implementation);
       }
     }
+
     traverseLibrary(root);
-    result.add(compiler.coreLibrary);
+    result.add(compiler.commonElements.coreLibrary);
     return result;
   }
 
@@ -666,7 +669,7 @@ class DeferredLoadTask extends CompilerTask {
 
               // Now check to see if we have to add more elements due to
               // mirrors.
-              if (compiler.mirrorsLibrary != null) {
+              if (compiler.commonElements.mirrorsLibrary != null) {
                 _addMirrorElements();
               }
 
@@ -872,6 +875,7 @@ class DeferredLoadTask extends CompilerTask {
         }
       }
     }
+
     ast.Node first = firstNode(send);
     ast.Node identifier = first.asIdentifier();
     if (identifier == null) return null;
@@ -1018,7 +1022,7 @@ class _DeclaredDeferredImport implements _DeferredImport {
         ConstantValue value =
             compiler.constants.getConstantValue(metadata.constant);
         Element element = value.getType(compiler.coreTypes).element;
-        if (element == compiler.deferredLibraryClass) {
+        if (element == compiler.commonElements.deferredLibraryClass) {
           ConstructedConstantValue constant = value;
           StringConstantValue s = constant.fields.values.single;
           result = s.primitiveValue.slowToString();

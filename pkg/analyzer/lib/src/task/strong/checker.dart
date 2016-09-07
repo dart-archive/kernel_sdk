@@ -196,9 +196,7 @@ class CodeChecker extends RecursiveAstVisitor {
     if (expr is ParenthesizedExpression) {
       checkAssignment(expr.expression, type);
     } else {
-      if (_checkNonNullAssignment(expr, type)) {
-        _checkDowncast(expr, type);
-      }
+      _checkDowncast(expr, type);
     }
   }
 
@@ -554,7 +552,7 @@ class CodeChecker extends RecursiveAstVisitor {
   visitMethodInvocation(MethodInvocation node) {
     var target = node.realTarget;
     var element = node.methodName.staticElement;
-    if (element == null && !_isObjectMethod(node, node.methodName)) {
+    if (element == null && !typeProvider.isObjectMethod(node.methodName.name)) {
       _recordDynamicInvoke(node, target);
 
       // Mark the tear-off as being dynamic, too. This lets us distinguish
@@ -743,20 +741,18 @@ class CodeChecker extends RecursiveAstVisitor {
       from = _getDefiniteType(expr);
     }
 
+    if (!_checkNonNullAssignment(expr, to, from)) return;
+
     // We can use anything as void.
     if (to.isVoid) return;
 
     // fromT <: toT, no coercion needed.
     if (rules.isSubtypeOf(from, to)) return;
 
-    // TODO(vsm): We can get rid of the second clause if we disallow
-    // all sideways casts - see TODO below.
-    // -------
     // Note: a function type is never assignable to a class per the Dart
     // spec - even if it has a compatible call method.  We disallow as
     // well for consistency.
-    if ((from is FunctionType && rules.getCallMethodType(to) != null) ||
-        (to is FunctionType && rules.getCallMethodType(from) != null)) {
+    if (from is FunctionType && rules.getCallMethodType(to) != null) {
       return;
     }
 
@@ -766,23 +762,14 @@ class CodeChecker extends RecursiveAstVisitor {
       return;
     }
 
-    // TODO(vsm): Once we have generic methods, we should delete this
-    // workaround.  These sideways casts are always ones we warn about
-    // - i.e., we think they are likely to fail at runtime.
-    // -------
-    // Downcast if toT <===> fromT
-    // The intention here is to allow casts that are sideways in the restricted
-    // type system, but allowed in the regular dart type system, since these
-    // are likely to succeed.  The canonical example is List<dynamic> and
-    // Iterable<T> for some concrete T (e.g. Object).  These are unrelated
-    // in the restricted system, but List<dynamic> <: Iterable<T> in dart.
-    if (from.isAssignableTo(to)) {
-      _recordImplicitCast(expr, from, to);
-    }
+    // Anything else is an illegal sideways cast.
+    // However, these will have been reported already in error_verifier, so we
+    // don't need to report them again.
   }
 
   void _checkFieldAccess(AstNode node, AstNode target, SimpleIdentifier field) {
-    if (field.staticElement == null && !_isObjectProperty(target, field)) {
+    if (field.staticElement == null &&
+        !typeProvider.isObjectMember(field.name)) {
       _recordDynamicInvoke(node, target);
     }
     node.visitChildren(this);
@@ -890,11 +877,10 @@ class CodeChecker extends RecursiveAstVisitor {
   /// Checks if the assignment is valid with respect to non-nullable types.
   /// Returns `false` if a nullable expression is assigned to a variable of
   /// non-nullable type and `true` otherwise.
-  bool _checkNonNullAssignment(Expression expression, DartType type) {
-    var exprType = expression.staticType;
-    if (rules.isNonNullableType(type) && rules.isNullableType(exprType)) {
+  bool _checkNonNullAssignment(Expression expression, DartType to, DartType from) {
+    if (rules.isNonNullableType(to) && rules.isNullableType(from)) {
       _recordMessage(expression, StaticTypeWarningCode.INVALID_ASSIGNMENT,
-          [exprType, type]);
+          [from, to]);
       return false;
     }
     return true;
@@ -922,7 +908,8 @@ class CodeChecker extends RecursiveAstVisitor {
   }
 
   void _checkUnary(
-      /*PrefixExpression|PostfixExpression*/ node, Element element) {
+      /*PrefixExpression|PostfixExpression*/ node,
+      Element element) {
     var op = node.operator;
     if (op.isUserDefinableOperator ||
         op.type == TokenType.PLUS_PLUS ||
@@ -1025,21 +1012,6 @@ class CodeChecker extends RecursiveAstVisitor {
     return rules.anyParameterType(ft, (pt) => pt.isDynamic);
   }
 
-  bool _isObjectGetter(Expression target, SimpleIdentifier id) {
-    PropertyAccessorElement element =
-        typeProvider.objectType.element.getGetter(id.name);
-    return (element != null && !element.isStatic);
-  }
-
-  bool _isObjectMethod(Expression target, SimpleIdentifier id) {
-    MethodElement element = typeProvider.objectType.element.getMethod(id.name);
-    return (element != null && !element.isStatic);
-  }
-
-  bool _isObjectProperty(Expression target, SimpleIdentifier id) {
-    return _isObjectGetter(target, id) || _isObjectMethod(target, id);
-  }
-
   void _recordDynamicInvoke(AstNode node, Expression target) {
     _recordMessage(node, StrongModeCode.DYNAMIC_INVOKE, [node]);
     // TODO(jmesserly): we may eventually want to record if the whole operation
@@ -1057,7 +1029,7 @@ class CodeChecker extends RecursiveAstVisitor {
     // toT <:_R fromT => to <: fromT
     // NB: classes with call methods are subtypes of function
     // types, but the function type is not assignable to the class
-    assert(toType.isSubtypeOf(fromType) || fromType.isAssignableTo(toType));
+    assert(toType.isSubtypeOf(fromType));
 
     // Inference "casts":
     if (expression is Literal || expression is FunctionExpression) {

@@ -85,6 +85,7 @@ class DirectoryBasedSourceContainer implements SourceContainer {
  * Instances of the class [ExplicitSourceResolver] map URIs to files on disk
  * using a fixed mapping provided at construction time.
  */
+@deprecated
 class ExplicitSourceResolver extends UriResolver {
   final Map<Uri, JavaFile> uriToFileMap;
   final Map<String, Uri> pathToUriMap;
@@ -221,7 +222,7 @@ class FileBasedSource extends Source {
   }
 
   @override
-  int get hashCode => id;
+  int get hashCode => uri.hashCode;
 
   @override
   bool get isInSystemLibrary => uri.scheme == DartUriResolver.DART_SCHEME;

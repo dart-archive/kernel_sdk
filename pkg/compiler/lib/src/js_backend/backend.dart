@@ -15,16 +15,8 @@ import '../common/backend_api.dart'
 import '../common/codegen.dart' show CodegenImpact, CodegenWorkItem;
 import '../common/names.dart' show Identifiers, Selectors, Uris;
 import '../common/registry.dart' show EagerRegistry, Registry;
-import '../common/resolution.dart'
-    show
-        Feature,
-        Frontend,
-        ListLiteralUse,
-        MapLiteralUse,
-        Resolution,
-        ResolutionImpact;
+import '../common/resolution.dart' show Frontend, Resolution, ResolutionImpact;
 import '../common/tasks.dart' show CompilerTask;
-import '../common/work.dart' show ItemCompilationContext;
 import '../compiler.dart' show Compiler;
 import '../constants/constant_system.dart';
 import '../constants/expressions.dart';
@@ -34,7 +26,8 @@ import '../dart_types.dart';
 import '../deferred_load.dart' show DeferredLoadTask;
 import '../dump_info.dart' show DumpInfoTask;
 import '../elements/elements.dart';
-import '../enqueue.dart' show Enqueuer, ResolutionEnqueuer;
+import '../enqueue.dart'
+    show Enqueuer, ResolutionEnqueuer, TreeShakingEnqueuerStrategy;
 import '../io/position_information.dart' show PositionSourceInformationStrategy;
 import '../io/source_information.dart' show SourceInformationStrategy;
 import '../io/start_end_information.dart'
@@ -46,7 +39,7 @@ import '../js/rewrite_async.dart';
 import '../js_emitter/js_emitter.dart' show CodeEmitterTask;
 import '../library_loader.dart' show LibraryLoader, LoadedLibraries;
 import '../native/native.dart' as native;
-import '../ssa/builder.dart' show SsaFunctionCompiler;
+import '../ssa/ssa.dart' show SsaFunctionCompiler;
 import '../ssa/nodes.dart' show HInstruction;
 import '../tree/tree.dart';
 import '../types/types.dart';
@@ -55,6 +48,7 @@ import '../universe/selector.dart' show Selector, SelectorKind;
 import '../universe/universe.dart';
 import '../universe/use.dart'
     show DynamicUse, StaticUse, StaticUseKind, TypeUse, TypeUseKind;
+import '../universe/feature.dart';
 import '../universe/world_impact.dart'
     show
         ImpactStrategy,
@@ -68,9 +62,9 @@ import 'backend_helpers.dart';
 import 'backend_impact.dart';
 import 'backend_serialization.dart' show JavaScriptBackendSerialization;
 import 'checked_mode_helpers.dart';
-import 'codegen/task.dart';
 import 'constant_handler_javascript.dart';
 import 'custom_elements_analysis.dart';
+import 'enqueuer.dart';
 import 'js_interop_analysis.dart' show JsInteropAnalysis;
 import 'lookup_map_analysis.dart' show LookupMapAnalysis;
 import 'namer.dart';
@@ -82,11 +76,6 @@ import 'type_variable_handler.dart';
 part 'runtime_types.dart';
 
 const VERBOSE_OPTIMIZER_HINTS = false;
-
-class JavaScriptItemCompilationContext extends ItemCompilationContext {
-  final Set<HInstruction> boundsChecked = new Set<HInstruction>();
-  final Set<HInstruction> allocatedFixedLists = new Set<HInstruction>();
-}
 
 abstract class FunctionCompiler {
   /// Generates JavaScript code for `work.element`.
@@ -326,7 +315,7 @@ class JavaScriptBackend extends Backend {
    * The generated code as a js AST for compiled methods.
    */
   Map<Element, jsAst.Expression> get generatedCode {
-    return compiler.enqueuer.codegen.generatedCode;
+    return codegenEnqueuer.generatedCode;
   }
 
   FunctionInlineCache inlineCache = new FunctionInlineCache();
@@ -340,17 +329,18 @@ class JavaScriptBackend extends Backend {
       TRACE_METHOD == 'post' || TRACE_METHOD == 'console';
   Element traceHelper;
 
-  TypeMask get stringType => compiler.typesTask.stringType;
-  TypeMask get doubleType => compiler.typesTask.doubleType;
-  TypeMask get intType => compiler.typesTask.intType;
-  TypeMask get uint32Type => compiler.typesTask.uint32Type;
-  TypeMask get uint31Type => compiler.typesTask.uint31Type;
-  TypeMask get positiveIntType => compiler.typesTask.positiveIntType;
-  TypeMask get numType => compiler.typesTask.numType;
-  TypeMask get boolType => compiler.typesTask.boolType;
-  TypeMask get dynamicType => compiler.typesTask.dynamicType;
-  TypeMask get nullType => compiler.typesTask.nullType;
+  TypeMask get stringType => compiler.commonMasks.stringType;
+  TypeMask get doubleType => compiler.commonMasks.doubleType;
+  TypeMask get intType => compiler.commonMasks.intType;
+  TypeMask get uint32Type => compiler.commonMasks.uint32Type;
+  TypeMask get uint31Type => compiler.commonMasks.uint31Type;
+  TypeMask get positiveIntType => compiler.commonMasks.positiveIntType;
+  TypeMask get numType => compiler.commonMasks.numType;
+  TypeMask get boolType => compiler.commonMasks.boolType;
+  TypeMask get dynamicType => compiler.commonMasks.dynamicType;
+  TypeMask get nullType => compiler.commonMasks.nullType;
   TypeMask get emptyType => const TypeMask.nonNullEmpty();
+  TypeMask get nonNullType => compiler.commonMasks.nonNullType;
 
   TypeMask _indexablePrimitiveTypeCache;
   TypeMask get indexablePrimitiveType {
@@ -404,14 +394,6 @@ class JavaScriptBackend extends Backend {
           helpers.jsUnmodifiableArrayClass, compiler.world);
     }
     return _fixedArrayTypeCache;
-  }
-
-  TypeMask _nonNullTypeCache;
-  TypeMask get nonNullType {
-    if (_nonNullTypeCache == null) {
-      _nonNullTypeCache = compiler.typesTask.dynamicType.nonNullable();
-    }
-    return _nonNullTypeCache;
   }
 
   /// Maps special classes to their implementation (JSXxx) class.
@@ -525,6 +507,9 @@ class JavaScriptBackend extends Backend {
   /// True if the html library has been loaded.
   bool htmlLibraryIsLoaded = false;
 
+  /// True when we enqueue the loadLibrary code.
+  bool isLoadLibraryFunctionResolved = false;
+
   /// List of constants from metadata.  If metadata must be preserved,
   /// these constants must be registered.
   final List<Dependency> metadataConstants = <Dependency>[];
@@ -601,7 +586,8 @@ class JavaScriptBackend extends Backend {
   JavaScriptBackend(Compiler compiler,
       {bool generateSourceMap: true,
       bool useStartupEmitter: false,
-      bool useNewSourceInfo: false})
+      bool useNewSourceInfo: false,
+      bool useKernel: false})
       : namer = determineNamer(compiler),
         oneShotInterceptors = new Map<jsAst.Name, Selector>(),
         interceptedElements = new Map<String, Set<Element>>(),
@@ -629,9 +615,8 @@ class JavaScriptBackend extends Backend {
     constantCompilerTask = new JavaScriptConstantTask(compiler);
     impactTransformer = new JavaScriptImpactTransformer(this);
     patchResolverTask = new PatchResolverTask(compiler);
-    functionCompiler = compiler.options.useCpsIr
-        ? new CpsFunctionCompiler(compiler, this, sourceInformationStrategy)
-        : new SsaFunctionCompiler(this, sourceInformationStrategy);
+    functionCompiler =
+        new SsaFunctionCompiler(this, sourceInformationStrategy, useKernel);
     serialization = new JavaScriptBackendSerialization(this);
   }
 
@@ -649,6 +634,11 @@ class JavaScriptBackend extends Backend {
   /// constants.
   JavaScriptConstantCompiler get constants {
     return constantCompilerTask.jsConstantCompiler;
+  }
+  
+  @override
+  bool isDefaultNoSuchMethod(MethodElement element) {
+    return noSuchMethodRegistry.isDefaultNoSuchMethodImplementation(element);
   }
 
   MethodElement resolveExternalFunction(MethodElement element) {
@@ -706,7 +696,7 @@ class JavaScriptBackend extends Backend {
   bool _isValidBackendUse(Element element) {
     assert(invariant(element, element.isDeclaration, message: ""));
     if (element == helpers.streamIteratorConstructor ||
-        element == helpers.compiler.symbolConstructor ||
+        compiler.commonElements.isSymbolConstructor(element) ||
         helpers.isSymbolValidatedConstructor(element) ||
         element == helpers.syncCompleterConstructor ||
         element == coreClasses.symbolClass ||
@@ -1203,6 +1193,7 @@ class JavaScriptBackend extends Backend {
           }
           return ctor;
         }
+
         Element getMember(String name) {
           // The constructor is on the patch class, but dart2js unit tests don't
           // have a patch class.
@@ -1216,6 +1207,7 @@ class JavaScriptBackend extends Backend {
           }
           return element;
         }
+
         helpers.mapLiteralConstructor = getFactory('_literal', 1);
         helpers.mapLiteralConstructorEmpty = getFactory('_empty', 0);
         enqueueInResolution(helpers.mapLiteralConstructor, registry);
@@ -1308,10 +1300,6 @@ class JavaScriptBackend extends Backend {
     enqueueClass(enqueuer, helpers.jsJavaScriptFunctionClass, registry);
     needToInitializeIsolateAffinityTag = true;
     needToInitializeDispatchProperty = true;
-  }
-
-  JavaScriptItemCompilationContext createItemCompilationContext() {
-    return new JavaScriptItemCompilationContext();
   }
 
   void enqueueHelpers(ResolutionEnqueuer world, Registry registry) {
@@ -1571,6 +1559,12 @@ class JavaScriptBackend extends Backend {
     }
   }
 
+  CodegenEnqueuer get codegenEnqueuer => compiler.enqueuer.codegen;
+
+  CodegenEnqueuer createCodegenEnqueuer(Compiler compiler) {
+    return new CodegenEnqueuer(compiler, const TreeShakingEnqueuerStrategy());
+  }
+
   WorldImpact codegen(CodegenWorkItem work) {
     Element element = work.element;
     if (compiler.elementHasCompileTimeError(element)) {
@@ -1688,7 +1682,8 @@ class JavaScriptBackend extends Backend {
         if (library.isInternalLibrary) continue;
         for (ImportElement import in library.imports) {
           LibraryElement importedLibrary = import.importedLibrary;
-          if (importedLibrary != compiler.mirrorsLibrary) continue;
+          if (importedLibrary != compiler.commonElements.mirrorsLibrary)
+            continue;
           MessageKind kind =
               compiler.mirrorUsageAnalyzerTask.hasMirrorUsage(library)
                   ? MessageKind.MIRROR_IMPORT
@@ -1920,10 +1915,10 @@ class JavaScriptBackend extends Backend {
       needToInitializeIsolateAffinityTag = true;
     } else if (element.isDeferredLoaderGetter) {
       // TODO(sigurdm): Create a function registerLoadLibraryAccess.
-      if (compiler.loadLibraryFunction == null) {
-        compiler.loadLibraryFunction = helpers.loadLibraryWrapper;
+      if (!isLoadLibraryFunctionResolved) {
+        isLoadLibraryFunctionResolved = true;
         enqueueInResolution(
-            compiler.loadLibraryFunction, compiler.globalDependencies);
+            helpers.loadLibraryWrapper, compiler.globalDependencies);
       }
     } else if (element == helpers.requiresPreambleMarker) {
       requiresPreamble = true;
@@ -2135,7 +2130,7 @@ class JavaScriptBackend extends Backend {
    */
   computeMembersNeededForReflection() {
     if (_membersNeededForReflection != null) return;
-    if (compiler.mirrorsLibrary == null) {
+    if (compiler.commonElements.mirrorsLibrary == null) {
       _membersNeededForReflection = const ImmutableEmptySet<Element>();
       return;
     }
@@ -2293,9 +2288,10 @@ class JavaScriptBackend extends Backend {
     // Just checking for [:TypedData:] is not sufficient, as it is an
     // abstract class any user-defined class can implement. So we also
     // check for the interface [JavaScriptIndexingBehavior].
-    return compiler.typedDataClass != null &&
-        compiler.world.isInstantiated(compiler.typedDataClass) &&
-        mask.satisfies(compiler.typedDataClass, compiler.world) &&
+    ClassElement typedDataClass = compiler.commonElements.typedDataClass;
+    return typedDataClass != null &&
+        compiler.world.isInstantiated(typedDataClass) &&
+        mask.satisfies(typedDataClass, compiler.world) &&
         mask.satisfies(helpers.jsIndexingBehaviorInterface, compiler.world);
   }
 
@@ -2304,10 +2300,11 @@ class JavaScriptBackend extends Backend {
         !type1.intersection(type2, compiler.world).isEmpty;
     // TODO(herhut): Maybe cache the TypeMask for typedDataClass and
     //               jsIndexingBehaviourInterface.
-    return compiler.typedDataClass != null &&
-        compiler.world.isInstantiated(compiler.typedDataClass) &&
-        intersects(mask,
-            new TypeMask.subtype(compiler.typedDataClass, compiler.world)) &&
+    ClassElement typedDataClass = compiler.commonElements.typedDataClass;
+    return typedDataClass != null &&
+        compiler.world.isInstantiated(typedDataClass) &&
+        intersects(
+            mask, new TypeMask.subtype(typedDataClass, compiler.world)) &&
         intersects(
             mask,
             new TypeMask.subtype(
@@ -2343,9 +2340,15 @@ class JavaScriptBackend extends Backend {
 
   /// Called when [enqueuer] is empty, but before it is closed.
   bool onQueueEmpty(Enqueuer enqueuer, Iterable<ClassElement> recentClasses) {
-    // Add elements referenced only via custom elements.  Return early if any
-    // elements are added to avoid counting the elements as due to mirrors.
-    customElementsAnalysis.onQueueEmpty(enqueuer);
+    if (!compiler.options.resolveOnly) {
+      // TODO(johnniwinther): The custom element analysis eagerly enqueues
+      // elements on the codegen queue. Change to compute the data needed
+      // instead.
+
+      // Add elements referenced only via custom elements.  Return early if any
+      // elements are added to avoid counting the elements as due to mirrors.
+      customElementsAnalysis.onQueueEmpty(enqueuer);
+    }
     if (!enqueuer.queueIsEmpty) return false;
 
     noSuchMethodRegistry.onQueueEmpty();
@@ -2582,17 +2585,7 @@ class JavaScriptBackend extends Backend {
   }
 
   @override
-  bool enableCodegenWithErrorsIfSupported(Spannable node) {
-    if (compiler.options.useCpsIr) {
-      // TODO(25747): Support code generation with compile-time errors.
-      reporter.reportHintMessage(node, MessageKind.GENERIC, {
-        'text': "Generation of code with compile time errors is currently "
-            "not supported with the CPS IR."
-      });
-      return false;
-    }
-    return true;
-  }
+  bool enableCodegenWithErrorsIfSupported(Spannable node) => true;
 
   jsAst.Expression rewriteAsync(
       FunctionElement element, jsAst.Expression code) {

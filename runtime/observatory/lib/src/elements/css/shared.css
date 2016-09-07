@@ -2,13 +2,17 @@
 * {
   margin: 0;
   padding: 0;
-  font: 400 14px 'Montserrat', sans-serif;
-  color: #333;
   box-sizing: border-box;
 }
 
 body {
   padding-top: 56px;
+  color: #333;
+  font: 400 14px 'Montserrat', sans-serif;
+}
+
+button {
+  font: 400 14px 'Montserrat', sans-serif;
 }
 
 .content {
@@ -30,6 +34,10 @@ body {
 
 h1 {
   font: 400 18px 'Montserrat', sans-serif;
+}
+
+h2 {
+  font: 400 16px 'Montserrat', sans-serif;
 }
 
 .memberList {
@@ -370,6 +378,154 @@ select, button, input {
   -webkit-animation: shake 0.5s;
 }
 
+/* allocation-profile */
+
+allocation-profile .heap-space {
+  display: inline-block;
+  width: 50%;
+}
+
+allocation-profile .heap-space.right,
+allocation-profile .heap-space.right .memberList,
+allocation-profile .heap-space.right .legend * {
+  direction: rtl;
+}
+
+allocation-profile .heap-space.right * {
+  direction: ltr;
+  text-align: right;
+}
+
+allocation-profile div.chart {
+  display: block;
+  position: relative;
+  height: 150px;
+}
+allocation-profile div.chart > div.host {
+  display: inline-block;
+  position: absolute;
+  bottom: 0px;
+  top: 0;
+}
+allocation-profile div.chart > div.legend {
+  position: absolute;
+  width: 150px;
+  top: 25px;
+  bottom: 0;
+  overflow-y: auto;
+}
+allocation-profile .heap-space.left div.host {
+  left: 200px;
+  width: 180px;
+}
+allocation-profile .heap-space.right div.host {
+  right: 150px;
+  width: 180px;
+}
+allocation-profile .heap-space.left div.legend {
+  left: 0;
+}
+allocation-profile .heap-space.right div.legend {
+  right: 0;
+}
+
+allocation-profile .collection {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  top: 560px;
+}
+
+allocation-profile .collection-item {
+  box-sizing: border-box;
+  line-height: 20px;
+  margin-left: 5%;
+  margin-right: 5%;
+}
+
+allocation-profile .header .collection-item:last-child {
+  margin-bottom: -3px;
+  border-bottom: solid 1px #AAAAAA;
+}
+
+allocation-profile .header .collection-item span {
+  font-weight: bolder;
+}
+
+allocation-profile .collection-item :nth-child(2n+2).group,
+allocation-profile .collection-item :nth-child(4n+3).bytes,
+allocation-profile .collection-item :nth-child(4n+3).instances,
+allocation-profile .collection-item :nth-child(4n+4).bytes,
+allocation-profile .collection-item :nth-child(4n+4).instances {
+  background-color: #EEEEEE;
+}
+
+allocation-profile .collection-item:hover :nth-child(2n+2).group,
+allocation-profile .collection-item:hover :nth-child(4n+3).bytes,
+allocation-profile .collection-item:hover :nth-child(4n+3).instances,
+allocation-profile .collection-item:hover :nth-child(4n+4).bytes,
+allocation-profile .collection-item:hover :nth-child(4n+4).instances {
+  background-color: #afd5fd;
+}
+
+allocation-profile .header .collection-item :nth-child(2n+2).group,
+allocation-profile .header .collection-item :nth-child(4n+3).bytes,
+allocation-profile .header .collection-item :nth-child(4n+3).instances,
+allocation-profile .header .collection-item :nth-child(4n+4).bytes,
+allocation-profile .header .collection-item :nth-child(4n+4).instances {
+  background-color: #DDDDDD;
+}
+
+allocation-profile .scroller .collection-item:hover {
+  background-color: #d2e7fe;
+}
+
+allocation-profile .collection-item .group {
+  background-color: white;
+  display: inline-block;
+  width: 12em;
+  text-align: right;
+  padding-right: 0.5em;
+  line-height: 20px;
+  border-right: solid 1px #AAAAAA;
+}
+
+allocation-profile .collection-item .bytes {
+  background-color: white;
+  display: inline-block;
+  width: 6em;
+  text-align: right;
+  line-height: 20px;
+  padding-right: 0.5em;
+}
+
+allocation-profile .collection-item .instances {
+  background-color: white;
+  display: inline-block;
+  width: 6em;
+  text-align: right;
+  padding-right: 0.5em;
+  line-height: 20px;
+  border-right: solid 1px #AAAAAA;
+}
+
+allocation-profile .collection-item .name {
+  background-color: white;
+  padding-left: 0.5em;
+}
+
+allocation-profile .collection-item > button,
+allocation-profile .collection-item > button:active {
+  background-color: transparent;
+  color: #0489c3;
+  border-style: none;
+}
+
+allocation-profile .collection-item > button:hover {
+  text-decoration: underline;
+}
+
 /* class-ref */
 /* TODO(cbernaschina) fix class-ref-wrapped to class-ref when wrapper
 removed */
@@ -422,6 +578,69 @@ class-tree virtual-tree .class-tree-item .name {
   margin-left: 0.5em;
 }
 
+/* code-view */
+
+code-view .table {
+  table-layout: fixed;
+}
+
+code-view th:nth-of-type(1),
+code-view td:nth-of-type(1) {
+  min-width: 10em;
+  text-align: left;
+}
+
+code-view th:nth-of-type(2),
+code-view td:nth-of-type(2) {
+  min-width: 8em;
+  text-align: left;
+}
+
+code-view th:nth-of-type(3),
+code-view td:nth-of-type(3) {
+  min-width: 8em;
+  text-align: left;
+}
+
+code-view th:nth-of-type(4),
+code-view td:nth-of-type(4) {
+  text-align: left;
+  overflow: visible;
+  white-space: pre;
+  padding-right: 1em;
+  width: 1px;
+}
+
+code-view th:nth-of-type(5),
+code-view td:nth-of-type(5) {
+  text-align: left;
+  overflow: visible;
+}
+
+code-view tr:hover > td {
+  background-color: #F4C7C3;
+}
+
+code-view .code-comment {
+  color: grey;
+  font-style: italic;
+}
+
+/* context-ref */
+/* TODO(cbernaschina) fix context-ref-wrapped to context-ref when wrapper
+removed */
+
+context-ref-wrapped > a[href]:hover {
+    text-decoration: underline;
+}
+context-ref-wrapped > a[href] {
+    color: #0489c3;
+    text-decoration: none;
+}
+context-ref-wrapped > a[href] * {
+    color: inherit;
+}
+
 /* cpu-profile */
 
 cpu-profile {
@@ -439,6 +658,139 @@ cpu-profile > cpu-profile-virtual-tree {
   right: 0;
 }
 
+/* cpu-profile-table */
+
+cpu-profile-table {
+  position: relative;
+  display: block;
+  height: 100%;
+}
+cpu-profile-table cpu-profile-virtual-tree {
+  height: 100%;
+  min-height: 600px;
+  padding-top: 250px;
+  margin-top: -250px;
+}
+cpu-profile-table .profile-trees {
+  vertical-align: text-top;
+  min-width: 100%;
+  height: 100%;
+  padding-top: 160px;
+  margin-top: -160px;
+  padding-bottom: 100px;
+  margin-bottom: -100px;
+  padding-left: 5%;
+  padding-right: 5%;
+  min-height: 600px;
+}
+cpu-profile-table .profile-trees virtual-collection {
+  height: 100%;
+  width: 100%;
+  border: solid 1px #888888;
+  box-shadow: 2px 2px 5px #888888;
+}
+cpu-profile-table .profile-trees > .profile-trees-all {
+  vertical-align: text-top;
+  display: inline-block;
+  width: 50%;
+  height: 100%;
+  padding: 5px;
+}
+cpu-profile-table .profile-trees > .profile-trees-current {
+  vertical-align: text-top;
+  display: inline-block;
+  width: 50%;
+  height: 100%;
+}
+cpu-profile-table .profile-trees .profile-trees-caller {
+  vertical-align: text-top;
+  display: inline-block;
+  width: 100%;
+  height: 50%;
+  padding: 5px;
+  margin-top: -17px;
+  padding-top: 22px;
+}
+cpu-profile-table .profile-trees .profile-trees-selected {
+  vertical-align: text-top;
+  display: block;
+  height: 24px;
+  line-height: 24px;
+  margin: 5px;
+  border: solid 1px #888888;
+  box-shadow: 2px 2px 5px #888888;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+cpu-profile-table .profile-trees .profile-trees-selected > * {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  display: inline-block;
+  width: 100%;
+}
+cpu-profile-table .profile-trees .profile-trees-callee {
+  vertical-align: text-top;
+  display: inline-block;
+  width: 100%;
+  height: 50%;
+  padding: 5px;
+  margin-bottom: -17px;
+  padding-bottom: 22px;
+}
+cpu-profile-table .function-item {
+  box-sizing: border-box;
+  line-height: 20px;
+}
+cpu-profile-table .header {
+  box-sizing: border-box;
+  line-height: 20px;
+}
+cpu-profile-table .header .function-item:last-child {
+  margin-bottom: -3px;
+  border-bottom: solid 1px #AAAAAA;
+}
+cpu-profile-table .function-item .inclusive,
+cpu-profile-table .function-item .exclusive {
+  display: inline-block;
+  width: 7em;
+  text-align: right;
+  padding-right: 0.5em;
+  line-height: 20px;
+}
+cpu-profile-table .shifter .function-item .inclusive {
+  background-color: #EEEEEE;
+}
+cpu-profile-table .shifter .function-item.selected .inclusive {
+  background-color: #51a3fb;
+}
+cpu-profile-table .shifter .function-item:hover .inclusive {
+  background-color: #afd5fd;
+}
+cpu-profile-table .header .function-item .inclusive {
+  background-color: #DDDDDD;
+}
+cpu-profile-table .shifter .function-item.selected {
+  background-color: #60abfb;
+}
+cpu-profile-table .shifter .function-item:hover {
+  background-color: #d2e7fe;
+}
+cpu-profile-table .function-item .exclusive {
+}
+cpu-profile-table .function-item .name {
+  padding-left: 0.5em;
+}
+cpu-profile-table .function-item > button,
+cpu-profile-table .function-item > button:active {
+  background-color: transparent;
+  color: #0489c3;
+  border-style: none;
+}
+cpu-profile-table .function-item > button:hover {
+  text-decoration: underline;
+}
+
 /* cpu-profile-virtual-tree */
 
 cpu-profile-virtual-tree {
@@ -447,6 +799,7 @@ cpu-profile-virtual-tree {
 }
 
 cpu-profile-virtual-tree .tree-item {
+  box-sizing: border-box;
   line-height: 30px;
   height: 30px;
   padding-left: 5%;
@@ -472,6 +825,272 @@ cpu-profile-virtual-tree .tree-item > .name {
   margin-left: 0.5em;
 }
 
+/* debugger-console */
+
+debugger-console {
+  display: block;
+  margin: 0px 20px 10px 20px;
+}
+debugger-console .normal {
+  font: normal 14px consolas, courier, monospace;
+  white-space: pre;
+  line-height: 125%;
+}
+debugger-console .bold {
+  font: bold 14px consolas, courier, monospace;
+  white-space: pre;
+  line-height: 125%;
+}
+debugger-console .red {
+  font: normal 14px consolas, courier, monospace;
+  white-space: pre;
+  line-height: 125%;
+  color: red;
+}
+debugger-console .green {
+  font: normal 14px consolas, courier, monospace;
+  white-space: pre;
+  line-height: 125%;
+  color: green;
+}
+debugger-console .spacer {
+  height: 20px;
+}
+
+/* debugger-frame */
+
+debugger-frame {
+  display: block;
+  position: relative;
+  padding: 5px;
+  border: 1px solid white;
+}
+debugger-frame:hover {
+  border: 1px solid #e0e0e0;
+}
+debugger-frame.shadow {
+  box-shadow:  0 2px 10px 0 rgba(0, 0, 0, 0.16),
+               0 2px 5px 0 rgba(0, 0, 0, 0.26);
+}
+debugger-frame.current {
+  box-shadow:  0 2px 10px 0 rgba(0, 0, 0, 0.26),
+               0 2px 5px 0 rgba(0, 0, 0, 0.46);
+  border: 1px solid #444;
+}
+debugger-frame > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background-color: transparent;
+  border: none;
+}
+debugger-frame .frameSummaryText {
+  display: inline-block;
+  padding: 5px;
+}
+debugger-frame .frameId {
+  display: inline-block;
+  width: 60px;
+}
+debugger-frame .frameExpander {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  display: none;
+}
+debugger-frame:hover .frameExpander{
+  display: inline-block;
+}
+debugger-frame .frameContractor {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: inline-block;
+}
+debugger-frame .frameContractor > button {
+  background-color: transparent;
+  border: none;
+}
+debugger-frame .flex-item-script {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 765px;
+}
+debugger-frame .flex-item-vars {
+  flex-grow: 5;
+  flex-shrink: 0;
+  flex-basis: 250px;
+  overflow-x: hidden;
+}
+debugger-frame .frameVars {
+  position: relative;
+  top: 5px;
+  padding-left:2em;
+  padding-bottom: 5px;
+}
+
+/* debugger-input */
+
+debugger-input .container {
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+debugger-input .textBox {
+  flex: 1 1 auto;
+  margin: 20px;
+  padding: 5px;
+  font: 400 16px consolas, courier, monospace;
+  width: 95%;
+}
+debugger-input .modalPrompt {
+  flex: 0 0 auto;
+  margin-top: 20px;
+  margin-left: 20px;
+  padding: 5px;
+  font: 400 16px consolas, courier, monospace;
+  color: red;
+}
+debugger-input .modalPrompt.hidden {
+  display: none;
+}
+
+/* debugger-message */
+
+debugger-message {
+  display: block;
+  position: relative;
+  padding: 5px;
+  border: 1px solid white;
+}
+debugger-message:hover {
+  border: 1px solid #e0e0e0;
+}
+debugger-message.shadow {
+  box-shadow:  0 2px 10px 0 rgba(0, 0, 0, 0.16),
+  0 2px 5px 0 rgba(0, 0, 0, 0.26);
+}
+debugger-message.current {
+  box-shadow:  0 2px 10px 0 rgba(0, 0, 0, 0.26),
+  0 2px 5px 0 rgba(0, 0, 0, 0.46);
+  border: 1px solid #444;
+}
+debugger-message > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background-color: transparent;
+  border: none;
+}
+debugger-message .messageSummaryText {
+  display: inline-block;
+  padding: 5px;
+}
+debugger-message .messageId {
+  display: inline-block;
+  font-weight: bold;
+  width: 100px;
+}
+debugger-message .messageExpander {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  display: none;
+}
+debugger-message:hover .messageExpander {
+  display: inline-block;
+}
+debugger-message.shadow:hover .messageExpander {
+  display: none;
+}
+debugger-message .messageContractor {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: inline-block;
+}
+debugger-message .flex-item-script {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 765px;
+}
+debugger-message .flex-item-vars {
+  flex-grow: 5;
+  flex-shrink: 0;
+  flex-basis: 225px;
+}
+
+/* debugger-page */
+
+debugger-page {
+  height: 100%;
+}
+debugger-page .variable {
+  height: 100%;
+  margin-bottom: -75px;
+  padding-bottom: 75px;
+}
+debugger-page .stack {
+  flex: 0 0 auto;
+  overflow-y: auto;
+  height: 62%;
+}
+debugger-page .splitter {
+  height: 0px;
+  margin: 0px;
+  font-size: 1px;
+  border-bottom: 1px solid #888;
+}
+debugger-page .console {
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: auto;
+  height: 38%;
+}
+debugger-page .commandline {
+  flex: 0 0 auto;
+}
+
+/* debugger-stack */
+
+debugger-stack {
+  position: relative;
+}
+debugger-stack .sampledMessage {
+  margin: 0px 20px 10px 20px;
+  font: 400 14px 'Montserrat', sans-serif;
+  line-height: 125%;
+}
+debugger-stack .sampledMessage > button {
+  background-color: transparent;
+  border: none;
+  color: #0489c3;
+  text-decoration: none;
+  margin-right: 1em;
+}
+debugger-stack .sampledMessage > button:hover {
+    text-decoration: underline;
+}
+debugger-stack .splitter {
+  height: 0px;
+  margin: 0px;
+  font-size: 1px;
+  border-bottom: 1px dashed #888;
+}
+debugger-stack .noMessages,
+debugger-stack .noStack {
+  margin: 10px 0px 10px 25px;
+  font: bold 14px 'Montserrat', sans-serif;
+  line-height: 125%;
+}
+
+debugger-stack .sampledMessage.hidden,
+debugger-stack .noMessages.hidden,
+debugger-stack .noStack.hidden {
+  display: none;
+}
+
 /* error-ref */
 /* TODO(cbernaschina) fix error-ref-wrapped to error-ref when wrapper
 removed */
@@ -479,11 +1098,104 @@ removed */
 error-ref-wrapped > pre {
   background-color: #f5f5f5;
   border: 1px solid #ccc;
-  padding: 10px;
+  padding-left: 10px;
+  padding-right: 10px;
   font-family: consolas, courier, monospace;
   font-size: 1em;
   line-height: 1.2em;
   white-space: pre;
+}
+
+/* eval-box */
+/* TODO(cbernaschina) fix eval-box-wrapped to error-ref when wrapper
+removed */
+
+eval-box-wrapped a[href]:hover {
+    text-decoration: underline;
+}
+eval-box-wrapped a[href] {
+    color: #0489c3;
+    text-decoration: none;
+}
+eval-box-wrapped .quicks > button:hover {
+  background-color: transparent;
+  border: none;
+  text-decoration: underline;
+}
+eval-box-wrapped .quicks > button {
+  background-color: transparent;
+  border: none;
+  color: #0489c3;
+  padding: 0;
+  margin-right: 1em;
+  text-decoration: none;
+}
+eval-box-wrapped .emphasize {
+  font-style: italic;
+}
+eval-box-wrapped .indent {
+  margin-left: 1.5em;
+  font: 400 14px 'Montserrat', sans-serif;
+  line-height: 150%;
+}
+eval-box-wrapped .stackTraceBox {
+  margin-left: 1.5em;
+  background-color: #f5f5f5;
+  border: 1px solid #ccc;
+  padding: 10px;
+  font-family: consolas, courier, monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+eval-box-wrapped .heading {
+  line-height: 30px;
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 450px;
+  padding-right: 150px;
+}
+eval-box-wrapped .heading .textbox {
+  width: 100%;
+  min-width: 300px;
+}
+eval-box-wrapped .heading .buttons {
+  position: absolute;
+  top: 0;
+  right: 0px;
+}
+eval-box-wrapped .heading .buttons button{
+  margin-right: 1em;
+}
+eval-box-wrapped.historyExpr,
+eval-box-wrapped .historyValue {
+  vertical-align: text-top;
+  font: 400 14px 'Montserrat', sans-serif;
+}
+eval-box-wrapped .historyExpr button {
+  display: block;
+  color: black;
+  border: none;
+  background: none;
+  text-decoration: none;
+  padding: 6px 6px;
+  cursor: pointer;
+  white-space: pre-line;
+}
+eval-box-wrapped .historyExpr button:hover {
+  background-color: #fff3e3;
+}
+eval-box-wrapped .historyValue {
+  display: block;
+  padding: 6px 6px;
+}
+eval-box-wrapped .historyDelete button {
+  border: none;
+  background: none;
+}
+eval-box-wrapped .historyDelete button:hover {
+  color: #BB3311;
 }
 
 /* flag-list */
@@ -517,6 +1229,129 @@ function-ref-wrapped > a[href] {
   text-decoration: none;
 }
 
+/* heap-snapshot */
+
+heap-snapshot .statusMessage {
+  font-size: 150%;
+  font-weight: bold;
+}
+heap-snapshot .statusBox {
+  height: 100%;
+  padding: 1em;
+}
+heap-snapshot .explanation {
+  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  max-height: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+heap-snapshot virtual-tree {
+  position: absolute;
+  height: auto;
+  top: 250px;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+heap-snapshot .tree-item {
+  box-sizing: border-box;
+  line-height: 30px;
+  height: 30px;
+  padding-left: 5%;
+  padding-right: 5%;
+}
+heap-snapshot .tree-item > .size,
+heap-snapshot .tree-item > .percentage {
+  display: inline-block;
+  text-align: right;
+  width: 4em;
+  margin-left: 0.25em;
+  margin-right: 0.25em;
+}
+
+heap-snapshot .tree-item > .name {
+  display: inline;
+  margin-left: 0.5em;
+}
+
+
+/* icdata-ref */
+
+icdata-ref > a[href]:hover {
+    text-decoration: underline;
+}
+
+icdata-ref > a[href] {
+    color: #0489c3;
+    text-decoration: none;
+}
+
+icdata-ref > a[href] * {
+    color: inherit;
+}
+
+/* inbound-reference */
+
+inbound-reference > a[href]:hover {
+  text-decoration: underline;
+}
+inbound-reference > a[href] {
+  color: #0489c3;
+  text-decoration: none;
+}
+
+inbound-reference .indent {
+  margin-left: 1.5em;
+  font: 400 14px 'Montserrat', sans-serif;
+  line-height: 150%;
+}
+inbound-reference .stackTraceBox {
+  margin-left: 1.5em;
+  background-color: #f5f5f5;
+  border: 1px solid #ccc;
+  padding: 10px;
+  font-family: consolas, courier, monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* instance-ref */
+/* TODO(cbernaschina) fix instance-ref-wrapped to instance-ref when wrapper
+removed */
+
+instance-ref-wrapped > a[href]:hover {
+  text-decoration: underline;
+}
+instance-ref-wrapped > a[href] {
+  color: #0489c3;
+  text-decoration: none;
+}
+instance-ref-wrapped > a[href] * {
+  color: inherit;
+}
+instance-ref-wrapped .emphasize {
+  font-style: italic;
+}
+instance-ref-wrapped .indent {
+  margin-left: 1.5em;
+  font: 400 14px 'Montserrat', sans-serif;
+  line-height: 150%;
+}
+instance-ref-wrapped .stackTraceBox {
+  margin-left: 1.5em;
+  background-color: #f5f5f5;
+  border: 1px solid #ccc;
+  padding: 10px;
+  font-family: consolas, courier, monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
 /* isolate-counter-chart */
 
 isolate-counter-chart {
@@ -541,6 +1376,19 @@ isolate-counter-chart > div.legend {
   overflow-y: auto;
 }
 
+/* isolate-location */
+
+isolate-location > span {
+  font-weight: bold;
+}
+isolate-location > a[href] {
+  color: #0489c3;
+  text-decoration: none;
+}
+isolate-location > a[href]:hover {
+  text-decoration: underline;
+}
+
 /* isolate-reconnect */
 
 isolate-reconnect div.doubleSpaced {
@@ -559,29 +1407,34 @@ isolate-ref-wrapped > a[href] {
   text-decoration: none;
 }
 
-/* isolate-shared-summary */
-/* TODO(cbernaschina) fix isolate-shared-summary-wrapped
-to isolate-shared-summary when wrapper removed */
+/* isolate-run-state */
 
-isolate-shared-summary,
-isolate-shared-summary-wrapped {
+isolate-run-state > span {
+  font-weight: bold;
+}
+
+/* isolate-shared-summary */
+
+isolate-shared-summary {
   display: block;
+}
+isolate-shared-summary > .summary {
   height: 300px;
   position: relative;
 }
-isolate-shared-summary-wrapped > .menu {
+isolate-shared-summary .menu {
   float: right;
   top: 0;
   right: 0;
 }
-isolate-shared-summary-wrapped > isolate-counter-chart {
+isolate-shared-summary isolate-counter-chart {
   position: absolute;
   left: 0;
   top: 0;
   right: 230px;
   clear: both;
 }
-isolate-shared-summary-wrapped .errorBox {
+isolate-shared-summary .errorBox {
   background-color: #f5f5f5;
   border: 1px solid #ccc;
   padding: 2em;
@@ -601,6 +1454,111 @@ library-ref-wrapped > a[href]:hover {
 library-ref-wrapped > a[href] {
   color: #0489c3;
   text-decoration: none;
+}
+
+.nav-option {
+  float: right;
+  margin: 3px;
+  padding: 8px;
+}
+
+.nav-option label {
+  color: white;
+}
+
+/* logging-list */
+
+logging-list .outlined {
+  -webkit-box-shadow: 0px 0px 2px 1px rgba(0,0,0,0.75);
+  -moz-box-shadow: 0px 0px 2px 1px rgba(0,0,0,0.75);
+  box-shadow: 0px 0px 2px 1px rgba(0,0,0,0.75);
+  margin: 4px;
+}
+logging-list .logItem {
+  display: inline-block;
+  font: normal 14px consolas, courier, monospace;
+  white-space: pre;
+  line-height: 125%;
+  width: 100%;
+}
+logging-list .level {
+  display: inline-block;
+  width: 5em;
+}
+logging-list .time {
+  display: inline-block;
+  width: 12em;
+}
+logging-list .FINEST {
+  background-color: #FAFAFA;
+}
+logging-list .FINER {
+  background-color: #ECEFF1;
+}
+logging-list .FINE {
+  background-color: #EFEBE9;
+}
+logging-list .CONFIG {
+  background-color: #FFF3E0;
+}
+logging-list .INFO {
+  background-color: #F1F8E9;
+}
+logging-list .WARNING {
+  background-color: #FFE0B2;
+}
+logging-list .SEVERE {
+  background-color: #FFCCBC;
+}
+logging-list .SHOUT {
+  background-color: #FFCDD2;
+}
+
+/* megamorphic-cache-ref */
+/* TODO(cbernaschina) fix megamorphic-cache-ref-wrapped to megamorphic-cache-ref
+when wrapper removed */
+
+megamorphic-cache-ref-wrapped > a[href]:hover {
+    text-decoration: underline;
+}
+megamorphic-cache-ref-wrapped > a[href] {
+    color: #0489c3;
+    text-decoration: none;
+}
+megamorphic-cache-ref-wrapped > a[href] * {
+    color: inherit;
+}
+
+/* metric-graph */
+
+metric-graph {
+  display: block;
+  height: 100%;
+}
+
+metric-graph .graph {
+  height: 100%;
+  margin-top: -30px;
+  padding: 20px;
+  padding-top: 60px;
+}
+
+metric-graph .graph > div {
+  height: 100%;
+}
+
+/* metric-graph */
+
+metrics-page > div {
+  display: block;
+  height: 100%;
+}
+
+metrics-page > div > .graph {
+  display: block;
+  height: 100%;
+  margin-top: -300px;
+  padding-top: 300px;
 }
 
 /* nav-notify */
@@ -643,12 +1601,14 @@ nav-exception *, nav-event * {
   font-size: 12px;
 }
 
-nav-exception > div > a, nav-event > div > a {
+nav-exception > div > a[href],
+nav-event > div > a[href] {
   color: white;
   text-decoration: none;
 }
 
-nav-exception > div > a:hover, nav-event > div > a:hover {
+nav-exception > div > a[href]:hover,
+nav-event > div > a[href]:hover {
   text-decoration: underline;
 }
 
@@ -700,6 +1660,48 @@ nav-refresh-wrapped > li {
   margin: 0;
 }
 
+/* object-common && class-instances */
+/* TODO(cbernaschina) fix object-common-wrapped to object-common when wrapper
+removed */
+
+class-instances button:hover,
+object-common-wrapped button:hover {
+  background-color: transparent;
+  border: none;
+  text-decoration: underline;
+}
+class-instances button,
+object-common-wrapped button {
+  background-color: transparent;
+  border: none;
+  color: #0489c3;
+  padding: 0;
+  margin: -8px 4px;
+  font-size: 20px;
+  text-decoration: none;
+}
+
+/* object-pool-ref */
+
+object-pool-ref > a[href]:hover {
+    text-decoration: underline;
+}
+
+object-pool-ref > a[href] {
+    color: #0489c3;
+    text-decoration: none;
+}
+
+object-pool-ref > a[href] * {
+    color: inherit;
+}
+
+/* object-pool-view */
+
+object-pool-view .hexadecimal {
+  font-family: monospace;
+}
+
 /* observatory-application */
 
 observatory-application {
@@ -710,6 +1712,75 @@ observatory-application {
 observatory-application > div {
   display: block;
   height: 100%;
+}
+
+/* persistent-handles-page */
+
+persistent-handles-page {
+  display: block;
+  height: 100%;
+}
+persistent-handles-page .persistent-handles,
+persistent-handles-page .weak-persistent-handles {
+  margin-top: -70px;
+  padding-top: 70px;
+  height: 50%;
+}
+persistent-handles-page virtual-collection {
+  overflow-y: scroll;
+}
+persistent-handles-page .weak-item,
+persistent-handles-page .collection-item {
+  box-sizing: border-box;
+  line-height: 20px;
+  padding-left: 5%;
+  padding-right: 5%;
+}
+persistent-handles-page .header {
+  box-sizing: border-box;
+  line-height: 20px;
+}
+persistent-handles-page .header .weak-item:last-child {
+  margin-bottom: -3px;
+  border-bottom: solid 1px #AAAAAA;
+}
+persistent-handles-page .weak-item .external-size,
+persistent-handles-page .weak-item .peer,
+persistent-handles-page .weak-item .object {
+  display: inline-block;
+  width: 7em;
+  text-align: right;
+  padding-right: 0.5em;
+  line-height: 20px;
+}
+persistent-handles-page .weak-item .peer {
+  width: 11em;
+  font-family: monospace;
+}
+persistent-handles-page .weak-item .object {
+  text-align: left;
+  width: 25em;
+}
+persistent-handles-page .shifter .weak-item:hover {
+  background-color: #d2e7fe;
+}
+persistent-handles-page .weak-item .finalizer {
+  padding-left: 0.5em;
+}
+persistent-handles-page .weak-item > button,
+persistent-handles-page .weak-item > button:active {
+  background-color: transparent;
+  color: #0489c3;
+  border-style: none;
+}
+persistent-handles-page .weak-item > button:hover {
+  text-decoration: underline;
+}
+
+/* ports-page */
+
+ports-page .port-number {
+  font-weight: bold;
 }
 
 /* script-ref */
@@ -753,6 +1824,10 @@ observatory-application > div {
 
 /* sample-buffer-control */
 
+sample-buffer-control {
+  white-space: nowrap;
+}
+
 sample-buffer-control .statusMessage {
   font-size: 150%;
   font-weight: bold;
@@ -781,6 +1856,214 @@ sample-buffer-control .shadow {
               0 2px 5px 0 rgba(0, 0, 0, 0.26);
 }
 
+/* script-inset */
+/* TODO(cbernaschina) fix script-inset-wrapped to script-inset when wrapper
+removed */
+
+script-inset-wrapped {
+  position: relative;
+}
+script-inset-wrapped button.refresh,
+script-inset-wrapped button.toggle-profile {
+  background-color: transparent;
+  padding: 0;
+  margin: 0;
+  border: none;
+  position: absolute;
+  display: inline-block;
+  top: 5px;
+  color: #888888;
+  line-height: 30px;
+  font: 400 20px 'Montserrat', sans-serif;
+}
+script-inset-wrapped button.refresh {
+  right: 5px;
+  font-size: 25px;
+}
+script-inset-wrapped button.toggle-profile {
+  right: 30px;
+  font-size: 20px;
+}
+script-inset-wrapped button.toggle-profile.enabled {
+  color: #BB3322;
+}
+script-inset-wrapped a {
+  color: #0489c3;
+  text-decoration: none;
+}
+script-inset-wrapped a:hover {
+  text-decoration: underline;
+}
+script-inset-wrapped .sourceInset {
+}
+script-inset-wrapped .sourceTable {
+  position: relative;
+  background-color: #f5f5f5;
+  border: 1px solid #ccc;
+  padding: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: scroll;
+}
+script-inset-wrapped .sourceRow {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+}
+script-inset-wrapped .sourceItem,
+script-inset-wrapped .sourceItemCurrent {
+  vertical-align: top;
+  font: 400 14px consolas, courier, monospace;
+  line-height: 125%;
+  white-space: pre;
+  max-width: 0;
+}
+script-inset-wrapped .currentLine {
+  background-color: #fff;
+}
+script-inset-wrapped .currentCol {
+  background-color: #6cf;
+}
+script-inset-wrapped .hitsCurrent,
+script-inset-wrapped .hitsNone,
+script-inset-wrapped .hitsNotExecuted,
+script-inset-wrapped .hitsExecuted,
+script-inset-wrapped .hitsCompiled,
+script-inset-wrapped .hitsNotCompiled {
+  display: table-cell;
+  vertical-align: top;
+  font: 400 14px consolas, courier, monospace;
+  margin-left: 5px;
+  margin-right: 5px;
+  text-align: right;
+  color: #a8a8a8;
+}
+script-inset-wrapped .hitsCurrent {
+  background-color: #6cf;
+  color: black;
+}
+script-inset-wrapped .hitsNotExecuted {
+  background-color: #faa;
+}
+script-inset-wrapped .hitsExecuted {
+  background-color: #aea;
+}
+script-inset-wrapped .hitsCompiled {
+  background-color: #e0e0e0;
+}
+script-inset-wrapped .hitsNotCompiled {
+  background-color: #f0c5c5;
+}
+script-inset-wrapped .noCopy {}
+script-inset-wrapped .emptyBreakpoint,
+script-inset-wrapped .possibleBreakpoint,
+script-inset-wrapped .busyBreakpoint,
+script-inset-wrapped .unresolvedBreakpoint,
+script-inset-wrapped .resolvedBreakpoint  {
+  display: table-cell;
+  vertical-align: top;
+  font: 400 14px consolas, courier, monospace;
+  width: 1em;
+  text-align: center;
+  cursor: pointer;
+}
+script-inset-wrapped .possibleBreakpoint {
+  color: #e0e0e0;
+}
+script-inset-wrapped .possibleBreakpoint:hover {
+  color: white;
+  background-color: #777;
+}
+script-inset-wrapped .busyBreakpoint {
+  color: white;
+  background-color: black;
+  cursor: wait;
+}
+script-inset-wrapped .unresolvedBreakpoint {
+  color: white;
+  background-color: #cac;
+}
+script-inset-wrapped .resolvedBreakpoint {
+  color: white;
+  background-color: #e66;
+}
+script-inset-wrapped .unresolvedBreakAnnotation {
+  color: white;
+  background-color: #cac;
+}
+script-inset-wrapped .resolvedBreakAnnotation {
+  color: white;
+  background-color: #e66;
+}
+script-inset-wrapped .notSourceProfile,
+script-inset-wrapped .noProfile,
+script-inset-wrapped .coldProfile,
+script-inset-wrapped .mediumProfile,
+script-inset-wrapped .hotProfile {
+  display: table-cell;
+  vertical-align: top;
+  font: 400 14px consolas, courier, monospace;
+  width: 4em;
+  text-align: right;
+  cursor: pointer;
+  margin-left: 5px;
+  margin-right: 5px;
+}
+script-inset-wrapped .notSourceProfile {
+}
+script-inset-wrapped .noProfile {
+  background-color: #e0e0e0;
+}
+script-inset-wrapped .coldProfile {
+  background-color: #aea;
+}
+script-inset-wrapped .mediumProfile {
+  background-color: #fe9;
+}
+script-inset-wrapped .hotProfile {
+  background-color: #faa;
+}
+
+/* stack-trace-tree-config */
+
+stack-trace-tree-config {
+  white-space: nowrap;
+}
+
+/* timeline-page */
+
+timeline-page .iframe {
+  height: 100%;
+  width: 100%;
+  margin-top: -120px;
+  padding-top: 120px;
+}
+timeline-page .iframe iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* type-arguments-ref */
+
+type-arguments-ref a[href]:hover {
+  text-decoration: underline;
+}
+type-arguments-ref a[href] {
+  color: #0489c3;
+  text-decoration: none;
+}
+
+/* token-stream-ref */
+
+token-stream-ref a[href]:hover {
+  text-decoration: underline;
+}
+token-stream-ref a[href] {
+  color: #0489c3;
+  text-decoration: none;
+}
+
 /* view-footer */
 
 view-footer {
@@ -801,34 +2084,39 @@ view-footer > a {
 /* virtual-collection */
 
 virtual-collection {
+  position: relative;
   display: block;
-  overflow-y: scroll;
+  overflow-y: auto;
   width: 100%;
   height: 100%;
 }
 
-virtual-collection .scroller {
+virtual-collection .header {
+  background: white;
   position: relative;
+  display: inline-block;
+  min-width: 100%;
+  z-index: +1;
+}
+
+virtual-collection .scroller {
   overflow: hidden;
   background: transparent;
+  display: inline-block;
+  min-width: 100%;
 }
 
 virtual-collection .shifter {
   background: transparent;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  display: inline-block;
+  min-width: 100%;
 }
 
+virtual-collection .header > *,
 virtual-collection .shifter > * {
-  display: block;
-  position: relative;
-  top: -25%;
-  width: 100%;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow-x: hidden;
+  display: inline-block;
+  min-width: 100%;
   white-space: nowrap;
 }
 

@@ -113,12 +113,6 @@ namespace dart {
   V(Int32x4, withFlagW, Int32x4WithFlagW, Int32x4, 0x345ac675)                 \
   V(Int64List, [], Int64ArrayGetIndexed, Dynamic, 0x0c0c939a)                  \
   V(Int64List, []=, Int64ArraySetIndexed, Dynamic, 0x3714d004)                 \
-  V(Float32x4List, [], Float32x4ArrayGetIndexed, Float32x4, 0x01c7017b)        \
-  V(Float32x4List, []=, Float32x4ArraySetIndexed, Dynamic, 0x56e843aa)         \
-  V(Int32x4List, [], Int32x4ArrayGetIndexed, Int32x4, 0x08353f8d)              \
-  V(Int32x4List, []=, Int32x4ArraySetIndexed, Dynamic, 0x1d9a47a5)             \
-  V(Float64x2List, [], Float64x2ArrayGetIndexed, Float64x2, 0x669b1498)        \
-  V(Float64x2List, []=, Float64x2ArraySetIndexed, Dynamic, 0x76da6ffe)         \
   V(_Bigint, get:_neg, Bigint_getNeg, Bool, 0x7bf17a57)                        \
   V(_Bigint, get:_used, Bigint_getUsed, Smi, 0x55041013)                       \
   V(_Bigint, get:_digits, Bigint_getDigits, TypedDataUint32Array, 0x46a6c1b3)  \
@@ -290,6 +284,12 @@ namespace dart {
   V(Float64List, []=, Float64ArraySetIndexed, Dynamic, 0x139b2465)             \
   V(Float32List, [], Float32ArrayGetIndexed, Double, 0x5686528f)               \
   V(Float32List, []=, Float32ArraySetIndexed, Dynamic, 0x1b0d90df)             \
+  V(Float32x4List, [], Float32x4ArrayGetIndexed, Float32x4, 0x01c7017b)        \
+  V(Float32x4List, []=, Float32x4ArraySetIndexed, Dynamic, 0x56e843aa)         \
+  V(Int32x4List, [], Int32x4ArrayGetIndexed, Int32x4, 0x08353f8d)              \
+  V(Int32x4List, []=, Int32x4ArraySetIndexed, Dynamic, 0x1d9a47a5)             \
+  V(Float64x2List, [], Float64x2ArrayGetIndexed, Float64x2, 0x669b1498)        \
+  V(Float64x2List, []=, Float64x2ArraySetIndexed, Dynamic, 0x76da6ffe)         \
   V(_TypedList, get:length, TypedDataLength, Smi, 0x2090dc1a)                  \
   V(Float32x4, get:x, Float32x4ShuffleX, Double, 0x63d0c13f)                   \
   V(Float32x4, get:y, Float32x4ShuffleY, Double, 0x20343b1b)                   \
@@ -361,42 +361,19 @@ namespace dart {
   V(_GrowableList, get:length, GrowableArrayLength, 0x18dc9df6)                \
   V(_GrowableList, get:_capacity, GrowableArrayCapacity, 0x02734d82)           \
   V(_GrowableList, add, GrowableListAdd, 0x0d1358ed)                           \
-  V(_GrowableList, removeLast, GrowableListRemoveLast, 0x135d7384)             \
+  V(_GrowableList, removeLast, GrowableListRemoveLast, 0x7add0363)             \
   V(_StringBase, get:length, StringBaseLength, 0x2a2c1b13)                     \
   V(ListIterator, moveNext, ListIteratorMoveNext, 0x3f892e71)                  \
   V(_FixedSizeArrayIterator, moveNext, FixedListIteratorMoveNext, 0x5681c902)  \
   V(_GrowableList, get:iterator, GrowableArrayIterator, 0x6db11a73)            \
   V(_GrowableList, forEach, GrowableArrayForEach, 0x250036fe)                  \
   V(_List, ., ObjectArrayAllocate, 0x63078b15)                                 \
-  V(_List, [], ObjectArrayGetIndexed, 0x157b4670)                              \
-  V(_List, []=, ObjectArraySetIndexed, 0x34d2c72c)                             \
   V(ListMixin, get:isEmpty, ListMixinIsEmpty, 0x787d9bc6)                      \
   V(_List, get:iterator, ObjectArrayIterator, 0x119cf41a)                      \
   V(_List, forEach, ObjectArrayForEach, 0x0abce191)                            \
   V(_List, _slice, ObjectArraySlice, 0x3219e715)                               \
   V(_ImmutableList, get:iterator, ImmutableArrayIterator, 0x119cf41a)          \
   V(_ImmutableList, forEach, ImmutableArrayForEach, 0x0abce191)                \
-  V(_ImmutableList, [], ImmutableArrayGetIndexed, 0x157b4670)                  \
-  V(_GrowableList, [], GrowableArrayGetIndexed, 0x74ad8832)                    \
-  V(_GrowableList, []=, GrowableArraySetIndexed, 0x0d6cfe96)                   \
-  V(Float32List, [], Float32ArrayGetIndexed, 0x5686528f)                       \
-  V(Float32List, []=, Float32ArraySetIndexed, 0x1b0d90df)                      \
-  V(Float64List, [], Float64ArrayGetIndexed, 0x7a27098d)                       \
-  V(Float64List, []=, Float64ArraySetIndexed, 0x139b2465)                      \
-  V(Int8List, [], Int8ArrayGetIndexed, 0x069af8b3)                             \
-  V(Int8List, []=, Int8ArraySetIndexed, 0x33994cd7)                            \
-  V(Uint8List, [], Uint8ArrayGetIndexed, 0x027603ed)                           \
-  V(Uint8List, []=, Uint8ArraySetIndexed, 0x060d5256)                          \
-  V(Uint8ClampedList, [], Uint8ClampedArrayGetIndexed, 0x027603ed)             \
-  V(Uint8ClampedList, []=, Uint8ClampedArraySetIndexed, 0x28f5f058)            \
-  V(Uint16List, [], Uint16ArrayGetIndexed, 0x3ececa2f)                         \
-  V(Uint16List, []=, Uint16ArraySetIndexed, 0x5c3a0bb9)                        \
-  V(Int16List, [], Int16ArrayGetIndexed, 0x173cd6a1)                           \
-  V(Int16List, []=, Int16ArraySetIndexed, 0x32f84e3c)                          \
-  V(Int32List, [], Int32ArrayGetIndexed, 0x262eef09)                           \
-  V(Int32List, []=, Int32ArraySetIndexed, 0x1b05b471)                          \
-  V(Int64List, [], Int64ArrayGetIndexed, 0x0c0c939a)                           \
-  V(Int64List, []=, Int64ArraySetIndexed, 0x3714d004)                          \
   V(_Uint8ArrayView, [], Uint8ArrayViewGetIndexed, 0x4fc6b3d3)                 \
   V(_Uint8ArrayView, []=, Uint8ArrayViewSetIndexed, 0x2032fdf0)                \
   V(_Int8ArrayView, [], Int8ArrayViewGetIndexed, 0x12036952)                   \
@@ -421,19 +398,11 @@ namespace dart {
   V(_ByteDataView, getUint64, ByteDataViewGetUint64, 0x2fab992e)               \
   V(_ByteDataView, getFloat32, ByteDataViewGetFloat32, 0x387e9fc6)             \
   V(_ByteDataView, getFloat64, ByteDataViewGetFloat64, 0x5396432d)             \
-  V(::, asin, MathAsin, 0x661ff68b)                                            \
-  V(::, acos, MathAcos, 0x44e71d5f)                                            \
-  V(::, atan, MathAtan, 0x4436a657)                                            \
-  V(::, atan2, MathAtan2, 0x60a40743)                                          \
-  V(::, cos, MathCos, 0x79a7611c)                                              \
   V(::, exp, MathExp, 0x5b894d7b)                                              \
   V(::, log, MathLog, 0x2e25132c)                                              \
   V(::, max, MathMax, 0x54121d6a)                                              \
   V(::, min, MathMin, 0x4276561c)                                              \
   V(::, pow, MathPow, 0x438e3089)                                              \
-  V(::, sin, MathSin, 0x0213abe6)                                              \
-  V(::, sqrt, MathSqrt, 0x1afb83d4)                                            \
-  V(::, tan, MathTan, 0x4e2e20db)                                              \
   V(Lists, copy, ListsCopy, 0x21a194fa)                                        \
   V(_Bigint, get:_neg, Bigint_getNeg, 0x7bf17a57)                              \
   V(_Bigint, get:_used, Bigint_getUsed, 0x55041013)                            \
@@ -451,6 +420,14 @@ namespace dart {
 
 // A list of core function that should never be inlined.
 #define INLINE_BLACK_LIST(V)                                                   \
+  V(::, asin, MathAsin, 0x661ff68b)                                            \
+  V(::, acos, MathAcos, 0x44e71d5f)                                            \
+  V(::, atan, MathAtan, 0x4436a657)                                            \
+  V(::, atan2, MathAtan2, 0x60a40743)                                          \
+  V(::, cos, MathCos, 0x79a7611c)                                              \
+  V(::, sin, MathSin, 0x0213abe6)                                              \
+  V(::, sqrt, MathSqrt, 0x1afb83d4)                                            \
+  V(::, tan, MathTan, 0x4e2e20db)                                              \
   V(_Bigint, _lsh, Bigint_lsh, 0x5cd95513)                                     \
   V(_Bigint, _rsh, Bigint_rsh, 0x2d68d0e1)                                     \
   V(_Bigint, _absAdd, Bigint_absAdd, 0x492f4865)                               \

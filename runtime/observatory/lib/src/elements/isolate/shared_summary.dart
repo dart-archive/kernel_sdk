@@ -13,7 +13,7 @@ import 'package:observatory/src/elements/isolate/counter_chart.dart';
 
 class IsolateSharedSummaryElement extends HtmlElement implements Renderable {
   static const tag =
-    const Tag<IsolateSharedSummaryElement>('isolate-shared-summary-wrapped',
+    const Tag<IsolateSharedSummaryElement>('isolate-shared-summary',
                                            dependencies: const [
                                              IsolateCounterChartElement.tag
                                            ]);
@@ -24,13 +24,18 @@ class IsolateSharedSummaryElement extends HtmlElement implements Renderable {
       _r.onRendered;
 
   M.Isolate _isolate;
+  M.EventRepository _events;
+  StreamSubscription _isolateSubscription;
 
   factory IsolateSharedSummaryElement(M.Isolate isolate,
+                                      M.EventRepository events,
                                       {RenderingQueue queue}) {
     assert(isolate != null);
+    assert(events != null);
     IsolateSharedSummaryElement e = document.createElement(tag.name);
     e._r = new RenderingScheduler(e, queue: queue);
     e._isolate = isolate;
+    e._events = events;
     return e;
   }
 
@@ -40,6 +45,7 @@ class IsolateSharedSummaryElement extends HtmlElement implements Renderable {
   void attached() {
     super.attached();
     _r.enable();
+    _isolateSubscription = _events.onIsolateEvent.listen(_eventListener);
   }
 
   @override
@@ -47,37 +53,31 @@ class IsolateSharedSummaryElement extends HtmlElement implements Renderable {
     super.detached();
     children = [];
     _r.disable(notify: true);
+    _isolateSubscription.cancel();
   }
 
   void render() {
-    children = [];
-    if (_isolate.error != null) {
-      children = [
-        new PreElement()..classes = const ["errorBox"]
-          ..text = _isolate.error.message
-      ];
-    }
     final newHeapUsed = Utils.formatSize(_isolate.newSpace.used);
     final newHeapCapacity = Utils.formatSize(_isolate.newSpace.capacity);
     final oldHeapUsed = Utils.formatSize(_isolate.oldSpace.used);
     final oldHeapCapacity = Utils.formatSize(_isolate.oldSpace.capacity);
-    children.addAll([
+    final content = [
       new DivElement()..classes = ['menu']
         ..children = [
-          new DivElement()..classes = const ['memberList']
+          new DivElement()..classes = ['memberList']
             ..children = [
-              new DivElement()..classes = const ['memberItem']
+              new DivElement()..classes = ['memberItem']
                 ..children = [
-                  new DivElement()..classes = const ['memberName']
+                  new DivElement()..classes = ['memberName']
                     ..text = 'new heap',
-                  new DivElement()..classes = const ['memberValue']
+                  new DivElement()..classes = ['memberValue']
                     ..text = '$newHeapUsed of $newHeapCapacity',
                 ],
-              new DivElement()..classes = const ['memberItem']
+              new DivElement()..classes = ['memberItem']
                 ..children = [
-                  new DivElement()..classes = const ['memberName']
+                  new DivElement()..classes = ['memberName']
                     ..text = 'old heap',
-                  new DivElement()..classes = const ['memberValue']
+                  new DivElement()..classes = ['memberValue']
                     ..text = '$oldHeapUsed of $oldHeapCapacity',
                 ]
             ],
@@ -150,6 +150,26 @@ class IsolateSharedSummaryElement extends HtmlElement implements Renderable {
             ]
       ],
       new IsolateCounterChartElement(_isolate.counters, queue: _r.queue)
-    ]);
+    ];
+    if (_isolate.error != null) {
+      children = [
+        new PreElement()..classes = ['errorBox']
+          ..text = _isolate.error.message,
+        new DivElement()..classes = ['summary']
+          ..children = content
+      ];
+    } else {
+      children = [
+        new DivElement()..classes = ['summary']
+          ..children = content
+      ];
+    }
+  }
+
+  void _eventListener(e) {
+    if (e.isolate.id == _isolate.id) {
+      _isolate = e.isolate;
+      _r.dirty();
+    }
   }
 }

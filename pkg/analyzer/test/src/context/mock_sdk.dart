@@ -4,6 +4,7 @@
 
 library analyzer.test.src.context.mock_sdk;
 
+import 'package:analyzer/dart/element/element.dart' show LibraryElement;
 import 'package:analyzer/file_system/file_system.dart' as resource;
 import 'package:analyzer/file_system/memory_file_system.dart' as resource;
 import 'package:analyzer/src/context/cache.dart';
@@ -11,6 +12,9 @@ import 'package:analyzer/src/context/context.dart';
 import 'package:analyzer/src/generated/engine.dart' show AnalysisEngine;
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
+import 'package:analyzer/src/summary/idl.dart' show PackageBundle;
+import 'package:analyzer/src/summary/summarize_elements.dart'
+    show PackageBundleAssembler;
 
 const String librariesContent = r'''
 const Map<String, LibraryInfo> libraries = const {
@@ -44,6 +48,8 @@ class Future<T> {
   static Future<List/*<T>*/> wait/*<T>*/(
       Iterable<Future/*<T>*/> futures) => null;
   Future/*<R>*/ then/*<R>*/(onValue(T value)) => null;
+
+  Future<T> whenComplete(action());
 }
 
 abstract class Completer<T> {
@@ -331,6 +337,11 @@ class MockSdk implements DartSdk {
   @override
   final List<SdkLibrary> sdkLibraries;
 
+  /**
+   * The cached linked bundle of the SDK.
+   */
+  PackageBundle _bundle;
+
   MockSdk({bool dartAsync: true, resource.ResourceProvider resourceProvider})
       : provider = resourceProvider ?? new resource.MemoryResourceProvider(),
         sdkLibraries = dartAsync ? _LIBRARIES : [_LIB_CORE],
@@ -396,6 +407,22 @@ class MockSdk implements DartSdk {
   }
 
   @override
+  PackageBundle getLinkedBundle() {
+    if (_bundle == null) {
+      PackageBundleAssembler assembler = new PackageBundleAssembler();
+      for (SdkLibrary sdkLibrary in sdkLibraries) {
+        String uriStr = sdkLibrary.shortName;
+        Source source = mapDartUri(uriStr);
+        LibraryElement libraryElement = context.computeLibraryElement(source);
+        assembler.serializeLibraryElement(libraryElement);
+      }
+      List<int> bytes = assembler.assemble().toBuffer();
+      _bundle = new PackageBundle.fromBuffer(bytes);
+    }
+    return _bundle;
+  }
+
+  @override
   SdkLibrary getSdkLibrary(String dartUri) {
     // getSdkLibrary() is only used to determine whether a library is internal
     // to the SDK.  The mock SDK doesn't have any internals, so it's safe to
@@ -415,6 +442,19 @@ class MockSdk implements DartSdk {
     // If we reach here then we tried to use a dartUri that's not in the
     // table above.
     return null;
+  }
+
+  /**
+   * This method is used to apply patches to [MockSdk].  It may be called only
+   * before analysis, i.e. before the analysis context was created.
+   */
+  void updateUriFile(String uri, String updateContent(String content)) {
+    assert(_analysisContext == null);
+    String path = FULL_URI_MAP[uri];
+    assert(path != null);
+    String content = provider.getFile(path).readAsStringSync();
+    String newContent = updateContent(content);
+    provider.updateFile(path, newContent);
   }
 }
 

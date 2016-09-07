@@ -1962,10 +1962,10 @@ void StubCode::GenerateOptimizedIdenticalWithNumberCheckStub(
 // Called from megamorphic calls.
 //  EBX: receiver
 //  ECX: MegamorphicCache (preserved)
-// Result:
+// Passed to target:
 //  EBX: target entry point
 //  EDX: argument descriptor
-void StubCode::GenerateMegamorphicLookupStub(Assembler* assembler) {
+void StubCode::GenerateMegamorphicCallStub(Assembler* assembler) {
   // Jump if receiver is a smi.
   Label smi_case;
   // Check if object (in tmp) is a Smi.
@@ -2032,18 +2032,26 @@ void StubCode::GenerateMegamorphicLookupStub(Assembler* assembler) {
 // Called from switchable IC calls.
 //  EBX: receiver
 //  ECX: ICData (preserved)
-// Result:
-//  EBX: target entry point
+// Passed to target:
 //  EDX: arguments descriptor
-void StubCode::GenerateICLookupThroughFunctionStub(Assembler* assembler) {
+void StubCode::GenerateICCallThroughFunctionStub(Assembler* assembler) {
   __ int3();
 }
 
 
-void StubCode::GenerateICLookupThroughCodeStub(Assembler* assembler) {
+void StubCode::GenerateICCallThroughCodeStub(Assembler* assembler) {
   __ int3();
 }
 
+
+void StubCode::GenerateSingleTargetCallStub(Assembler* assembler) {
+  __ int3();
+}
+
+
+void StubCode::GenerateMonomorphicMissStub(Assembler* assembler) {
+  __ int3();
+}
 
 
 void StubCode::GenerateFrameAwaitingMaterializationStub(Assembler* assembler) {

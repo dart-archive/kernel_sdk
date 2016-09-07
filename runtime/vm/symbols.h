@@ -72,6 +72,7 @@ class ObjectPointerVisitor;
   V(ThrowNew, "_throwNew")                                                     \
   V(ThrowNewIfNotLoaded, "_throwNewIfNotLoaded")                               \
   V(CheckAssertion, "_checkAssertion")                                         \
+  V(CheckConstAssertion, "_checkConstAssertion")                               \
   V(Symbol, "Symbol")                                                          \
   V(SymbolCtor, "Symbol.")                                                     \
   V(List, "List")                                                              \
@@ -171,6 +172,7 @@ class ObjectPointerVisitor;
   V(DeoptInfo, "DeoptInfo")                                                    \
   V(Context, "Context")                                                        \
   V(ContextScope, "ContextScope")                                              \
+  V(SingleTargetCache, "SingleTargetCache")                                    \
   V(ICData, "ICData")                                                          \
   V(MegamorphicCache, "MegamorphicCache")                                      \
   V(SubtypeTestCache, "SubtypeTestCache")                                      \

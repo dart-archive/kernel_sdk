@@ -56,7 +56,7 @@ class BestPracticesVerifier extends RecursiveAstVisitor<Object> {
    * A flag indicating whether a surrounding member (compilation unit or class)
    * is deprecated.
    */
-  bool inDeprecatedMember = false;
+  bool inDeprecatedMember;
 
   /**
    * The error reporter by which errors will be reported.
@@ -88,7 +88,9 @@ class BestPracticesVerifier extends RecursiveAstVisitor<Object> {
       this._errorReporter, TypeProvider typeProvider, this._currentLibrary,
       {TypeSystem typeSystem})
       : _futureNullType = typeProvider.futureNullType,
-        _typeSystem = typeSystem ?? new TypeSystemImpl();
+        _typeSystem = typeSystem ?? new TypeSystemImpl() {
+    inDeprecatedMember = _currentLibrary.isDeprecated;
+  }
 
   @override
   Object visitAnnotation(Annotation node) {
@@ -1918,10 +1920,10 @@ class DeadCodeVerifier extends RecursiveAstVisitor<Object> {
   @override
   Object visitExportDirective(ExportDirective node) {
     ExportElement exportElement = node.element;
-    if (exportElement != null && exportElement.uriExists) {
+    if (exportElement != null) {
       // The element is null when the URI is invalid
       LibraryElement library = exportElement.exportedLibrary;
-      if (library != null) {
+      if (library != null && !library.isSynthetic) {
         for (Combinator combinator in node.combinators) {
           _checkCombinator(exportElement.exportedLibrary, combinator);
         }
@@ -1962,11 +1964,11 @@ class DeadCodeVerifier extends RecursiveAstVisitor<Object> {
   @override
   Object visitImportDirective(ImportDirective node) {
     ImportElement importElement = node.element;
-    if (importElement != null && importElement.uriExists) {
+    if (importElement != null) {
       // The element is null when the URI is invalid, but not when the URI is
       // valid but refers to a non-existent file.
       LibraryElement library = importElement.importedLibrary;
-      if (library != null) {
+      if (library != null && !library.isSynthetic) {
         for (Combinator combinator in node.combinators) {
           _checkCombinator(library, combinator);
         }
@@ -4452,7 +4454,7 @@ class ImportsVerifier {
         LibraryElement libraryElement = importElement.importedLibrary;
         if (libraryElement == null ||
             libraryElement.isDartCore ||
-            !importElement.uriExists) {
+            libraryElement.isSynthetic) {
           continue;
         }
       }
@@ -4726,12 +4728,10 @@ class InferenceContext {
     if (_returnStack.isEmpty) {
       return;
     }
-    DartType context = _returnStack.last;
-    if (context is! FutureUnionType) {
-      DartType inferred = _inferredReturn.last;
-      inferred = _typeSystem.getLeastUpperBound(_typeProvider, type, inferred);
-      _inferredReturn[_inferredReturn.length - 1] = inferred;
-    }
+
+    DartType inferred = _inferredReturn.last;
+    inferred = _typeSystem.getLeastUpperBound(_typeProvider, type, inferred);
+    _inferredReturn[_inferredReturn.length - 1] = inferred;
   }
 
   /**
@@ -4756,7 +4756,17 @@ class InferenceContext {
     if (_returnStack.isNotEmpty && _inferredReturn.isNotEmpty) {
       DartType context = _returnStack.removeLast() ?? DynamicTypeImpl.instance;
       DartType inferred = _inferredReturn.removeLast();
-      if (!inferred.isBottom && _typeSystem.isSubtypeOf(inferred, context)) {
+      if (inferred.isBottom) {
+        return;
+      }
+
+      if (context is FutureUnionType) {
+        // Try and match the Future type first.
+        if (_typeSystem.isSubtypeOf(inferred, context.futureOfType) ||
+            _typeSystem.isSubtypeOf(inferred, context.type)) {
+          setType(node, inferred);
+        }
+      } else if (_typeSystem.isSubtypeOf(inferred, context)) {
         setType(node, inferred);
       }
     } else {
@@ -4910,6 +4920,15 @@ class InferenceContext {
   }
 
   /**
+   * Look for contextual type information attached to [node].  Returns
+   * the type if found, otherwise null.
+   *
+   * If [node] has a contextual union type like `T | Future<T>` this will be
+   * returned. You can use [getType] if you prefer to only get the `T`.
+   */
+  static DartType getContext(AstNode node) => node?.getProperty(_typeProperty);
+
+  /**
    * Look for a single contextual type attached to [node], and returns the type
    * if found, otherwise null.
    *
@@ -4924,15 +4943,6 @@ class InferenceContext {
     }
     return t;
   }
-
-  /**
-   * Look for contextual type information attached to [node].  Returns
-   * the type if found, otherwise null.
-   *
-   * If [node] has a contextual union type like `T | Future<T>` this will be
-   * returned. You can use [getType] if you prefer to only get the `T`.
-   */
-  static DartType getContext(AstNode node) => node?.getProperty(_typeProperty);
 
   /**
    * Like [getContext] but expands a union type into a list of types.
@@ -4953,7 +4963,11 @@ class InferenceContext {
    * inference.
    */
   static void setType(AstNode node, DartType type) {
-    node?.setProperty(_typeProperty, type);
+    if (type == null || type.isDynamic) {
+      clearType(node);
+    } else {
+      node?.setProperty(_typeProperty, type);
+    }
   }
 
   /**
@@ -5192,12 +5206,6 @@ class PartialResolverVisitor extends ResolverVisitor {
   final List<VariableElement> staticVariables = <VariableElement>[];
 
   /**
-   * The static and instance variables and fields that have an initializer.
-   * These are the variables whose types might be propagated.
-   */
-  final List<VariableElement> propagableVariables = <VariableElement>[];
-
-  /**
    * Initialize a newly created visitor to resolve the nodes in an AST node.
    *
    * The [definingLibrary] is the element for the library containing the node
@@ -5238,7 +5246,6 @@ class PartialResolverVisitor extends ResolverVisitor {
 
   @override
   Object visitFieldDeclaration(FieldDeclaration node) {
-    _addPropagableVariables(node.fields.variables);
     if (node.isStatic) {
       _addStaticVariables(node.fields.variables);
     }
@@ -5252,25 +5259,8 @@ class PartialResolverVisitor extends ResolverVisitor {
 
   @override
   Object visitTopLevelVariableDeclaration(TopLevelVariableDeclaration node) {
-    _addPropagableVariables(node.variables.variables);
     _addStaticVariables(node.variables.variables);
     return super.visitTopLevelVariableDeclaration(node);
-  }
-
-  /**
-   * Add all of the [variables] with initializers to [propagableVariables].
-   */
-  void _addPropagableVariables(List<VariableDeclaration> variables) {
-    int length = variables.length;
-    for (int i = 0; i < length; i++) {
-      VariableDeclaration variable = variables[i];
-      if (variable.name.name.isNotEmpty && variable.initializer != null) {
-        VariableElement element = variable.element;
-        if (element.isConst || element.isFinal) {
-          propagableVariables.add(element);
-        }
-      }
-    }
   }
 
   /**
@@ -5756,6 +5746,28 @@ class ResolverVisitor extends ScopedVisitor {
   void initForIncrementalResolution() {
     _overrideManager.enterScope();
   }
+
+  /**
+   * Returns true if this method is `Future.then` or an override thereof.
+   *
+   * If so we will apply special typing rules in strong mode, to handle the
+   * implicit union of `S | Future<S>`
+   */
+  bool isFutureThen(Element element) {
+    // If we are a method named then
+    if (element is MethodElement && element.name == 'then') {
+      DartType type = element.enclosingElement.type;
+      // On Future or a subtype, then we're good.
+      return (type.isDartAsyncFuture || isSubtypeOfFuture(type));
+    }
+    return false;
+  }
+
+  /**
+   * Returns true if this type is any subtype of the built in Future type.
+   */
+  bool isSubtypeOfFuture(DartType type) =>
+      typeSystem.isSubtypeOf(type, typeProvider.futureDynamicType);
 
   /**
    * Given a downward inference type [fnType], and the declared
@@ -6583,7 +6595,7 @@ class ResolverVisitor extends ScopedVisitor {
             _inferFormalParameterList(node.parameters, functionType);
 
             DartType returnType;
-            if (_isFutureThenLambda(node)) {
+            if (isFutureThen(node.staticParameterElement?.enclosingElement)) {
               var futureThenType =
                   InferenceContext.getContext(node.parent) as FunctionType;
 
@@ -6593,8 +6605,10 @@ class ResolverVisitor extends ScopedVisitor {
               //
               // We can't represent this in Dart so we populate it here during
               // inference.
-              returnType = FutureUnionType.from(
-                  futureThenType.returnType, typeProvider, typeSystem);
+              var typeParamS =
+                  futureThenType.returnType.flattenFutures(typeSystem);
+              returnType =
+                  FutureUnionType.from(typeParamS, typeProvider, typeSystem);
             } else {
               returnType = _computeReturnOrYieldType(functionType.returnType);
             }
@@ -6713,6 +6727,12 @@ class ResolverVisitor extends ScopedVisitor {
   @override
   Object visitInstanceCreationExpression(InstanceCreationExpression node) {
     TypeName classTypeName = node.constructorName.type;
+    // TODO(leafp): Currently, we may re-infer types here, since we
+    // sometimes resolve multiple times.  We should really check that we
+    // have not already inferred something.  However, the obvious ways to
+    // check this don't work, since we may have been instantiated
+    // to bounds in an earlier phase, and we *do* want to do inference
+    // in that case.
     if (classTypeName.typeArguments == null) {
       // Given a union of context types ` T0 | T1 | ... | Tn`, find the first
       // valid instantiation `new C<Ti>`, if it exists.
@@ -7147,7 +7167,8 @@ class ResolverVisitor extends ScopedVisitor {
         return (typeArgs?.length == 1) ? typeArgs[0] : null;
       }
       // async functions expect `Future<T> | T`
-      return new FutureUnionType(declaredType, typeProvider, typeSystem);
+      var futureTypeParam = declaredType.flattenFutures(typeSystem);
+      return FutureUnionType.from(futureTypeParam, typeProvider, typeSystem);
     }
     return declaredType;
   }
@@ -7222,7 +7243,7 @@ class ResolverVisitor extends ScopedVisitor {
     DartType contextType = node.staticInvokeType;
     if (contextType is FunctionType) {
       DartType originalType = node.function.staticType;
-      DartType returnContextType = InferenceContext.getType(node);
+      DartType returnContextType = InferenceContext.getContext(node);
       TypeSystem ts = typeSystem;
       if (returnContextType != null &&
           node.typeArguments == null &&
@@ -7391,19 +7412,6 @@ class ResolverVisitor extends ScopedVisitor {
       return _isAbruptTerminationStatement(statements[size - 1]);
     }
     return false;
-  }
-
-  /**
-   * Returns true if this expression is being passed to `Future.then`.
-   *
-   * If so we will apply special typing rules in strong mode, to handle the
-   * implicit union of `S | Future<S>`
-   */
-  bool _isFutureThenLambda(FunctionExpression node) {
-    Element element = node.staticParameterElement?.enclosingElement;
-    return element is MethodElement &&
-        element.name == 'then' &&
-        element.enclosingElement.type.isDartAsyncFuture;
   }
 
   /**
@@ -7737,7 +7745,7 @@ abstract class ScopedVisitor extends UnifyingAstVisitor<Object> {
       : source = source,
         errorReporter = new ErrorReporter(errorListener, source) {
     if (nameScope == null) {
-      this.nameScope = new LibraryScope(definingLibrary, errorListener);
+      this.nameScope = new LibraryScope(definingLibrary);
     } else {
       this.nameScope = nameScope;
     }
@@ -7774,8 +7782,7 @@ abstract class ScopedVisitor extends UnifyingAstVisitor<Object> {
   Object visitBlock(Block node) {
     Scope outerScope = nameScope;
     try {
-      EnclosedScope enclosedScope = new EnclosedScope(nameScope);
-      _hideNamesDefinedInBlock(enclosedScope, node);
+      EnclosedScope enclosedScope = new BlockScope(nameScope, node);
       nameScope = enclosedScope;
       super.visitBlock(node);
     } finally {
@@ -8299,28 +8306,6 @@ abstract class ScopedVisitor extends UnifyingAstVisitor<Object> {
     }
     return outerScope;
   }
-
-  /**
-   * Marks the local declarations of the given [Block] hidden in the enclosing scope.
-   * According to the scoping rules name is hidden if block defines it, but name is defined after
-   * its declaration statement.
-   */
-  void _hideNamesDefinedInBlock(EnclosedScope scope, Block block) {
-    NodeList<Statement> statements = block.statements;
-    int statementCount = statements.length;
-    for (int i = 0; i < statementCount; i++) {
-      Statement statement = statements[i];
-      if (statement is VariableDeclarationStatement) {
-        NodeList<VariableDeclaration> variables = statement.variables.variables;
-        int variableCount = variables.length;
-        for (int j = 0; j < variableCount; j++) {
-          scope.hide(variables[j].element);
-        }
-      } else if (statement is FunctionDeclarationStatement) {
-        scope.hide(statement.functionDeclaration.element);
-      }
-    }
-  }
 }
 
 /**
@@ -8821,6 +8806,11 @@ class TypeNameResolver {
             parent is WithClause ||
             parent is ClassTypeAlias) {
           // Ignored. The error will be reported elsewhere.
+        } else if (element is LocalVariableElement ||
+            (element is FunctionElement &&
+                element.enclosingElement is ExecutableElement)) {
+          reportErrorForNode(CompileTimeErrorCode.REFERENCED_BEFORE_DECLARATION,
+              typeName, [typeName.name]);
         } else {
           reportErrorForNode(
               StaticWarningCode.NOT_A_TYPE, typeName, [typeName.name]);
@@ -9348,7 +9338,7 @@ class TypeParameterBoundsResolver {
                 library, LibraryResolutionCapability.resolvedTypeNames)) {
               bound.type = typeParameterElement.bound;
             } else {
-              libraryScope ??= new LibraryScope(library, errorListener);
+              libraryScope ??= new LibraryScope(library);
               typeParametersScope ??= createTypeParametersScope();
               typeNameResolver ??= new TypeNameResolver(new TypeSystemImpl(),
                   typeProvider, library, source, errorListener);
@@ -9614,13 +9604,64 @@ abstract class TypeProvider {
    * Return the type representing typenames that can't be resolved.
    */
   DartType get undefinedType;
+
+  /**
+   * Return 'true' if [id] is the name of a getter on
+   * the Object type.
+   */
+  bool isObjectGetter(String id);
+
+  /**
+   * Return 'true' if [id] is the name of a method or getter on
+   * the Object type.
+   */
+  bool isObjectMember(String id);
+
+  /**
+   * Return 'true' if [id] is the name of a method on
+   * the Object type.
+   */
+  bool isObjectMethod(String id);
+}
+
+/**
+ * Provide common functionality shared by the various TypeProvider
+ * implementations.
+ */
+abstract class TypeProviderBase implements TypeProvider {
+  @override
+  List<InterfaceType> get nonSubtypableTypes => <InterfaceType>[
+        nullType,
+        numType,
+        intType,
+        doubleType,
+        boolType,
+        stringType
+      ];
+
+  @override
+  bool isObjectGetter(String id) {
+    PropertyAccessorElement element = objectType.element.getGetter(id);
+    return (element != null && !element.isStatic);
+  }
+
+  @override
+  bool isObjectMember(String id) {
+    return isObjectGetter(id) || isObjectMethod(id);
+  }
+
+  @override
+  bool isObjectMethod(String id) {
+    MethodElement element = objectType.element.getMethod(id);
+    return (element != null && !element.isStatic);
+  }
 }
 
 /**
  * Instances of the class `TypeProviderImpl` provide access to types defined by the language
  * by looking for those types in the element model for the core library.
  */
-class TypeProviderImpl implements TypeProvider {
+class TypeProviderImpl extends TypeProviderBase {
   /**
    * The type representing the built-in type 'bool'.
    */
@@ -9808,16 +9849,6 @@ class TypeProviderImpl implements TypeProvider {
 
   @override
   InterfaceType get mapType => _mapType;
-
-  @override
-  List<InterfaceType> get nonSubtypableTypes => <InterfaceType>[
-        nullType,
-        numType,
-        intType,
-        doubleType,
-        boolType,
-        stringType
-      ];
 
   @override
   DartObjectImpl get nullObject {

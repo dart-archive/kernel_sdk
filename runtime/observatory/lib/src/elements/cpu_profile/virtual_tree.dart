@@ -31,19 +31,21 @@ class CpuProfileVirtualTreeElement extends HtmlElement implements Renderable {
   ProfileTreeMode _mode;
   M.IsolateRef _isolate;
   M.SampleProfile _profile;
-  M.CallTreeNodeFilter _filter;
+  Iterable<M.CallTreeNodeFilter> _filters;
 
   M.ProfileTreeDirection get direction => _direction;
   ProfileTreeMode get mode => _mode;
   M.IsolateRef get isolate => _isolate;
   M.SampleProfile get profile => _profile;
-  M.CallTreeNodeFilter get filter => _filter;
+  Iterable<M.CallTreeNodeFilter> get filters => _filters;
 
   set direction(M.ProfileTreeDirection value) =>
       _direction = _r.checkAndReact(_direction, value);
   set mode(ProfileTreeMode value) => _mode = _r.checkAndReact(_mode, value);
-  set filter(M.CallTreeNodeFilter value) =>
-      _filter = _r.checkAndReact(_filter, value);
+  set filters(Iterable<M.CallTreeNodeFilter> value) {
+    _filters = new List.unmodifiable(value);
+    _r.dirty();
+  }
 
   factory CpuProfileVirtualTreeElement(M.IsolateRef isolate,
       M.SampleProfile profile, {ProfileTreeMode mode: ProfileTreeMode.function,
@@ -94,14 +96,16 @@ class CpuProfileVirtualTreeElement extends HtmlElement implements Renderable {
       default:
         throw new Exception('Unknown ProfileTreeMode: $mode');
     }
+    if (filters != null) {
+      tree = filters.fold(tree, (tree, filter) {
+        return tree?.filtered(filter);
+      });
+    }
     if (tree == null) {
       children = [
         new HeadingElement.h1()..text = 'No Results'
       ];
       return;
-    }
-    if (filter != null) {
-      tree = tree.filtered(filter);
     }
     _tree = new VirtualTreeElement(_createRow, update, _getChildren,
       items: tree.root.children, queue: _r.queue);
@@ -113,18 +117,18 @@ class CpuProfileVirtualTreeElement extends HtmlElement implements Renderable {
 
   static Element _createRow(toggle) {
     return new DivElement()
-      ..classes = const ['tree-item']
+      ..classes = ['tree-item']
       ..children = [
-        new SpanElement()..classes = const ['inclusive']
+        new SpanElement()..classes = ['inclusive']
           ..title = 'global % on stack',
-        new SpanElement()..classes = const ['exclusive']
+        new SpanElement()..classes = ['exclusive']
           ..title = 'global % executing',
-        new SpanElement()..classes = const ['lines'],
-        new ButtonElement()..classes = const ['expander']
+        new SpanElement()..classes = ['lines'],
+        new ButtonElement()..classes = ['expander']
           ..onClick.listen((_) => toggle(autoToggleSingleChildNodes: true)),
-        new SpanElement()..classes = const ['percentage']
+        new SpanElement()..classes = ['percentage']
           ..title = 'tree node %',
-        new SpanElement()..classes = const ['name']
+        new SpanElement()..classes = ['name']
       ];
   }
 
@@ -146,7 +150,7 @@ class CpuProfileVirtualTreeElement extends HtmlElement implements Renderable {
         item.percentage);
     element.children[5] = new FunctionRefElement(_isolate,
             item.profileFunction.function, queue: _r.queue)
-            ..classes = const ['name'];
+            ..classes = ['name'];
   }
 
   void _updateCodeRow(HtmlElement element, M.CodeCallTreeNode item, int depth) {
@@ -164,7 +168,7 @@ class CpuProfileVirtualTreeElement extends HtmlElement implements Renderable {
         item.percentage);
     element.children[5] = new CodeRefElement(_isolate,
         item.profileCode.code, queue: _r.queue)
-        ..classes = const ['name'];
+        ..classes = ['name'];
   }
 
   static _updateLines(List<Element> lines, int n) {

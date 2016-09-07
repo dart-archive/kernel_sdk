@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of types;
+part of masks;
 
 /**
  * A type mask that wraps an other one, and delegate all its
@@ -101,9 +101,8 @@ abstract class ForwardingTypeMask implements TypeMask {
     return forwardTo.canHit(element, selector, classWorld);
   }
 
-  Element locateSingleElement(
-      Selector selector, TypeMask mask, Compiler compiler) {
-    return forwardTo.locateSingleElement(selector, mask, compiler);
+  Element locateSingleElement(Selector selector, Compiler compiler) {
+    return forwardTo.locateSingleElement(selector, compiler);
   }
 
   bool equalsDisregardNull(other) {

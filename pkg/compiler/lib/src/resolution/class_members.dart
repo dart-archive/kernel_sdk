@@ -69,7 +69,8 @@ abstract class MembersCreator {
     computeMembers(null, null);
     if (!cls.isAbstract) {
       Member member = classMembers[Names.noSuchMethod_];
-      if (member != null && !member.declarer.isObject) {
+      if (member != null &&
+          !resolution.target.isDefaultNoSuchMethod(member.element)) {
         return;
       }
       // Check for unimplemented members on concrete classes that neither have
@@ -280,6 +281,7 @@ abstract class MembersCreator {
           reporter.reportWarning(warning, infos);
         });
       }
+
       if (interfaceMember.isSetter) {
         reportWarning(
             MessageKind.UNIMPLEMENTED_SETTER_ONE,
@@ -309,6 +311,7 @@ abstract class MembersCreator {
     assert(!cls.isAbstract);
 
     ClassElement functionClass = resolution.coreClasses.functionClass;
+    functionClass.ensureResolved(resolution);
     if (cls.asInstanceOf(functionClass) == null) return;
     if (cls.lookupMember(Identifiers.call) != null) return;
     // TODO(johnniwinther): Make separate methods for backend exceptions.
@@ -443,6 +446,7 @@ abstract class MembersCreator {
                     ]);
               });
             }
+
             if (declared.isDeclaredByField) {
               if (inherited.isDeclaredByField) {
                 reportWarning(
@@ -686,7 +690,8 @@ class InterfaceMembersCreator extends MembersCreator {
         bool allAreGetters = true;
         Map<DartType, Setlet<Member>> subtypesOfAllInherited =
             new Map<DartType, Setlet<Member>>();
-        outer: for (Member inherited in inheritedMembers) {
+        outer:
+        for (Member inherited in inheritedMembers) {
           if (inherited.isGetter) {
             someAreGetters = true;
             if (!allAreGetters) break outer;

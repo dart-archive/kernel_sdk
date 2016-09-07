@@ -39,6 +39,7 @@ namespace dart {
   V(ExceptionHandlers)                                                         \
   V(Context)                                                                   \
   V(ContextScope)                                                              \
+  V(SingleTargetCache)                                                         \
   V(ICData)                                                                    \
   V(MegamorphicCache)                                                          \
   V(SubtypeTestCache)                                                          \
@@ -149,6 +150,13 @@ enum ClassId {
   // Illegal class id.
   kIllegalCid = 0,
 
+  // The following entries describes classes for pseudo-objects in the heap
+  // that should never be reachable from live objects. Free list elements
+  // maintain the free list for old space, and forwarding corpses are used to
+  // implement one-way become.
+  kFreeListElement,
+  kForwardingCorpse,
+
   // List of Ids for predefined classes.
 #define DEFINE_OBJECT_KIND(clazz)                                              \
   k##clazz##Cid,
@@ -179,13 +187,6 @@ CLASS_LIST_TYPED_DATA(DEFINE_OBJECT_KIND)
   kNullCid,
   kDynamicCid,
   kVoidCid,
-
-  // The following entries describes classes for pseudo-objects in the heap
-  // that should never be reachable from live objects. Free list elements
-  // maintain the free list for old space, and forwarding corpses are used to
-  // implement one-way become.
-  kFreeListElement,
-  kForwardingCorpse,
 
   kNumPredefinedCids,
 };
@@ -539,6 +540,11 @@ CLASS_LIST_TYPED_DATA(DEFINE_IS_CID)
     return ClassIdTag::decode(tags);
   }
 
+  void SetClassId(intptr_t new_cid) {
+    uword tags = ptr()->tags_;
+    ptr()->tags_ = ClassIdTag::update(new_cid, tags);
+  }
+
   template<class TagBitField>
   void UpdateTagBit(bool value) {
     uword tags = ptr()->tags_;
@@ -593,8 +599,10 @@ CLASS_LIST_TYPED_DATA(DEFINE_IS_CID)
   friend class ApiMessageReader;  // GetClassId
   friend class Serializer;  // GetClassId
   friend class Array;
+  friend class Become;  // GetClassId
   friend class Bigint;
   friend class ByteBuffer;
+  friend class CidRewriteVisitor;
   friend class Closure;
   friend class Code;
   friend class Double;
@@ -718,6 +726,7 @@ class RawClass : public RawObject {
   friend class RawInstructions;
   friend class SnapshotReader;
   friend class InstanceSerializationCluster;
+  friend class CidRewriteVisitor;
 };
 
 
@@ -948,6 +957,8 @@ class RawField : public RawObject {
 
   uint8_t kind_bits_;  // static, final, const, has initializer....
   intptr_t dil_field_;
+
+  friend class CidRewriteVisitor;
 };
 
 
@@ -1106,6 +1117,7 @@ class RawCode : public RawObject {
   RAW_HEAP_OBJECT_IMPLEMENTATION(Code);
 
   uword entry_point_;
+  uword checked_entry_point_;
 
   RawObject** from() {
     return reinterpret_cast<RawObject**>(&ptr()->active_instructions_);
@@ -1476,6 +1488,21 @@ class RawContextScope : public RawObject {
 };
 
 
+class RawSingleTargetCache : public RawObject {
+  RAW_HEAP_OBJECT_IMPLEMENTATION(SingleTargetCache);
+  RawObject** from() {
+    return reinterpret_cast<RawObject**>(&ptr()->target_);
+  }
+  RawCode* target_;
+  RawObject** to() {
+    return reinterpret_cast<RawObject**>(&ptr()->target_);
+  }
+  uword entry_point_;
+  classid_t lower_limit_;
+  classid_t upper_limit_;
+};
+
+
 class RawICData : public RawObject {
   RAW_HEAP_OBJECT_IMPLEMENTATION(ICData);
 
@@ -1686,6 +1713,8 @@ class RawType : public RawAbstractType {
   }
   TokenPosition token_pos_;
   int8_t type_state_;
+
+  friend class CidRewriteVisitor;
 };
 
 
@@ -1718,6 +1747,8 @@ class RawTypeParameter : public RawAbstractType {
   TokenPosition token_pos_;
   int16_t index_;
   int8_t type_state_;
+
+  friend class CidRewriteVisitor;
 };
 
 

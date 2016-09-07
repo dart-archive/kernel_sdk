@@ -18,14 +18,14 @@ import 'package:analyzer/src/summary/link.dart';
 import 'package:analyzer/src/summary/package_bundle_reader.dart';
 import 'package:analyzer/src/summary/summarize_ast.dart';
 import 'package:analyzer/src/summary/summarize_elements.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 import 'package:unittest/unittest.dart';
 
-import '../../reflective_tests.dart';
 import 'summary_common.dart';
 
 main() {
   groupSep = ' | ';
-  runReflectiveTests(LinkedSummarizeAstSpecTest);
+  defineReflectiveTests(LinkedSummarizeAstSpecTest);
 }
 
 @reflectiveTest
@@ -61,18 +61,6 @@ class LinkedSummarizeAstSpecTest extends LinkedSummarizeAstTest {
   @failingTest
   test_closure_executable_with_unimported_return_type() {
     super.test_closure_executable_with_unimported_return_type();
-  }
-
-  @override
-  @failingTest
-  test_field_propagated_type_final_immediate() {
-    super.test_field_propagated_type_final_immediate();
-  }
-
-  @override
-  @failingTest
-  test_fully_linked_references_follow_other_references() {
-    super.test_fully_linked_references_follow_other_references();
   }
 
   @override
@@ -119,18 +107,6 @@ class LinkedSummarizeAstSpecTest extends LinkedSummarizeAstTest {
 
   @override
   @failingTest
-  test_linked_reference_reuse() {
-    super.test_linked_reference_reuse();
-  }
-
-  @override
-  @failingTest
-  test_linked_type_dependency_reuse() {
-    super.test_linked_type_dependency_reuse();
-  }
-
-  @override
-  @failingTest
   test_syntheticFunctionType_inGenericClass() {
     super.test_syntheticFunctionType_inGenericClass();
   }
@@ -143,38 +119,8 @@ class LinkedSummarizeAstSpecTest extends LinkedSummarizeAstTest {
 
   @override
   @failingTest
-  test_syntheticFunctionType_noArguments() {
-    super.test_syntheticFunctionType_noArguments();
-  }
-
-  @override
-  @failingTest
-  test_syntheticFunctionType_withArguments() {
-    super.test_syntheticFunctionType_withArguments();
-  }
-
-  @override
-  @failingTest
   test_unused_type_parameter() {
     super.test_unused_type_parameter();
-  }
-
-  @override
-  @failingTest
-  test_variable_propagated_type_final_immediate() {
-    super.test_variable_propagated_type_final_immediate();
-  }
-
-  @override
-  @failingTest
-  test_variable_propagated_type_new_reference() {
-    super.test_variable_propagated_type_new_reference();
-  }
-
-  @override
-  @failingTest
-  test_variable_propagated_type_omit_dynamic() {
-    super.test_variable_propagated_type_omit_dynamic();
   }
 }
 
@@ -319,8 +265,10 @@ abstract class SummaryLinkerTest {
     return null;
   }
 
-  LinkerInputs createLinkerInputs(String text, {String path: '/test.dart'}) {
-    Uri testDartUri = Uri.parse(absUri(path));
+  LinkerInputs createLinkerInputs(String text,
+      {String path: '/test.dart', String uri}) {
+    uri ??= absUri(path);
+    Uri testDartUri = Uri.parse(uri);
     CompilationUnit unit = _parseText(text);
     UnlinkedUnitBuilder unlinkedDefiningUnit = serializeAstUnlinked(unit);
     _filesToLink.uriToUnit[testDartUri.toString()] = unlinkedDefiningUnit;
@@ -343,10 +291,10 @@ abstract class SummaryLinkerTest {
    * can be created.
    */
   PackageBundleBuilder createPackageBundle(String text,
-      {String path: '/test.dart'}) {
+      {String path: '/test.dart', String uri}) {
     PackageBundleAssembler assembler = new PackageBundleAssembler();
     assembler.recordDependencies(_filesToLink.summaryDataStore);
-    LinkerInputs linkerInputs = createLinkerInputs(text, path: path);
+    LinkerInputs linkerInputs = createLinkerInputs(text, path: path, uri: uri);
     Map<String, LinkedLibraryBuilder> linkedLibraries = link(
         linkerInputs.linkedLibraries,
         linkerInputs.getDependency,

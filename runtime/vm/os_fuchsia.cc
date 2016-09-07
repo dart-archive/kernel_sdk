@@ -10,7 +10,6 @@
 #include <errno.h>
 #include <magenta/syscalls.h>
 #include <magenta/types.h>
-#include <runtime/sysinfo.h>
 
 #include "platform/assert.h"
 #include "vm/zone.h"
@@ -85,23 +84,6 @@ int64_t OS::GetCurrentThreadCPUMicros() {
 }
 
 
-void* OS::AlignedAllocate(intptr_t size, intptr_t alignment) {
-  const int kMinimumAlignment = 16;
-  ASSERT(Utils::IsPowerOfTwo(alignment));
-  ASSERT(alignment >= kMinimumAlignment);
-  void* p = memalign(alignment, size);
-  if (p == NULL) {
-    UNREACHABLE();
-  }
-  return p;
-}
-
-
-void OS::AlignedFree(void* ptr) {
-  free(ptr);
-}
-
-
 // TODO(5411554):  May need to hoist these architecture dependent code
 // into a architecture specific file e.g: os_ia32_fuchsia.cc
 intptr_t OS::ActivationFrameAlignment() {
@@ -152,7 +134,13 @@ bool OS::AllowStackFrameIteratorFromAnotherThread() {
 
 
 int OS::NumberOfAvailableProcessors() {
-  return mxr_get_nprocs_conf();
+  return sysconf(_SC_NPROCESSORS_CONF);
+}
+
+
+uintptr_t OS::MaxRSS() {
+  UNIMPLEMENTED();
+  return 0;
 }
 
 

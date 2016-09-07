@@ -519,7 +519,7 @@ TokenPosition ActivationFrame::TokenPos() {
     token_pos_ = TokenPosition::kNoSource;
     GetPcDescriptors();
     PcDescriptors::Iterator iter(pc_desc_, RawPcDescriptors::kAnyKind);
-    uword pc_offset = pc_ - code().EntryPoint();
+    uword pc_offset = pc_ - code().PayloadStart();
     while (iter.MoveNext()) {
       if (iter.PcOffset() == pc_offset) {
         try_index_ = iter.TryIndex();
@@ -972,7 +972,12 @@ RawObject* ActivationFrame::GetReceiver() {
 }
 
 
-bool IsPrivateVariableName(const String& var_name) {
+static bool IsSyntheticVariableName(const String& var_name) {
+  return (var_name.Length() >= 1) && (var_name.CharAt(0) == ':');
+}
+
+
+static bool IsPrivateVariableName(const String& var_name) {
   return (var_name.Length() >= 1) && (var_name.CharAt(0) == '_');
 }
 
@@ -989,7 +994,7 @@ RawObject* ActivationFrame::Evaluate(const String& expr) {
   for (intptr_t i = 0; i < num_variables; i++) {
     TokenPosition ignore;
     VariableAt(i, &name, &ignore, &ignore, &value);
-    if (!name.Equals(Symbols::This())) {
+    if (!name.Equals(Symbols::This()) && !IsSyntheticVariableName(name)) {
       if (IsPrivateVariableName(name)) {
         name = String::ScrubName(name);
       }
@@ -1045,7 +1050,11 @@ void ActivationFrame::PrintToJSONObject(JSONObject* jsobj,
                                         bool full) {
   const Script& script = Script::Handle(SourceScript());
   jsobj->AddProperty("type", "Frame");
-  jsobj->AddLocation(script, TokenPos());
+  TokenPosition pos = TokenPos();
+  if (pos.IsSynthetic()) {
+    pos = pos.FromSynthetic();
+  }
+  jsobj->AddLocation(script, pos);
   jsobj->AddProperty("function", function(), !full);
   jsobj->AddProperty("code", code());
   if (full) {
@@ -1528,7 +1537,7 @@ DebuggerStackTrace* Debugger::StackTraceFrom(const Stacktrace& ex_trace) {
     if (!function.IsNull() && function.is_visible()) {
       code = ex_trace.CodeAtFrame(i);
       ASSERT(function.raw() == code.function());
-      uword pc = code.EntryPoint() + Smi::Value(ex_trace.PcOffsetAtFrame(i));
+      uword pc = code.PayloadStart() + Smi::Value(ex_trace.PcOffsetAtFrame(i));
       if (code.is_optimized() && ex_trace.expand_inlined()) {
         // Traverse inlined frames.
         for (InlinedFunctionsIterator it(code, pc); !it.Done(); it.Advance()) {
@@ -1537,8 +1546,8 @@ DebuggerStackTrace* Debugger::StackTraceFrom(const Stacktrace& ex_trace) {
           ASSERT(function.raw() == code.function());
           uword pc = it.pc();
           ASSERT(pc != 0);
-          ASSERT(code.EntryPoint() <= pc);
-          ASSERT(pc < (code.EntryPoint() + code.Size()));
+          ASSERT(code.PayloadStart() <= pc);
+          ASSERT(pc < (code.PayloadStart() + code.Size()));
 
           ActivationFrame* activation = new ActivationFrame(
             pc, fp, sp, code, deopt_frame, deopt_frame_offset);
@@ -1828,7 +1837,7 @@ void Debugger::MakeCodeBreakpointAt(const Function& func,
   if (lowest_pc_offset == kUwordMax) {
     return;
   }
-  uword lowest_pc = code.EntryPoint() + lowest_pc_offset;
+  uword lowest_pc = code.PayloadStart() + lowest_pc_offset;
   CodeBreakpoint* code_bpt = GetCodeBreakpoint(lowest_pc);
   if (code_bpt == NULL) {
     // No code breakpoint for this code exists; create one.

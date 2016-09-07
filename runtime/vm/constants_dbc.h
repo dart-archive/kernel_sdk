@@ -162,6 +162,15 @@ namespace dart {
 //
 //    Invoke native function SP[-1] with argc_tag SP[0].
 //
+//  - PushPolymorphicInstanceCall ArgC, D
+//
+//    Skips 2*D + 1 instructions and pushes a function object onto the stack
+//    if one can be found as follows. Otherwise skips only 2*D instructions.
+//    The function is looked up in the IC data encoded in the following 2*D
+//    Nop instructions. The Nop instructions should be arranged in pairs with
+//    the first being the cid, and the second being the function to push if
+//    the cid is the cid of the receiver found at SP[-(1 + ArgC)].
+//
 //  - OneByteStringFromCharCode rA, rX
 //
 //    Load the one-character symbol with the char code given by the Smi
@@ -188,10 +197,10 @@ namespace dart {
 //    the immediately following instruction is skipped. These instructions
 //    expect their operands to be Smis, but don't check that they are.
 //
-//  - ShrImm rA, rB, rC
+//  - ShlImm rA, rB, rC
 //
-//    FP[rA] <- FP[rB] >> rC. Shifts the Smi in FP[rB] right by rC. rC is
-//    assumed to be a legal positive number by which righ-shifting is possible.
+//    FP[rA] <- FP[rB] << rC. Shifts the Smi in FP[rB] left by rC. rC is
+//    assumed to be a legal positive number by which left-shifting is possible.
 //
 //  - Min, Max rA, rB, rC
 //
@@ -233,6 +242,20 @@ namespace dart {
 //    Unboxes FP[rD] into FP[rA] and skips the following instruction unless
 //    FP[rD] is not a double or a Smi. When FP[rD] is a Smi, converts it to a
 //    double.
+//
+//  - UnboxInt32 rA, rB, C
+//
+//    Unboxes the integer in FP[rB] into FP[rA]. If C == 1, the value may be
+//    truncated. If FP[rA] is successfully unboxed the following instruction is
+//    skipped.
+//
+//  - BoxInt32 rA, rD
+//
+//    Boxes the unboxed signed 32-bit integer in FP[rD] into FP[rA].
+//
+//  - BoxUint32 rA, rD
+//
+//    Boxes the unboxed unsigned 32-bit integer in FP[rD] into FP[rA].
 //
 //  - SmiToDouble rA, rD
 //
@@ -304,20 +327,36 @@ namespace dart {
 //    Store FP[rC] into array FP[rA] at index FP[rB]. No typechecking is done.
 //    FP[rA] is assumed to be a RawArray, FP[rB] to be a smi.
 //
-//  - StoreFloat64Indexed rA, rB, rC
+//  - StoreIndexed{N}{Float64, Uint8, OneByteString} rA, rB, rC
 //
-//    Store the unboxed double in FP[rC] into the typed data array at FP[rA]
-//    at index FP[rB].
+//    Where N is '' or '8'. N may only be '8' for Float64.
+//
+//    Store the unboxed double or tagged Smi in FP[rC] into the typed data array
+//    at FP[rA] at index FP[rB]. If N is not '', the index is assumed to be
+//    already scaled by N.
+//
+//  - StoreIndexedExternalUint8 rA, rB, rC
+//
+//    Similar to StoreIndexedUint8 but FP[rA] is an external typed data aray.
 //
 //  - LoadIndexed rA, rB, rC
 //
 //    Loads from array FP[rB] at index FP[rC] into FP[rA]. No typechecking is
 //    done. FP[rB] is assumed to be a RawArray, and to contain a Smi at FP[rC].
 //
-//  - Load{Float64, OneByteString, TwoByteString}Indexed rA, rB, rC
+//  - LoadIndexed{N}{Type} rA, rB, rC
+//
+//    Where Type is Float64, OneByteString, TwoByteString, Uint8, or Int8,
+//    and N is '' or '8'. N may only be '8' for Float64.
 //
 //    Loads from typed data array FP[rB] at index FP[rC] into an unboxed double,
-//    or tagged Smi in FP[rA] as indicated by the type in the name.
+//    or tagged Smi in FP[rA] as indicated by the type in the name. If N is not
+//    '', the index is assumed to be already scaled by N.
+//
+//  - LoadIndexedExternal{Int8, Uint8} rA, rB, rC
+//
+//    Loads from the external typed data array FP[rB] at index FP[rC] into
+//    FP[rA]. No typechecking is done.
 //
 //  - StoreField rA, B, rC
 //
@@ -330,6 +369,10 @@ namespace dart {
 //  - LoadField rA, rB, C
 //
 //    Load value at offset (in words) C from object FP[rB] into FP[rA].
+//
+//  - LoadUntagged rA, rB, C
+//
+//    Like LoadField, but assumes that FP[rB] is untagged.
 //
 //  - LoadFieldTOS D
 //
@@ -565,6 +608,7 @@ namespace dart {
   V(InstanceCall2,                 A_D, num, num, ___) \
   V(InstanceCall1Opt,              A_D, num, num, ___) \
   V(InstanceCall2Opt,              A_D, num, num, ___) \
+  V(PushPolymorphicInstanceCall,   A_D, num, num, ___) \
   V(NativeCall,                      0, ___, ___, ___) \
   V(NativeBootstrapCall,             0, ___, ___, ___) \
   V(OneByteStringFromCharCode,     A_X, reg, xeg, ___) \
@@ -584,7 +628,7 @@ namespace dart {
   V(Mod,                         A_B_C, reg, reg, reg) \
   V(Shl,                         A_B_C, reg, reg, reg) \
   V(Shr,                         A_B_C, reg, reg, reg) \
-  V(ShrImm,                      A_B_C, reg, reg, num) \
+  V(ShlImm,                      A_B_C, reg, reg, num) \
   V(Neg,                           A_D, reg, reg, ___) \
   V(BitOr,                       A_B_C, reg, reg, reg) \
   V(BitAnd,                      A_B_C, reg, reg, reg) \
@@ -595,6 +639,9 @@ namespace dart {
   V(WriteIntoDouble,               A_D, reg, reg, ___) \
   V(UnboxDouble,                   A_D, reg, reg, ___) \
   V(CheckedUnboxDouble,            A_D, reg, reg, ___) \
+  V(UnboxInt32,                  A_B_C, reg, reg, num) \
+  V(BoxInt32,                      A_D, reg, reg, ___) \
+  V(BoxUint32,                     A_D, reg, reg, ___) \
   V(SmiToDouble,                   A_D, reg, reg, ___) \
   V(DoubleToSmi,                   A_D, reg, reg, ___) \
   V(DAdd,                        A_B_C, reg, reg, reg) \
@@ -641,14 +688,27 @@ namespace dart {
   V(AllocateT,                       0, ___, ___, ___) \
   V(StoreIndexedTOS,                 0, ___, ___, ___) \
   V(StoreIndexed,                A_B_C, reg, reg, reg) \
-  V(StoreFloat64Indexed,         A_B_C, reg, reg, reg) \
+  V(StoreIndexedUint8,           A_B_C, reg, reg, reg) \
+  V(StoreIndexedExternalUint8,   A_B_C, reg, reg, reg) \
+  V(StoreIndexedOneByteString,   A_B_C, reg, reg, reg) \
+  V(StoreIndexedUint32,          A_B_C, reg, reg, reg) \
+  V(StoreIndexedFloat64,         A_B_C, reg, reg, reg) \
+  V(StoreIndexed8Float64,        A_B_C, reg, reg, reg) \
   V(LoadIndexed,                 A_B_C, reg, reg, reg) \
-  V(LoadFloat64Indexed,          A_B_C, reg, reg, reg) \
-  V(LoadOneByteStringIndexed,    A_B_C, reg, reg, reg) \
-  V(LoadTwoByteStringIndexed,    A_B_C, reg, reg, reg) \
+  V(LoadIndexedUint8,            A_B_C, reg, reg, reg) \
+  V(LoadIndexedInt8,             A_B_C, reg, reg, reg) \
+  V(LoadIndexedInt32,            A_B_C, reg, reg, reg) \
+  V(LoadIndexedUint32,           A_B_C, reg, reg, reg) \
+  V(LoadIndexedExternalUint8,    A_B_C, reg, reg, reg) \
+  V(LoadIndexedExternalInt8,     A_B_C, reg, reg, reg) \
+  V(LoadIndexedFloat64,          A_B_C, reg, reg, reg) \
+  V(LoadIndexed8Float64,         A_B_C, reg, reg, reg) \
+  V(LoadIndexedOneByteString,    A_B_C, reg, reg, reg) \
+  V(LoadIndexedTwoByteString,    A_B_C, reg, reg, reg) \
   V(StoreField,                  A_B_C, reg, num, reg) \
   V(StoreFieldTOS,                   D, num, ___, ___) \
   V(LoadField,                   A_B_C, reg, reg, num) \
+  V(LoadUntagged,                A_B_C, reg, reg, num) \
   V(LoadFieldTOS,                    D, num, ___, ___) \
   V(BooleanNegateTOS,                0, ___, ___, ___) \
   V(BooleanNegate,                 A_D, reg, reg, ___) \
@@ -790,7 +850,11 @@ typedef int16_t Register;
 
 const int16_t FPREG = 0;
 const int16_t SPREG = 1;
+#if defined(ARCH_IS_64_BIT)
+const intptr_t kNumberOfCpuRegisters = 64;
+#else
 const intptr_t kNumberOfCpuRegisters = 32;
+#endif
 const intptr_t kDartAvailableCpuRegs = -1;
 const intptr_t kNoRegister = -1;
 const intptr_t kReservedCpuRegisters = 0;

@@ -10,20 +10,22 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:analyzer/file_system/file_system.dart';
+import 'package:analyzer/file_system/memory_file_system.dart';
+import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/src/context/context.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/type.dart';
+import 'package:analyzer/src/dart/sdk/sdk.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/java_engine_io.dart';
-import 'package:analyzer/src/generated/java_io.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/sdk.dart';
-import 'package:analyzer/src/generated/sdk_io.dart' show DirectoryBasedDartSdk;
 import 'package:analyzer/src/generated/source_io.dart';
 import 'package:analyzer/src/generated/testing/ast_factory.dart';
 import 'package:analyzer/src/generated/testing/element_factory.dart';
 import 'package:analyzer/src/generated/testing/test_type_provider.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
+import 'package:analyzer/src/source/source_resource.dart';
 import 'package:analyzer/src/string_source.dart';
 import 'package:unittest/unittest.dart';
 
@@ -39,46 +41,60 @@ class AnalysisContextFactory {
   static String _DART_JS_HELPER = "dart:_js_helper";
 
   /**
-   * Create an analysis context that has a fake core library already resolved.
-   * Return the context that was created.
+   * Create and return an analysis context that has a fake core library already
+   * resolved. The given [resourceProvider] will be used when accessing the file
+   * system.
    */
-  static InternalAnalysisContext contextWithCore() {
+  static InternalAnalysisContext contextWithCore(
+      {ResourceProvider resourceProvider}) {
     AnalysisContextForTests context = new AnalysisContextForTests();
-    return initContextWithCore(context);
+    return initContextWithCore(context, null, resourceProvider);
   }
 
   /**
-   * Create an analysis context that uses the given [options] and has a fake
-   * core library already resolved. Return the context that was created.
+   * Create and return an analysis context that uses the given [options] and has
+   * a fake core library already resolved. The given [resourceProvider] will be
+   * used when accessing the file system.
    */
   static InternalAnalysisContext contextWithCoreAndOptions(
-      AnalysisOptions options) {
+      AnalysisOptions options,
+      {ResourceProvider resourceProvider}) {
     AnalysisContextForTests context = new AnalysisContextForTests();
     context._internalSetAnalysisOptions(options);
-    return initContextWithCore(context);
-  }
-
-  static InternalAnalysisContext contextWithCoreAndPackages(
-      Map<String, String> packages) {
-    AnalysisContextForTests context = new AnalysisContextForTests();
-    return initContextWithCore(context, new TestPackageUriResolver(packages));
+    return initContextWithCore(context, null, resourceProvider);
   }
 
   /**
-   * Initialize the given analysis context with a fake core library already resolved.
-   *
-   * @param context the context to be initialized (not `null`)
-   * @return the analysis context that was created
+   * Create and return an analysis context that has a fake core library already
+   * resolved. If not `null`, the given [packages] map will be used to create a
+   * package URI resolver. The given [resourceProvider] will be used when
+   * accessing the file system.
+   */
+  static InternalAnalysisContext contextWithCoreAndPackages(
+      Map<String, String> packages,
+      {ResourceProvider resourceProvider}) {
+    AnalysisContextForTests context = new AnalysisContextForTests();
+    return initContextWithCore(
+        context, new TestPackageUriResolver(packages), resourceProvider);
+  }
+
+  /**
+   * Initialize the given analysis [context] with a fake core library that has
+   * already been resolved. If not `null`, the given [contributedResolver] will
+   * be added to the context's source factory. The given [resourceProvider] will
+   * be used when accessing the file system.
    */
   static InternalAnalysisContext initContextWithCore(
       InternalAnalysisContext context,
-      [UriResolver contributedResolver]) {
-    DirectoryBasedDartSdk sdk = new _AnalysisContextFactory_initContextWithCore(
-        new JavaFile("/fake/sdk"),
+      [UriResolver contributedResolver,
+      ResourceProvider resourceProvider]) {
+    resourceProvider ??= PhysicalResourceProvider.INSTANCE;
+    DartSdk sdk = new _AnalysisContextFactory_initContextWithCore(
+        resourceProvider, '/fake/sdk',
         enableAsync: context.analysisOptions.enableAsync);
     List<UriResolver> resolvers = <UriResolver>[
       new DartUriResolver(sdk),
-      new FileUriResolver()
+      new ResourceUriResolver(resourceProvider)
     ];
     if (contributedResolver != null) {
       resolvers.add(contributedResolver);
@@ -197,7 +213,10 @@ class AnalysisContextFactory {
         futureThenR = ElementFactory.typeParameterWithType('R');
       }
       FunctionElementImpl thenOnValue = ElementFactory.functionElement3(
-          'onValue', futureThenR, [futureElement.typeParameters[0]], null);
+          'onValue',
+          DynamicElementImpl.instance,
+          [futureElement.typeParameters[0]],
+          null);
       thenOnValue.synthetic = true;
 
       DartType futureRType = futureElement.type.instantiate([futureThenR.type]);
@@ -481,21 +500,25 @@ class AnalysisContextForTests extends AnalysisContextImpl {
  * Helper for creating and managing single [AnalysisContext].
  */
 class AnalysisContextHelper {
+  ResourceProvider resourceProvider;
   AnalysisContext context;
 
   /**
    * Creates new [AnalysisContext] using [AnalysisContextFactory].
    */
-  AnalysisContextHelper([AnalysisOptionsImpl options]) {
+  AnalysisContextHelper(
+      [AnalysisOptionsImpl options, ResourceProvider provider]) {
+    resourceProvider = provider ?? new MemoryResourceProvider();
     if (options == null) {
       options = new AnalysisOptionsImpl();
     }
     options.cacheSize = 256;
-    context = AnalysisContextFactory.contextWithCoreAndOptions(options);
+    context = AnalysisContextFactory.contextWithCoreAndOptions(options,
+        resourceProvider: resourceProvider);
   }
 
   Source addSource(String path, String code) {
-    Source source = new FileBasedSource(FileUtilities2.createFile(path));
+    Source source = new FileSource(resourceProvider.getFile(path));
     if (path.endsWith(".dart") || path.endsWith(".html")) {
       ChangeSet changeSet = new ChangeSet();
       changeSet.addedSource(source);
@@ -540,12 +563,12 @@ class TestPackageUriResolver extends UriResolver {
   Uri restoreAbsolute(Source source) => throw new UnimplementedError();
 }
 
-class _AnalysisContextFactory_initContextWithCore
-    extends DirectoryBasedDartSdk {
+class _AnalysisContextFactory_initContextWithCore extends FolderBasedDartSdk {
   final bool enableAsync;
-  _AnalysisContextFactory_initContextWithCore(JavaFile arg0,
+  _AnalysisContextFactory_initContextWithCore(
+      ResourceProvider resourceProvider, String sdkPath,
       {this.enableAsync: true})
-      : super(arg0);
+      : super(resourceProvider, resourceProvider.getFolder(sdkPath));
 
   @override
   LibraryMap initialLibraryMap(bool useDart2jsPaths) {

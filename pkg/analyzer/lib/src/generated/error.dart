@@ -4774,7 +4774,7 @@ class StaticWarningCode extends ErrorCode {
    * Parameters:
    * 0: the ambiguous name
    * 1: the name of the dart: library in which the element is found
-   * 1: the name of the non-dart: library in which the element is found
+   * 2: the name of the non-dart: library in which the element is found
    */
   static const StaticWarningCode CONFLICTING_DART_IMPORT =
       const StaticWarningCode('CONFLICTING_DART_IMPORT',
@@ -5968,6 +5968,11 @@ class StrongModeCode extends ErrorCode {
   static const StrongModeCode INVALID_PARAMETER_DECLARATION =
       const StrongModeCode(ErrorType.COMPILE_TIME_ERROR,
           'INVALID_PARAMETER_DECLARATION', _typeCheckMessage);
+
+  static const StrongModeCode COULD_NOT_INFER = const StrongModeCode(
+      ErrorType.COMPILE_TIME_ERROR,
+      'COULD_NOT_INFER',
+      "Could not infer type parameter {0}, {1} must be of type {2}.");
 
   static const StrongModeCode INFERRED_TYPE = const StrongModeCode(
       ErrorType.HINT, 'INFERRED_TYPE', _inferredTypeMessage);

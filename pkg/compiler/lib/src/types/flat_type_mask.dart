@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of types;
+part of masks;
 
 /**
  * A flat type mask is a type mask that has been flattened to contain a
@@ -681,19 +681,30 @@ class FlatTypeMask implements TypeMask {
         subclassesToCheck.any(needsNoSuchMethod);
   }
 
-  Element locateSingleElement(
-      Selector selector, TypeMask mask, Compiler compiler) {
+  Element locateSingleElement(Selector selector, Compiler compiler) {
     if (isEmptyOrNull) return null;
     Iterable<Element> targets =
-        compiler.world.allFunctions.filter(selector, mask);
+        compiler.world.allFunctions.filter(selector, this);
     if (targets.length != 1) return null;
     Element result = targets.first;
     ClassElement enclosing = result.enclosingClass;
-    // We only return the found element if it is guaranteed to be
-    // implemented on the exact receiver type. It could be found in a
-    // subclass or in an inheritance-wise unrelated class in case of
-    // subtype selectors.
-    return (base.isSubclassOf(enclosing)) ? result : null;
+    // We only return the found element if it is guaranteed to be implemented on
+    // all classes in the receiver type [this]. It could be found only in a
+    // subclass or in an inheritance-wise unrelated class in case of subtype
+    // selectors.
+    ClassWorld classWorld = compiler.world;
+    if (isSubtype) {
+      // if (classWorld.isUsedAsMixin(enclosing)) {
+      if (classWorld.everySubtypeIsSubclassOfOrMixinUseOf(base, enclosing)) {
+        return result;
+      }
+      //}
+      return null;
+    } else {
+      if (base.isSubclassOf(enclosing)) return result;
+      if (classWorld.isSubclassOfMixinUseOf(base, enclosing)) return result;
+    }
+    return null;
   }
 
   bool operator ==(var other) {

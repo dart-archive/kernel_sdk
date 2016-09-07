@@ -539,6 +539,9 @@ class Object {
     return unhandled_exception_class_;
   }
   static RawClass* unwind_error_class() { return unwind_error_class_; }
+  static RawClass* singletargetcache_class() {
+    return singletargetcache_class_;
+  }
   static RawClass* icdata_class() { return icdata_class_; }
   static RawClass* megamorphic_cache_class() {
     return megamorphic_cache_class_;
@@ -790,6 +793,7 @@ class Object {
   static RawClass* deopt_info_class_;  // Class of DeoptInfo.
   static RawClass* context_class_;  // Class of the Context vm object.
   static RawClass* context_scope_class_;  // Class of ContextScope vm object.
+  static RawClass* singletargetcache_class_;  // Class of SingleTargetCache.
   static RawClass* icdata_class_;  // Class of ICData.
   static RawClass* megamorphic_cache_class_;  // Class of MegamorphiCache.
   static RawClass* subtypetestcache_class_;  // Class of SubtypeTestCache.
@@ -1820,6 +1824,40 @@ class PatchClass : public Object {
 };
 
 
+class SingleTargetCache : public Object {
+ public:
+  RawCode* target() const { return raw_ptr()->target_; }
+  void set_target(const Code& target) const;
+  static intptr_t target_offset() {
+    return OFFSET_OF(RawSingleTargetCache, target_);
+  }
+
+#define DEFINE_NON_POINTER_FIELD_ACCESSORS(type, name)                         \
+  type name() const { return raw_ptr()->name##_; }                             \
+  void set_##name(type value) const {                                          \
+    StoreNonPointer(&raw_ptr()->name##_, value);                               \
+  }                                                                            \
+  static intptr_t name##_offset() {                                            \
+    return OFFSET_OF(RawSingleTargetCache, name##_);                           \
+  }                                                                            \
+
+DEFINE_NON_POINTER_FIELD_ACCESSORS(uword, entry_point);
+DEFINE_NON_POINTER_FIELD_ACCESSORS(intptr_t, lower_limit);
+DEFINE_NON_POINTER_FIELD_ACCESSORS(intptr_t, upper_limit);
+#undef DEFINE_NON_POINTER_FIELD_ACCESSORS
+
+  static intptr_t InstanceSize() {
+    return RoundedAllocationSize(sizeof(RawSingleTargetCache));
+  }
+
+  static RawSingleTargetCache* New();
+
+ private:
+  FINAL_HEAP_OBJECT_IMPLEMENTATION(SingleTargetCache, Object);
+  friend class Class;
+};
+
+
 // Object holding information about an IC: test classes and their
 // corresponding targets. The owner of the ICData can be either the function
 // or the original ICData object. In case of background compilation we
@@ -1854,6 +1892,7 @@ class ICData : public Object {
   bool IsImmutable() const;
 
   void Reset(Zone* zone) const;
+  void ResetSwitchable(Zone* zone) const;
 
   // Note: only deopts with reasons before Unknown in this list are recorded in
   // the ICData. All other reasons are used purely for informational messages
@@ -2065,11 +2104,7 @@ class ICData : public Object {
                              GrowableArray<intptr_t>* second) const;
 
   void PrintToJSONArray(const JSONArray& jsarray,
-                        TokenPosition token_pos,
-                        bool is_static_call) const;
-  void PrintToJSONArrayNew(const JSONArray& jsarray,
-                           TokenPosition token_pos,
-                           bool is_static_call) const;
+                        TokenPosition token_pos) const;
 
   // Initialize the preallocated empty ICData entry arrays.
   static void InitOnce();
@@ -3977,11 +4012,46 @@ class Instructions : public Object {
  public:
   intptr_t size() const { return raw_ptr()->size_; }  // Excludes HeaderSize().
 
-  uword EntryPoint() const {
-    return EntryPoint(raw());
+  uword PayloadStart() const {
+    return PayloadStart(raw());
   }
-  static uword EntryPoint(RawInstructions* instr) {
+  uword UncheckedEntryPoint() const {
+    return UncheckedEntryPoint(raw());
+  }
+  uword CheckedEntryPoint() const {
+    return CheckedEntryPoint(raw());
+  }
+  static uword PayloadStart(RawInstructions* instr) {
     return reinterpret_cast<uword>(instr->ptr()) + HeaderSize();
+  }
+
+#if defined(TARGET_ARCH_IA32)
+  static const intptr_t kCheckedEntryOffset = 0;
+  static const intptr_t kUncheckedEntryOffset = 0;
+#elif defined(TARGET_ARCH_X64)
+  static const intptr_t kCheckedEntryOffset = 23;
+  static const intptr_t kUncheckedEntryOffset = 44;
+#elif defined(TARGET_ARCH_ARM)
+  static const intptr_t kCheckedEntryOffset = 12;
+  static const intptr_t kUncheckedEntryOffset = 36;
+#elif defined(TARGET_ARCH_ARM64)
+  static const intptr_t kCheckedEntryOffset = 24;
+  static const intptr_t kUncheckedEntryOffset = 48;
+#elif defined(TARGET_ARCH_MIPS)
+  static const intptr_t kCheckedEntryOffset = 16;
+  static const intptr_t kUncheckedEntryOffset = 56;
+#elif defined(TARGET_ARCH_DBC)
+  static const intptr_t kCheckedEntryOffset = 0;
+  static const intptr_t kUncheckedEntryOffset = 0;
+#else
+#error Missing entry offsets for current architecture
+#endif
+
+  static uword UncheckedEntryPoint(RawInstructions* instr) {
+    return PayloadStart(instr) + kUncheckedEntryOffset;
+  }
+  static uword CheckedEntryPoint(RawInstructions* instr) {
+    return PayloadStart(instr) + kCheckedEntryOffset;
   }
 
   static const intptr_t kMaxElements = (kMaxInt32 -
@@ -4008,9 +4078,9 @@ class Instructions : public Object {
     return Utils::RoundUp(sizeof(RawInstructions), alignment);
   }
 
-  static RawInstructions* FromEntryPoint(uword entry_point) {
+  static RawInstructions* FromUncheckedEntryPoint(uword entry_point) {
     return reinterpret_cast<RawInstructions*>(
-        entry_point - HeaderSize() + kHeapObjectTag);
+        entry_point - HeaderSize() - kUncheckedEntryOffset + kHeapObjectTag);
   }
 
   bool Equals(const Instructions& other) const {
@@ -4462,6 +4532,9 @@ class Code : public Object {
   static intptr_t entry_point_offset() {
     return OFFSET_OF(RawCode, entry_point_);
   }
+  static intptr_t checked_entry_point_offset() {
+    return OFFSET_OF(RawCode, checked_entry_point_);
+  }
 
   RawObjectPool* object_pool() const { return raw_ptr()->object_pool_; }
   static intptr_t object_pool_offset() {
@@ -4481,8 +4554,14 @@ class Code : public Object {
   }
   void set_is_alive(bool value) const;
 
-  uword EntryPoint() const {
-    return Instructions::Handle(instructions()).EntryPoint();
+  uword PayloadStart() const {
+    return Instructions::PayloadStart(instructions());
+  }
+  uword UncheckedEntryPoint() const {
+    return Instructions::UncheckedEntryPoint(instructions());
+  }
+  uword CheckedEntryPoint() const {
+    return Instructions::CheckedEntryPoint(instructions());
   }
   intptr_t Size() const {
     const Instructions& instr = Instructions::Handle(instructions());
@@ -4493,7 +4572,7 @@ class Code : public Object {
   }
   bool ContainsInstructionAt(uword addr) const {
     const Instructions& instr = Instructions::Handle(instructions());
-    const uword offset = addr - instr.EntryPoint();
+    const uword offset = addr - instr.PayloadStart();
     return offset < static_cast<uword>(instr.size());
   }
 
@@ -6665,7 +6744,7 @@ class String : public Instance {
   // an Array object or a regular Object so that it can be traversed during
   // garbage collection.
   RawString* MakeExternal(void* array,
-                          intptr_t length,
+                          intptr_t external_size,
                           void* peer,
                           Dart_PeerFinalizer cback) const;
 
@@ -6921,6 +7000,7 @@ class OneByteString : public AllStatic {
                                               Heap::Space space);
 
   static void SetPeer(const String& str,
+                      intptr_t external_size,
                       void* peer,
                       Dart_PeerFinalizer cback);
 
@@ -7036,6 +7116,7 @@ class TwoByteString : public AllStatic {
                                      Heap::Space space);
 
   static void SetPeer(const String& str,
+                      intptr_t external_size,
                       void* peer,
                       Dart_PeerFinalizer cback);
 
@@ -7881,7 +7962,9 @@ class ExternalTypedData : public Instance {
 #undef TYPED_GETTER_SETTER
 
   FinalizablePersistentHandle* AddFinalizer(
-      void* peer, Dart_WeakPersistentHandleFinalizer callback) const;
+      void* peer,
+      Dart_WeakPersistentHandleFinalizer callback,
+      intptr_t external_size) const;
 
   static intptr_t length_offset() {
     return OFFSET_OF(RawExternalTypedData, length_);

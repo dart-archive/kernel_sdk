@@ -77,6 +77,7 @@ class IncrementalBodyDelta extends Delta {
     bool isByTask(TaskDescriptor taskDescriptor) {
       return taskDescriptor.results.contains(descriptor);
     }
+
     if (descriptor == CONTENT) {
       return DeltaResult.KEEP_CONTINUE;
     }
@@ -97,11 +98,10 @@ class IncrementalBodyDelta extends Delta {
         isByTask(ComputeConstantValueTask.DESCRIPTOR) ||
         isByTask(ComputeInferableStaticVariableDependenciesTask.DESCRIPTOR) ||
         isByTask(ComputeLibraryCycleTask.DESCRIPTOR) ||
-        isByTask(ComputePropagableVariableDependenciesTask.DESCRIPTOR) ||
         isByTask(DartErrorsTask.DESCRIPTOR) ||
         isByTask(ReadyLibraryElement2Task.DESCRIPTOR) ||
         isByTask(ReadyLibraryElement5Task.DESCRIPTOR) ||
-        isByTask(ReadyLibraryElement6Task.DESCRIPTOR) ||
+        isByTask(ReadyLibraryElement7Task.DESCRIPTOR) ||
         isByTask(ReadyResolvedUnitTask.DESCRIPTOR) ||
         isByTask(EvaluateUnitConstantsTask.DESCRIPTOR) ||
         isByTask(GenerateHintsTask.DESCRIPTOR) ||
@@ -112,13 +112,11 @@ class IncrementalBodyDelta extends Delta {
         isByTask(LibraryUnitErrorsTask.DESCRIPTOR) ||
         isByTask(ParseDartTask.DESCRIPTOR) ||
         isByTask(PartiallyResolveUnitReferencesTask.DESCRIPTOR) ||
-        isByTask(PropagateVariableTypesInLibraryClosureTask.DESCRIPTOR) ||
-        isByTask(PropagateVariableTypesInLibraryTask.DESCRIPTOR) ||
-        isByTask(PropagateVariableTypesInUnitTask.DESCRIPTOR) ||
-        isByTask(PropagateVariableTypeTask.DESCRIPTOR) ||
         isByTask(ScanDartTask.DESCRIPTOR) ||
         isByTask(ResolveConstantExpressionTask.DESCRIPTOR) ||
         isByTask(ResolveDirectiveElementsTask.DESCRIPTOR) ||
+        isByTask(ResolvedUnit7InLibraryClosureTask.DESCRIPTOR) ||
+        isByTask(ResolvedUnit7InLibraryTask.DESCRIPTOR) ||
         isByTask(ResolveInstanceFieldsInUnitTask.DESCRIPTOR) ||
         isByTask(ResolveLibraryReferencesTask.DESCRIPTOR) ||
         isByTask(ResolveLibraryTask.DESCRIPTOR) ||
@@ -385,6 +383,7 @@ class IncrementalResolver {
     _shiftErrors_NEW(RESOLVE_TYPE_NAMES_ERRORS);
     _shiftErrors_NEW(RESOLVE_TYPE_BOUNDS_ERRORS);
     _shiftErrors_NEW(RESOLVE_UNIT_ERRORS);
+    _shiftErrors_NEW(STATIC_VARIABLE_RESOLUTION_ERRORS_IN_UNIT);
     _shiftErrors_NEW(STRONG_MODE_ERRORS);
     _shiftErrors_NEW(VARIABLE_REFERENCE_ERRORS);
     _shiftErrors_NEW(VERIFY_ERRORS);
@@ -808,6 +807,7 @@ class PoorMansIncrementalResolver {
             }
           }
         }
+
         Element parentElement = ElementLocator.locate(newComment.parent);
         if (parentElement is ElementImpl) {
           setElementDocumentationComment(parentElement, parent);
@@ -1174,7 +1174,7 @@ class ResolutionContextBuilder {
       throw new AnalysisException(
           "Cannot create scope: compilation unit is not part of a library");
     }
-    return new LibraryScope(libraryElement, _errorListener);
+    return new LibraryScope(libraryElement);
   }
 
   /**

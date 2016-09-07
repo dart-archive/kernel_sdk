@@ -39,7 +39,6 @@ import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/sdk.dart';
-import 'package:analyzer/src/generated/sdk_io.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/utilities_collection.dart';
 import 'package:analyzer/src/generated/utilities_general.dart';
@@ -487,10 +486,6 @@ class GetHandler {
     if (unit != null) {
       return unit;
     }
-    unit = entry.getValue(RESOLVED_UNIT13);
-    if (unit != null) {
-      return unit;
-    }
     return entry.getValue(RESOLVED_UNIT);
   }
 
@@ -563,7 +558,6 @@ class GetHandler {
       results.add(RESOLVED_UNIT10);
       results.add(RESOLVED_UNIT11);
       results.add(RESOLVED_UNIT12);
-      results.add(RESOLVED_UNIT13);
       results.add(RESOLVED_UNIT);
       results.add(STRONG_MODE_ERRORS);
       results.add(USED_IMPORTED_ELEMENTS);
@@ -1453,7 +1447,7 @@ class GetHandler {
             DartSdk sdk = context?.sourceFactory?.dartSdk;
             writeOptions(buffer, sdk?.context?.analysisOptions,
                 writeAdditionalOptions: (StringBuffer buffer) {
-              if (sdk is DirectoryBasedDartSdk) {
+              if (sdk is FolderBasedDartSdk) {
                 _writeOption(buffer, 'Use summaries', sdk.useSummary);
               }
             });
@@ -1490,9 +1484,9 @@ class GetHandler {
               DartSdk sdk = resolver.dartSdk;
               buffer.write(' (sdk = ');
               buffer.write(sdk.runtimeType);
-              if (sdk is DirectoryBasedDartSdk) {
+              if (sdk is FolderBasedDartSdk) {
                 buffer.write(' (path = ');
-                buffer.write(sdk.directory.getAbsolutePath());
+                buffer.write(sdk.directory.path);
                 buffer.write(')');
               } else if (sdk is EmbedderSdk) {
                 buffer.write(' (map = ');

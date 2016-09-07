@@ -88,20 +88,11 @@ abstract class RuntimeTypesEncoder {
   jsAst.Template get templateForCreateFunctionType;
   jsAst.Name get getFunctionThatReturnsNullName;
 
+  /// Returns a [jsAst.Expression] representing the given [type]. Type variables
+  /// are replaced by the [jsAst.Expression] returned by [onVariable].
   jsAst.Expression getTypeRepresentation(
       DartType type, OnVariableCallback onVariable,
       [ShouldEncodeTypedefCallback shouldEncodeTypedef]);
-  /**
-   * Returns a [jsAst.Expression] representing the given [type]. Type
-   * variables are replaced by placeholders in the ast.
-   *
-   * [firstPlaceholderIndex] is the index to use for the first placeholder.
-   * This is useful if the returned [jsAst.Expression] is only part of a
-   * larger template. By default, indexing starts with 0.
-   */
-  jsAst.Expression getTypeRepresentationWithPlaceholders(
-      DartType type, OnVariableCallback onVariable,
-      {int firstPlaceholderIndex: 0});
 
   String getTypeRepresentationForTypeConstant(DartType type);
 }
@@ -298,6 +289,7 @@ class _RuntimeTypes implements RuntimeTypes {
               methodsNeedingRti.add(method);
             }
           }
+
           compiler.resolverWorld.closuresWithFreeTypeVariables
               .forEach(analyzeMethod);
           compiler.resolverWorld.callMethodsWithFreeTypeVariables
@@ -314,6 +306,7 @@ class _RuntimeTypes implements RuntimeTypes {
           methodsNeedingRti.add(method);
         }
       }
+
       compiler.resolverWorld.closuresWithFreeTypeVariables
           .forEach(analyzeMethod);
       compiler.resolverWorld.callMethodsWithFreeTypeVariables
@@ -417,6 +410,7 @@ class _RuntimeTypes implements RuntimeTypes {
         functionArgumentCollector.collect(type);
       }
     }
+
     collectFunctionTypeArguments(isChecks);
     collectFunctionTypeArguments(checkedBounds);
 
@@ -432,6 +426,7 @@ class _RuntimeTypes implements RuntimeTypes {
         }
       }
     }
+
     collectTypeArguments(instantiatedTypes);
     collectTypeArguments(checkedTypeArguments, isTypeArgument: true);
 
@@ -462,6 +457,7 @@ class _RuntimeTypes implements RuntimeTypes {
         functionArgumentCollector.collect(type);
       }
     }
+
     collectFunctionTypeArguments(instantiatedTypes);
     collectFunctionTypeArguments(checkedTypeArguments);
 
@@ -471,6 +467,7 @@ class _RuntimeTypes implements RuntimeTypes {
         collector.collect(type, isTypeArgument: isTypeArgument);
       }
     }
+
     collectTypeArguments(isChecks);
     collectTypeArguments(checkedBounds, isTypeArgument: true);
 
@@ -493,6 +490,9 @@ class _RuntimeTypes implements RuntimeTypes {
       }
     }
     return instantiated..addAll(collector.classes);
+
+    // TODO(sra): This computation misses substitutions for reading type
+    // parameters.
   }
 
   @override
@@ -613,20 +613,6 @@ class _RuntimeTypesEncoder implements RuntimeTypesEncoder {
   }
 
   @override
-  jsAst.Expression getTypeRepresentationWithPlaceholders(
-      DartType type, OnVariableCallback onVariable,
-      {int firstPlaceholderIndex: 0}) {
-    // Create a type representation.  For type variables call the original
-    // callback for side effects and return a template placeholder.
-    int positions = firstPlaceholderIndex;
-    jsAst.Expression representation = getTypeRepresentation(type, (variable) {
-      onVariable(variable);
-      return new jsAst.InterpolatedExpression(positions++);
-    });
-    return representation;
-  }
-
-  @override
   jsAst.Expression getSubstitutionRepresentation(
       List<DartType> types, OnVariableCallback onVariable) {
     List<jsAst.Expression> elements = types
@@ -641,7 +627,7 @@ class _RuntimeTypesEncoder implements RuntimeTypesEncoder {
     jsAst.Expression onVariable(TypeVariableType v) {
       return new jsAst.VariableUse(v.name);
     }
-    ;
+
     jsAst.Expression encoding = getTypeRepresentation(type, onVariable);
     if (contextClass == null && !alwaysGenerateFunction) {
       return encoding;

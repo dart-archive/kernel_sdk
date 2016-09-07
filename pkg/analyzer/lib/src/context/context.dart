@@ -78,6 +78,11 @@ class AnalysisContextImpl implements InternalAnalysisContext {
   final int _id = _NEXT_ID++;
 
   /**
+   * The flag that is `true` if the context is being analyzed.
+   */
+  bool _isActive = false;
+
+  /**
    * A client-provided name used to identify this context, or `null` if the
    * client has not provided a name.
    */
@@ -284,6 +289,8 @@ class AnalysisContextImpl implements InternalAnalysisContext {
         (this._options.lint && !options.lint) ||
         this._options.preserveComments != options.preserveComments ||
         this._options.strongMode != options.strongMode ||
+        this._options.enableAssertInitializer !=
+            options.enableAssertInitializer ||
         this._options.enableAssertMessage != options.enableAssertMessage ||
         ((options is AnalysisOptionsImpl)
             ? this._options.strongModeHints != options.strongModeHints
@@ -312,6 +319,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     this._options.generateSdkErrors = options.generateSdkErrors;
     this._options.dart2jsHint = options.dart2jsHint;
     this._options.enableGenericMethods = options.enableGenericMethods;
+    this._options.enableAssertInitializer = options.enableAssertInitializer;
     this._options.enableAssertMessage = options.enableAssertMessage;
     this._options.enableStrictCallChecks = options.enableStrictCallChecks;
     this._options.enableAsync = options.enableAsync;
@@ -392,6 +400,17 @@ class AnalysisContextImpl implements InternalAnalysisContext {
   @override
   Stream<ImplicitAnalysisEvent> get implicitAnalysisEvents =>
       _implicitAnalysisEventsController.stream;
+
+  @override
+  bool get isActive => _isActive;
+
+  @override
+  set isActive(bool active) {
+    if (active != _isActive) {
+      _isActive = active;
+      _privatePartition.isActive = active;
+    }
+  }
 
   @override
   bool get isDisposed => _disposed;
@@ -601,9 +620,9 @@ class AnalysisContextImpl implements InternalAnalysisContext {
   }
 
   @override
-  ApplyChangesStatus applyChanges(ChangeSet changeSet) {
+  void applyChanges(ChangeSet changeSet) {
     if (changeSet.isEmpty) {
-      return new ApplyChangesStatus(false);
+      return;
     }
     //
     // First, compute the list of sources that have been removed.
@@ -646,11 +665,6 @@ class AnalysisContextImpl implements InternalAnalysisContext {
           changeSet.addedSources, changedSources, removedSources);
     }
     _onSourcesChangedController.add(new SourcesChangedEvent(changeSet));
-    return new ApplyChangesStatus(changeSet.addedSources.isNotEmpty ||
-        changeSet.changedContents.isNotEmpty ||
-        changeSet.deletedSources.isNotEmpty ||
-        changedSources.isNotEmpty ||
-        removedSources.isNotEmpty);
   }
 
   @override
@@ -840,13 +854,11 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     if (units != null) {
       return units;
     }
-    // Schedule recomputing RESOLVED_UNIT results.
+    // Schedule computing of RESOLVED_UNIT results.
     for (Source librarySource in containingLibraries) {
       LibrarySpecificUnit target =
           new LibrarySpecificUnit(librarySource, unitSource);
-      if (_cache.getState(target, RESOLVED_UNIT) == CacheState.FLUSHED) {
-        dartWorkManager.addPriorityResult(target, RESOLVED_UNIT);
-      }
+      dartWorkManager.addPriorityResult(target, RESOLVED_UNIT);
     }
     return null;
   }
@@ -1306,7 +1318,6 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       entry.setState(RESOLVED_UNIT10, CacheState.FLUSHED);
       entry.setState(RESOLVED_UNIT11, CacheState.FLUSHED);
       entry.setState(RESOLVED_UNIT12, CacheState.FLUSHED);
-      entry.setState(RESOLVED_UNIT13, CacheState.FLUSHED);
       // USED_IMPORTED_ELEMENTS
       // USED_LOCAL_ELEMENTS
       setValue(STRONG_MODE_ERRORS, AnalysisError.NO_ERRORS);
@@ -1386,7 +1397,6 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     entry.setState(RESOLVED_UNIT10, CacheState.FLUSHED);
     entry.setState(RESOLVED_UNIT11, CacheState.FLUSHED);
     entry.setState(RESOLVED_UNIT12, CacheState.FLUSHED);
-    entry.setState(RESOLVED_UNIT13, CacheState.FLUSHED);
     entry.setState(RESOLVED_UNIT, CacheState.FLUSHED);
   }
 
@@ -1569,9 +1579,8 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       Source librarySource, Source unitSource) {
     LibrarySpecificUnit target =
         new LibrarySpecificUnit(librarySource, unitSource);
-    for (ResultDescriptor result in [
+    for (ResultDescriptor<CompilationUnit> result in [
       RESOLVED_UNIT,
-      RESOLVED_UNIT13,
       RESOLVED_UNIT12,
       RESOLVED_UNIT11,
       RESOLVED_UNIT10,
@@ -1856,6 +1865,9 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       return;
     }
 
+    // We're going to update the cache, so reset the driver.
+    driver.reset();
+
     // We need to invalidate the cache.
     {
       if (analysisOptions.finerGrainedInvalidation &&
@@ -1871,6 +1883,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
           CacheEntry unitEntry =
               getCacheEntry(new LibrarySpecificUnit(librarySource, source));
           CompilationUnit oldUnit = RESOLVED_UNIT_RESULTS
+              .skipWhile((result) => result != RESOLVED_UNIT2)
               .map(unitEntry.getValue)
               .firstWhere((unit) => unit != null, orElse: () => null);
           // If we have the old unit, we can try to update it.
@@ -1897,7 +1910,6 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       entry.setState(MODIFICATION_TIME, CacheState.INVALID);
       entry.setState(SOURCE_KIND, CacheState.INVALID);
     }
-    driver.reset();
     for (WorkManager workManager in workManagers) {
       workManager.applyChange(
           Source.EMPTY_LIST, <Source>[source], Source.EMPTY_LIST);
@@ -2011,6 +2023,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       // schedule
       dartWorkManager.unitIncrementallyResolved(librarySource, unitSource);
       // OK
+      driver.reset();
       return true;
     });
   }

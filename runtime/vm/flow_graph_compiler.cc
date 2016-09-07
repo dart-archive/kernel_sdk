@@ -63,6 +63,7 @@ DECLARE_FLAG(int, inlining_caller_size_threshold);
 DECLARE_FLAG(int, inlining_constant_arguments_max_size_threshold);
 DECLARE_FLAG(int, inlining_constant_arguments_min_size_threshold);
 DECLARE_FLAG(int, reload_every);
+DECLARE_FLAG(bool, unbox_numeric_fields);
 
 static void PrecompilationModeHandler(bool value) {
   if (value) {
@@ -95,6 +96,7 @@ static void PrecompilationModeHandler(bool value) {
     FLAG_reorder_basic_blocks = false;
     FLAG_use_field_guards = false;
     FLAG_use_cha_deopt = false;
+    FLAG_unbox_numeric_fields = false;
 
 #if !defined(PRODUCT) && !defined(DART_PRECOMPILED_RUNTIME)
     // Set flags affecting runtime accordingly for dart_noopt.
@@ -1012,12 +1014,15 @@ void FlowGraphCompiler::EmitDeopt(intptr_t deopt_id,
                                   uint32_t flags) {
   ASSERT(is_optimizing());
   ASSERT(!intrinsic_mode());
+  // The pending deoptimization environment may be changed after this deopt is
+  // emitted, so we need to make a copy.
+  Environment* env_copy =
+      pending_deoptimization_env_->DeepCopy(zone());
   CompilerDeoptInfo* info =
       new(zone()) CompilerDeoptInfo(deopt_id,
                                     reason,
                                     flags,
-                                    pending_deoptimization_env_);
-
+                                    env_copy);
   deopt_infos_.Add(info);
   assembler()->Deopt(0, /*is_eager =*/ 1);
   info->set_pc_offset(assembler()->CodeSize());
@@ -1028,7 +1033,7 @@ void FlowGraphCompiler::EmitDeopt(intptr_t deopt_id,
 void FlowGraphCompiler::FinalizeExceptionHandlers(const Code& code) {
   ASSERT(exception_handlers_list_ != NULL);
   const ExceptionHandlers& handlers = ExceptionHandlers::Handle(
-      exception_handlers_list_->FinalizeExceptionHandlers(code.EntryPoint()));
+      exception_handlers_list_->FinalizeExceptionHandlers(code.PayloadStart()));
   code.set_exception_handlers(handlers);
   if (FLAG_compiler_stats) {
     Thread* thread = Thread::Current();
@@ -1042,7 +1047,7 @@ void FlowGraphCompiler::FinalizeExceptionHandlers(const Code& code) {
 void FlowGraphCompiler::FinalizePcDescriptors(const Code& code) {
   ASSERT(pc_descriptors_list_ != NULL);
   const PcDescriptors& descriptors = PcDescriptors::Handle(
-      pc_descriptors_list_->FinalizePcDescriptors(code.EntryPoint()));
+      pc_descriptors_list_->FinalizePcDescriptors(code.PayloadStart()));
   if (!is_optimizing_) descriptors.Verify(parsed_function_.function());
   code.set_pc_descriptors(descriptors);
   code.set_lazy_deopt_pc_offset(lazy_deopt_pc_offset_);
@@ -1162,7 +1167,8 @@ bool FlowGraphCompiler::TryIntrinsify() {
 
       // Only intrinsify getter if the field cannot contain a mutable double.
       // Reading from a mutable double box requires allocating a fresh double.
-      if (field.is_instance() && !IsPotentialUnboxedField(field)) {
+      if (field.is_instance() &&
+          (FLAG_precompiled_mode || !IsPotentialUnboxedField(field))) {
         GenerateInlinedGetter(field.Offset());
         return !FLAG_use_field_guards;
       }
@@ -1173,7 +1179,8 @@ bool FlowGraphCompiler::TryIntrinsify() {
       const Field& field = Field::Handle(owner.LookupFieldAllowPrivate(name));
       ASSERT(!field.IsNull());
 
-      if (field.is_instance() && (field.guarded_cid() == kDynamicCid)) {
+      if (field.is_instance() &&
+          (FLAG_precompiled_mode || field.guarded_cid() == kDynamicCid)) {
         GenerateInlinedSetter(field.Offset());
         return !FLAG_use_field_guards;
       }

@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of types;
+part of masks;
 
 class UnionTypeMask implements TypeMask {
   final Iterable<FlatTypeMask> disjointMasks;
@@ -253,6 +253,7 @@ class UnionTypeMask implements TypeMask {
           return other.containsMask(maskDisregardNull, classWorld);
         });
       }
+
       return disjointMasks.every((FlatTypeMask disjointMask) {
         bool contained = containedInAnyOf(disjointMask, union.disjointMasks);
         if (PERFORM_EXTRA_CONTAINS_CHECK &&
@@ -330,11 +331,10 @@ class UnionTypeMask implements TypeMask {
     return disjointMasks.any((e) => e.canHit(element, selector, classWorld));
   }
 
-  Element locateSingleElement(
-      Selector selector, TypeMask mask, Compiler compiler) {
+  Element locateSingleElement(Selector selector, Compiler compiler) {
     Element candidate;
     for (FlatTypeMask mask in disjointMasks) {
-      Element current = mask.locateSingleElement(selector, mask, compiler);
+      Element current = mask.locateSingleElement(selector, compiler);
       if (current == null) {
         return null;
       } else if (candidate == null) {

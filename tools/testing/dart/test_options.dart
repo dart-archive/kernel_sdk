@@ -202,6 +202,10 @@ class TestOptionsParser {
           'noopt', 'Run an in-place precompilation', ['--noopt'], [], false,
           type: 'bool'),
       new _TestOptionSpecification(
+          'fast_startup', 'Pass the --fast-startup flag to dart2js',
+          ['--fast-startup'], [], false,
+          type: 'bool'),
+      new _TestOptionSpecification(
           'hot_reload', 'Run hot reload stress tests', ['--hot-reload'], [],
           false, type: 'bool'),
       new _TestOptionSpecification(
@@ -448,6 +452,12 @@ Note: currently only implemented for dart2js.''',
           null),
       new _TestOptionSpecification('package_root',
           'The package root to use for testing.', ['--package-root'], [], null),
+      new _TestOptionSpecification(
+          'packages',
+          'The package spec file to use for testing.',
+          ['--packages'],
+          [],
+          null),
       new _TestOptionSpecification(
           'exclude_suite',
           'Exclude suites from default selector, only works when no'

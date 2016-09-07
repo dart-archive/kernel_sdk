@@ -82,9 +82,54 @@ DECLARE_FLAG(bool, print_instruction_stats);
 
 class DartPrecompilationPipeline : public DartCompilationPipeline {
  public:
-  DartPrecompilationPipeline() : result_type_(CompileType::None()) { }
+  explicit DartPrecompilationPipeline(Zone* zone,
+                                      FieldTypeMap* field_map = NULL)
+      : zone_(zone),
+        result_type_(CompileType::None()),
+        field_map_(field_map) { }
 
   virtual void FinalizeCompilation(FlowGraph* flow_graph) {
+    if ((field_map_ != NULL )&&
+        flow_graph->function().IsGenerativeConstructor()) {
+      for (BlockIterator block_it = flow_graph->reverse_postorder_iterator();
+           !block_it.Done();
+           block_it.Advance()) {
+        ForwardInstructionIterator it(block_it.Current());
+        for (; !it.Done(); it.Advance()) {
+          StoreInstanceFieldInstr* store = it.Current()->AsStoreInstanceField();
+          if (store != NULL) {
+            if (!store->field().IsNull() && store->field().is_final()) {
+              if (FLAG_trace_precompiler && FLAG_support_il_printer) {
+                THR_Print("Found store to %s <- %s\n",
+                          store->field().ToCString(),
+                          store->value()->Type()->ToCString());
+              }
+              FieldTypePair* entry = field_map_->Lookup(&store->field());
+              if (entry == NULL) {
+                field_map_->Insert(FieldTypePair(
+                    &Field::Handle(zone_, store->field().raw()),  // Re-wrap.
+                    store->value()->Type()->ToCid()));
+                if (FLAG_trace_precompiler && FLAG_support_il_printer) {
+                    THR_Print(" initial type = %s\n",
+                              store->value()->Type()->ToCString());
+                }
+                continue;
+              }
+              CompileType type = CompileType::FromCid(entry->cid_);
+              if (FLAG_trace_precompiler && FLAG_support_il_printer) {
+                  THR_Print(" old type = %s\n", type.ToCString());
+              }
+              type.Union(store->value()->Type());
+              if (FLAG_trace_precompiler && FLAG_support_il_printer) {
+                  THR_Print(" new type = %s\n", type.ToCString());
+              }
+              entry->cid_ = type.ToCid();
+            }
+          }
+        }
+      }
+    }
+
     CompileType result_type = CompileType::None();
     for (BlockIterator block_it = flow_graph->reverse_postorder_iterator();
          !block_it.Done();
@@ -103,7 +148,9 @@ class DartPrecompilationPipeline : public DartCompilationPipeline {
   CompileType result_type() { return result_type_; }
 
  private:
+  Zone* zone_;
   CompileType result_type_;
+  FieldTypeMap* field_map_;
 };
 
 
@@ -185,6 +232,7 @@ Precompiler::Precompiler(Thread* thread, bool reset_fields) :
     typeargs_to_retain_(),
     types_to_retain_(),
     consts_to_retain_(),
+    field_type_map_(),
     error_(Error::Handle()) {
 }
 
@@ -203,8 +251,14 @@ void Precompiler::DoCompileAll(
       // because their class hasn't been finalized yet.
       FinalizeAllClasses();
 
+      SortClasses();
+
       // Precompile static initializers to compute result type information.
       PrecompileStaticInitializers();
+
+      // Precompile constructors to compute type information for final fields.
+      ClearAllCode();
+      PrecompileConstructors();
 
       for (intptr_t round = 0; round < FLAG_precompiler_rounds; round++) {
         if (FLAG_trace_precompiler) {
@@ -342,6 +396,52 @@ void Precompiler::PrecompileStaticInitializers() {
 }
 
 
+void Precompiler::PrecompileConstructors() {
+  class ConstructorVisitor : public FunctionVisitor {
+   public:
+    explicit ConstructorVisitor(Zone* zone, FieldTypeMap* map)
+        : zone_(zone), field_type_map_(map) {
+      ASSERT(map != NULL);
+    }
+    void Visit(const Function& function) {
+      if (!function.IsGenerativeConstructor()) return;
+      if (function.HasCode()) {
+        // Const constructors may have been visited before. Recompile them here
+        // to collect type information for final fields for them as well.
+        function.ClearCode();
+      }
+      if (FLAG_trace_precompiler) {
+        THR_Print("Precompiling constructor %s\n", function.ToCString());
+      }
+      CompileFunction(Thread::Current(),
+                      zone_,
+                      function,
+                      field_type_map_);
+    }
+   private:
+    Zone* zone_;
+    FieldTypeMap* field_type_map_;
+  };
+
+  HANDLESCOPE(T);
+  ConstructorVisitor visitor(zone_, &field_type_map_);
+  VisitFunctions(&visitor);
+
+  FieldTypeMap::Iterator it(field_type_map_.GetIterator());
+  for (FieldTypePair* current = it.Next();
+       current != NULL;
+       current = it.Next()) {
+    const intptr_t cid = current->cid_;
+    current->field_->set_guarded_cid(cid);
+    current->field_->set_is_nullable(cid == kNullCid || cid == kDynamicCid);
+    if (FLAG_trace_precompiler) {
+      THR_Print("Field %s <- Type %s\n", current->field_->ToCString(),
+          Class::Handle(T->isolate()->class_table()->At(cid)).ToCString());
+    }
+  }
+}
+
+
 void Precompiler::ClearAllCode() {
   class ClearCodeFunctionVisitor : public FunctionVisitor {
     void Visit(const Function& function) {
@@ -349,8 +449,16 @@ void Precompiler::ClearAllCode() {
       function.ClearICDataArray();
     }
   };
-  ClearCodeFunctionVisitor visitor;
-  VisitFunctions(&visitor);
+  ClearCodeFunctionVisitor function_visitor;
+  VisitFunctions(&function_visitor);
+
+  class ClearCodeClassVisitor : public ClassVisitor {
+    void Visit(const Class& cls) {
+      cls.DisableAllocationStub();
+    }
+  };
+  ClearCodeClassVisitor class_visitor;
+  VisitClasses(&class_visitor);
 }
 
 
@@ -604,7 +712,7 @@ void Precompiler::ProcessFunction(const Function& function) {
     ASSERT(!function.is_abstract());
     ASSERT(!function.IsRedirectingFactory());
 
-    error_ = CompileFunction(thread_, function);
+    error_ = CompileFunction(thread_, zone_, function);
     if (!error_.IsNull()) {
       Jump(error_);
     }
@@ -973,7 +1081,7 @@ RawFunction* Precompiler::CompileStaticInitializer(const Field& field,
     parsed_function->AllocateVariables();
   }
   // Non-optimized code generator.
-  DartPrecompilationPipeline pipeline;
+  DartPrecompilationPipeline pipeline(zone);
   PrecompileParsedFunctionHelper helper(parsed_function,
                                         /* optimized = */ true);
   bool success = helper.Compile(&pipeline);
@@ -1073,7 +1181,7 @@ RawObject* Precompiler::ExecuteOnce(SequenceNode* fragment) {
     parsed_function->AllocateVariables();
 
     // Non-optimized code generator.
-    DartPrecompilationPipeline pipeline;
+    DartPrecompilationPipeline pipeline(Thread::Current()->zone());
     PrecompileParsedFunctionHelper helper(parsed_function,
                                           /* optimized = */ false);
     helper.Compile(&pipeline);
@@ -1914,7 +2022,7 @@ void Precompiler::BindStaticCalls() {
           // stub.
           ASSERT(target_.HasCode());
           target_code_ ^= target_.CurrentCode();
-          uword pc = pc_offset_.Value() + code_.EntryPoint();
+          uword pc = pc_offset_.Value() + code_.PayloadStart();
           CodePatcher::PatchStaticCallAt(pc, code_, target_code_);
         }
       }
@@ -1944,18 +2052,17 @@ void Precompiler::SwitchICCalls() {
   // the ic data array instead indirectly through a Function in the ic data
   // array. Iterate all the object pools and rewrite the ic data from
   // (cid, target function, count) to (cid, target code, entry point), and
-  // replace the ICLookupThroughFunction stub with ICLookupThroughCode.
+  // replace the ICCallThroughFunction stub with ICCallThroughCode.
 
   class SwitchICCallsVisitor : public FunctionVisitor {
    public:
     explicit SwitchICCallsVisitor(Zone* zone) :
+        zone_(zone),
         code_(Code::Handle(zone)),
         pool_(ObjectPool::Handle(zone)),
         entry_(Object::Handle(zone)),
         ic_(ICData::Handle(zone)),
-        target_(Function::Handle(zone)),
-        target_code_(Code::Handle(zone)),
-        entry_point_(Smi::Handle(zone)) {
+        target_code_(Code::Handle(zone)) {
     }
 
     void Visit(const Function& function) {
@@ -1969,44 +2076,25 @@ void Precompiler::SwitchICCalls() {
         if (pool_.InfoAt(i) != ObjectPool::kTaggedObject) continue;
         entry_ = pool_.ObjectAt(i);
         if (entry_.IsICData()) {
+          // The only IC calls generated by precompilation are for switchable
+          // calls.
           ic_ ^= entry_.raw();
-
-          // Only single check ICs are SwitchableCalls that use the ICLookup
-          // stubs. Some operators like + have ICData that check the types of
-          // arguments in addition to the receiver and use special stubs
-          // with fast paths for Smi operations.
-          if (ic_.NumArgsTested() != 1) continue;
-
-          for (intptr_t j = 0; j < ic_.NumberOfChecks(); j++) {
-            entry_ = ic_.GetTargetOrCodeAt(j);
-            if (entry_.IsFunction()) {
-              target_ ^= entry_.raw();
-              ASSERT(target_.HasCode());
-              target_code_ = target_.CurrentCode();
-              entry_point_ = Smi::FromAlignedAddress(target_code_.EntryPoint());
-              ic_.SetCodeAt(j, target_code_);
-              ic_.SetEntryPointAt(j, entry_point_);
-            } else {
-              // We've already seen and switched this ICData.
-              ASSERT(entry_.IsCode());
-            }
-          }
+          ic_.ResetSwitchable(zone_);
         } else if (entry_.raw() ==
-                   StubCode::ICLookupThroughFunction_entry()->code()) {
-          target_code_ = StubCode::ICLookupThroughCode_entry()->code();
+                   StubCode::ICCallThroughFunction_entry()->code()) {
+          target_code_ = StubCode::ICCallThroughCode_entry()->code();
           pool_.SetObjectAt(i, target_code_);
         }
       }
     }
 
    private:
+    Zone* zone_;
     Code& code_;
     ObjectPool& pool_;
     Object& entry_;
     ICData& ic_;
-    Function& target_;
     Code& target_code_;
-    Smi& entry_point_;
   };
 
   ASSERT(!I->compilation_allowed());
@@ -2265,6 +2353,147 @@ void Precompiler::FinalizeAllClasses() {
 }
 
 
+void Precompiler::SortClasses() {
+  ClassTable* table = I->class_table();
+  intptr_t num_cids = table->NumCids();
+  intptr_t* old_to_new_cid = new intptr_t[num_cids];
+  for (intptr_t cid = 0; cid < kNumPredefinedCids; cid++) {
+    old_to_new_cid[cid] = cid;  // The predefined classes cannot change cids.
+  }
+  for (intptr_t cid = kNumPredefinedCids; cid < num_cids; cid++) {
+    old_to_new_cid[cid] = -1;
+  }
+
+  intptr_t next_new_cid = kNumPredefinedCids;
+  GrowableArray<intptr_t> dfs_stack;
+  Class& cls = Class::Handle(Z);
+  GrowableObjectArray& subclasses = GrowableObjectArray::Handle(Z);
+
+  // Object doesn't use its subclasses list.
+  for (intptr_t cid = kNumPredefinedCids; cid < num_cids; cid++) {
+    if (!table->HasValidClassAt(cid)) {
+      continue;
+    }
+    cls = table->At(cid);
+    if (cls.is_patch()) {
+      continue;
+    }
+    if (cls.SuperClass() == I->object_store()->object_class()) {
+      dfs_stack.Add(cid);
+    }
+  }
+
+  while (dfs_stack.length() > 0) {
+    intptr_t cid = dfs_stack.RemoveLast();
+    ASSERT(table->HasValidClassAt(cid));
+    cls = table->At(cid);
+    ASSERT(!cls.IsNull());
+    if (old_to_new_cid[cid] == -1) {
+      old_to_new_cid[cid] = next_new_cid++;
+      if (FLAG_trace_precompiler) {
+        THR_Print("%" Pd ": %s, was %" Pd "\n",
+                  old_to_new_cid[cid], cls.ToCString(), cid);
+      }
+    }
+    subclasses = cls.direct_subclasses();
+    if (!subclasses.IsNull()) {
+      for (intptr_t i = 0; i < subclasses.Length(); i++) {
+        cls ^= subclasses.At(i);
+        ASSERT(!cls.IsNull());
+        dfs_stack.Add(cls.id());
+      }
+    }
+  }
+
+  // Top-level classes, typedefs, patch classes, etc.
+  for (intptr_t cid = kNumPredefinedCids; cid < num_cids; cid++) {
+    if (old_to_new_cid[cid] == -1) {
+      old_to_new_cid[cid] = next_new_cid++;
+      if (FLAG_trace_precompiler && table->HasValidClassAt(cid)) {
+        cls = table->At(cid);
+        THR_Print("%" Pd ": %s, was %" Pd "\n",
+                  old_to_new_cid[cid], cls.ToCString(), cid);
+      }
+    }
+  }
+  ASSERT(next_new_cid == num_cids);
+
+  RemapClassIds(old_to_new_cid);
+  delete[] old_to_new_cid;
+}
+
+
+class CidRewriteVisitor : public ObjectVisitor {
+ public:
+  explicit CidRewriteVisitor(intptr_t* old_to_new_cids)
+      : old_to_new_cids_(old_to_new_cids) { }
+
+  intptr_t Map(intptr_t cid) {
+    ASSERT(cid != -1);
+    return old_to_new_cids_[cid];
+  }
+
+  void VisitObject(RawObject* obj) {
+    if (obj->IsClass()) {
+      RawClass* cls = Class::RawCast(obj);
+      cls->ptr()->id_ = Map(cls->ptr()->id_);
+    } else if (obj->IsField()) {
+      RawField* field = Field::RawCast(obj);
+      field->ptr()->guarded_cid_ = Map(field->ptr()->guarded_cid_);
+      field->ptr()->is_nullable_ = Map(field->ptr()->is_nullable_);
+    } else if (obj->IsTypeParameter()) {
+      RawTypeParameter* param = TypeParameter::RawCast(obj);
+      param->ptr()->parameterized_class_id_ =
+          Map(param->ptr()->parameterized_class_id_);
+    } else if (obj->IsType()) {
+      RawType* type = Type::RawCast(obj);
+      RawObject* id = type->ptr()->type_class_id_;
+      if (!id->IsHeapObject()) {
+        type->ptr()->type_class_id_ =
+            Smi::New(Map(Smi::Value(Smi::RawCast(id))));
+      }
+    } else {
+      intptr_t old_cid = obj->GetClassId();
+      intptr_t new_cid = Map(old_cid);
+      if (old_cid != new_cid) {
+        // Don't touch objects that are unchanged. In particular, Instructions,
+        // which are write-protected.
+        obj->SetClassId(new_cid);
+      }
+    }
+  }
+
+ private:
+  intptr_t* old_to_new_cids_;
+};
+
+
+void Precompiler::RemapClassIds(intptr_t* old_to_new_cid) {
+  // Code, ICData, allocation stubs have now-invalid cids.
+  ClearAllCode();
+
+  {
+    HeapIterationScope his;
+
+    // Update the class table. Do it before rewriting cids in headers, as the
+    // heap walkers load an object's size *after* calling the visitor.
+    I->class_table()->Remap(old_to_new_cid);
+
+    // Rewrite cids in headers and cids in Classes, Fields, Types and
+    // TypeParameters.
+    {
+      CidRewriteVisitor visitor(old_to_new_cid);
+      I->heap()->VisitObjects(&visitor);
+    }
+  }
+
+#if defined(DEBUG)
+  I->class_table()->Validate();
+  I->heap()->Verify();
+#endif
+}
+
+
 void Precompiler::ResetPrecompilerState() {
   changed_ = false;
   function_count_ = 0;
@@ -2491,7 +2720,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         // Optimize (a << b) & c patterns, merge operations.
         // Run early in order to have more opportunity to optimize left shifts.
-        optimizer.TryOptimizePatterns();
+        flow_graph->TryOptimizePatterns();
         DEBUG_ASSERT(flow_graph->VerifyUseLists());
 
         FlowGraphInliner::SetInliningId(flow_graph, 0);
@@ -2651,7 +2880,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         // Optimize (a << b) & c patterns, merge operations.
         // Run after CSE in order to have more opportunity to merge
         // instructions that have same inputs.
-        optimizer.TryOptimizePatterns();
+        flow_graph->TryOptimizePatterns();
         DEBUG_ASSERT(flow_graph->VerifyUseLists());
 
         {
@@ -2965,7 +3194,7 @@ static RawError* PrecompileFunctionHelper(CompilationPipeline* pipeline,
     if (trace_compiler) {
       THR_Print("--> '%s' entry: %#" Px " size: %" Pd " time: %" Pd64 " us\n",
                 function.ToFullyQualifiedCString(),
-                Code::Handle(function.CurrentCode()).EntryPoint(),
+                Code::Handle(function.CurrentCode()).PayloadStart(),
                 Code::Handle(function.CurrentCode()).Size(),
                 per_compile_timer.TotalElapsedTime());
     }
@@ -2996,16 +3225,16 @@ static RawError* PrecompileFunctionHelper(CompilationPipeline* pipeline,
 
 
 RawError* Precompiler::CompileFunction(Thread* thread,
-                                       const Function& function) {
+                                       Zone* zone,
+                                       const Function& function,
+                                       FieldTypeMap* field_type_map) {
   VMTagScope tagScope(thread, VMTag::kCompileUnoptimizedTagId);
   TIMELINE_FUNCTION_COMPILATION_DURATION(thread, "CompileFunction", function);
 
-  CompilationPipeline* pipeline =
-      CompilationPipeline::New(thread->zone(), function);
-
   ASSERT(FLAG_precompiled_mode);
   const bool optimized = function.IsOptimizable();  // False for natives.
-  return PrecompileFunctionHelper(pipeline, function, optimized);
+  DartPrecompilationPipeline pipeline(zone, field_type_map);
+  return PrecompileFunctionHelper(&pipeline, function, optimized);
 }
 
 #endif  // DART_PRECOMPILER

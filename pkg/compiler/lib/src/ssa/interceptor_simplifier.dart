@@ -40,10 +40,10 @@ class SsaSimplifyInterceptors extends HBaseVisitor
   final String name = "SsaSimplifyInterceptors";
   final ConstantSystem constantSystem;
   final Compiler compiler;
-  final CodegenWorkItem work;
+  final Element element;
   HGraph graph;
 
-  SsaSimplifyInterceptors(this.compiler, this.constantSystem, this.work);
+  SsaSimplifyInterceptors(this.compiler, this.constantSystem, this.element);
 
   JavaScriptBackend get backend => compiler.backend;
 
@@ -129,7 +129,7 @@ class SsaSimplifyInterceptors extends HBaseVisitor
 
     // If we just happen to be in an instance method of the constant
     // interceptor, `this` is a shorter alias.
-    if (constantInterceptor == work.element.enclosingClass &&
+    if (constantInterceptor == element.enclosingClass &&
         graph.thisInstruction != null) {
       return graph.thisInstruction;
     }
@@ -185,7 +185,8 @@ class SsaSimplifyInterceptors extends HBaseVisitor
 
   HInstruction findDominator(Iterable<HInstruction> instructions) {
     HInstruction result;
-    L1: for (HInstruction candidate in instructions) {
+    L1:
+    for (HInstruction candidate in instructions) {
       for (HInstruction current in instructions) {
         if (current != candidate && !candidate.dominates(current)) continue L1;
       }

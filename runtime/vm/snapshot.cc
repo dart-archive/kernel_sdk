@@ -735,7 +735,7 @@ void InstructionsWriter::DumpInstructionsSizes() const {
     owner = code.owner();
     const char* name = NULL;
     if (owner.IsNull()) {
-      name = StubCode::NameOfStub(insns.EntryPoint());
+      name = StubCode::NameOfStub(insns.UncheckedEntryPoint());
     } else if (owner.IsClass()) {
       str = Class::Cast(owner).Name();
       name = str.ToCString();
@@ -764,17 +764,17 @@ static void EnsureIdentifier(char* label) {
 }
 
 
-void AssemblyInstructionsWriter::WriteByteSequence(uword start, uword end) {
+void AssemblyInstructionsWriter::WriteByteSequenceText(uword start, uword end) {
   const uword prefix = (end - start) % kWordSize;
   uint8_t* p = reinterpret_cast<uint8_t*>(start);
   for (uword i = 0; i < prefix; i++) {
-    WriteByteLiteral(p[i]);
+    WriteByteLiteralText(p[i]);
   }
 
   uword* const suffix = reinterpret_cast<uword*>(p + prefix);
   uword* const pend = reinterpret_cast<uword*>(end);
   for (uword* x = suffix; x < pend; x++) {
-    WriteWordLiteral(*x);
+    WriteWordLiteralText(*x);
   }
 }
 
@@ -798,7 +798,6 @@ void AssemblyInstructionsWriter::Write() {
     data.obj_ = &Object::Handle(zone, data.raw_obj_);
   }
 
-  SetSection(AssemblyInstructionsWriter::kRXSection);
   if (FLAG_emit_unwinding_data) {
     assembly_stream_.Print(".cfi_sections .eh_frame, .debug_frame\n");
   }
@@ -812,10 +811,10 @@ void AssemblyInstructionsWriter::Write() {
   // This head also provides the gap to make the instructions snapshot
   // look like a HeapPage.
   intptr_t instructions_length = next_offset_;
-  WriteWordLiteral(instructions_length);
+  WriteWordLiteralText(instructions_length);
   intptr_t header_words = InstructionsSnapshot::kHeaderSize / sizeof(uword);
   for (intptr_t i = 1; i < header_words; i++) {
-    WriteWordLiteral(0);
+    WriteWordLiteralText(0);
   }
 
   Object& owner = Object::Handle(zone);
@@ -842,20 +841,20 @@ void AssemblyInstructionsWriter::Write() {
       marked_tags = RawObject::VMHeapObjectTag::update(true, marked_tags);
       marked_tags = RawObject::MarkBit::update(true, marked_tags);
 
-      WriteWordLiteral(marked_tags);
+      WriteWordLiteralText(marked_tags);
       beginning += sizeof(uword);
 
       for (uword* cursor = reinterpret_cast<uword*>(beginning);
            cursor < reinterpret_cast<uword*>(entry);
            cursor++) {
-        WriteWordLiteral(*cursor);
+        WriteWordLiteralText(*cursor);
       }
     }
 
     // 2. Write a label at the entry point.
     owner = code.owner();
     if (owner.IsNull()) {
-      const char* name = StubCode::NameOfStub(insns.EntryPoint());
+      const char* name = StubCode::NameOfStub(insns.UncheckedEntryPoint());
       assembly_stream_.Print("Precompiled_Stub_%s:\n", name);
     } else if (owner.IsClass()) {
       str = Class::Cast(owner).Name();
@@ -915,7 +914,7 @@ void AssemblyInstructionsWriter::Write() {
         // from current cursor to the next comment.
         const uword next_offset = (comment_finger < comments.Length()) ?
             (entry + comments.PCOffsetAt(comment_finger)) : end;
-        WriteByteSequence(cursor, next_offset);
+        WriteByteSequenceText(cursor, next_offset);
         cursor = next_offset;
       }
     }
@@ -928,7 +927,6 @@ void AssemblyInstructionsWriter::Write() {
     }
   }
 
-  SetSection(AssemblyInstructionsWriter::kROSection);
 #if defined(TARGET_OS_LINUX)
   assembly_stream_.Print(".section .rodata\n");
 #elif defined(TARGET_OS_MACOS)
@@ -941,7 +939,7 @@ void AssemblyInstructionsWriter::Write() {
   // Start snapshot at page boundary.
   assembly_stream_.Print(".balign %" Pd ", 0\n", VirtualMemory::PageSize());
   assembly_stream_.Print("_kDataSnapshot:\n");
-  WriteWordLiteral(next_object_offset_);  // Data length.
+  WriteWordLiteralData(next_object_offset_);  // Data length.
   COMPILE_ASSERT(OS::kMaxPreferredCodeAlignment >= kObjectAlignment);
   assembly_stream_.Print(".balign %" Pd ", 0\n",
                          OS::kMaxPreferredCodeAlignment);
@@ -958,12 +956,12 @@ void AssemblyInstructionsWriter::Write() {
     uword marked_tags = obj.raw()->ptr()->tags_;
     marked_tags = RawObject::VMHeapObjectTag::update(true, marked_tags);
     marked_tags = RawObject::MarkBit::update(true, marked_tags);
-    WriteWordLiteral(marked_tags);
+    WriteWordLiteralData(marked_tags);
     start += sizeof(uword);
     for (uword* cursor = reinterpret_cast<uword*>(start);
          cursor < reinterpret_cast<uword*>(end);
          cursor++) {
-      WriteWordLiteral(*cursor);
+      WriteWordLiteralData(*cursor);
     }
   }
 }

@@ -500,6 +500,7 @@ Language/Expressions/Method_Invocation/Super_Invocation/method_lookup_failed_t04
 Language/Expressions/Method_Invocation/Super_Invocation/static_type_dynamic_t02: Crash
 Language/Expressions/Method_Invocation/Super_Invocation/syntax_t05: MissingCompileTimeError
 Language/Expressions/Method_Invocation/Super_Invocation/wrong_type_t01: Crash
+Language/Expressions/Multiplicative_Expressions/syntax_t01: Crash
 Language/Expressions/Null/instance_of_class_null_t01: Crash
 Language/Expressions/Numbers/syntax_t21: MissingCompileTimeError
 Language/Expressions/Numbers/syntax_t25: MissingCompileTimeError
@@ -645,6 +646,7 @@ Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closuriz
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t02: RuntimeError
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/static_type_warning_t01: Crash
 Language/Expressions/Type_Test/evaluation_t10: RuntimeError
+Language/Expressions/Unary_Expressions/syntax_t10: Crash
 Language/Functions/External_Functions/not_connected_to_a_body_t01: RuntimeError
 Language/Functions/Formal_Parameters/syntax_t04: MissingCompileTimeError
 Language/Functions/Formal_Parameters/syntax_t05: MissingCompileTimeError

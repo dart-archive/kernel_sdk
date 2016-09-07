@@ -10,9 +10,10 @@ import 'package:analyzer/src/context/context.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
+import 'package:analyzer/src/summary/idl.dart' show PackageBundle;
 
 class MockSdk implements DartSdk {
-  static const _MockSdkLibrary LIB_CORE = const _MockSdkLibrary(
+  static const MockSdkLibrary LIB_CORE = const MockSdkLibrary(
       'dart:core',
       '/lib/core/core.dart',
       '''
@@ -154,7 +155,7 @@ class Uri {
 }
 ''');
 
-  static const _MockSdkLibrary LIB_ASYNC = const _MockSdkLibrary(
+  static const MockSdkLibrary LIB_ASYNC = const MockSdkLibrary(
       'dart:async',
       '/lib/async/async.dart',
       '''
@@ -173,7 +174,7 @@ class Stream<T> {}
 abstract class StreamTransformer<S, T> {}
 ''');
 
-  static const _MockSdkLibrary LIB_COLLECTION = const _MockSdkLibrary(
+  static const MockSdkLibrary LIB_COLLECTION = const MockSdkLibrary(
       'dart:collection',
       '/lib/collection/collection.dart',
       '''
@@ -182,7 +183,7 @@ library dart.collection;
 abstract class HashMap<K, V> implements Map<K, V> {}
 ''');
 
-  static const _MockSdkLibrary LIB_CONVERT = const _MockSdkLibrary(
+  static const MockSdkLibrary LIB_CONVERT = const MockSdkLibrary(
       'dart:convert',
       '/lib/convert/convert.dart',
       '''
@@ -194,7 +195,7 @@ abstract class Converter<S, T> implements StreamTransformer {}
 class JsonDecoder extends Converter<String, Object> {}
 ''');
 
-  static const _MockSdkLibrary LIB_MATH = const _MockSdkLibrary(
+  static const MockSdkLibrary LIB_MATH = const MockSdkLibrary(
       'dart:math',
       '/lib/math/math.dart',
       '''
@@ -215,7 +216,7 @@ class Random {
 }
 ''');
 
-  static const _MockSdkLibrary LIB_HTML = const _MockSdkLibrary(
+  static const MockSdkLibrary LIB_HTML = const MockSdkLibrary(
       'dart:html',
       '/lib/html/dartium/html_dartium.dart',
       '''
@@ -223,7 +224,7 @@ library dart.html;
 class HtmlElement {}
 ''');
 
-  static const _MockSdkLibrary LIB_INTERNAL = const _MockSdkLibrary(
+  static const MockSdkLibrary LIB_INTERNAL = const MockSdkLibrary(
       'dart:_internal',
       '/lib/internal/internal.dart',
       '''
@@ -241,18 +242,32 @@ external void printToConsole(String line);
     LIB_INTERNAL,
   ];
 
-  final resource.MemoryResourceProvider provider =
-      new resource.MemoryResourceProvider();
+  static const String librariesContent = r'''
+const Map<String, LibraryInfo> libraries = const {
+  "async": const LibraryInfo("async/async.dart"),
+  "collection": const LibraryInfo("collection/collection.dart"),
+  "convert": const LibraryInfo("convert/convert.dart"),
+  "core": const LibraryInfo("core/core.dart"),
+  "html": const LibraryInfo("html/dartium/html_dartium.dart"),
+  "math": const LibraryInfo("math/math.dart"),
+  "_internal": const LibraryInfo("internal/internal.dart"),
+};
+''';
+
+  final resource.MemoryResourceProvider provider;
 
   /**
    * The [AnalysisContext] which is used for all of the sources.
    */
   InternalAnalysisContext _analysisContext;
 
-  MockSdk() {
+  MockSdk({resource.ResourceProvider resourceProvider})
+      : provider = resourceProvider ?? new resource.MemoryResourceProvider() {
     LIBRARIES.forEach((SdkLibrary library) {
-      provider.newFile(library.path, (library as _MockSdkLibrary).content);
+      provider.newFile(library.path, (library as MockSdkLibrary).content);
     });
+    provider.newFile('/lib/_internal/sdk_library_metadata/lib/libraries.dart',
+        librariesContent);
   }
 
   @override
@@ -316,6 +331,9 @@ external void printToConsole(String line);
   }
 
   @override
+  PackageBundle getLinkedBundle() => null;
+
+  @override
   SdkLibrary getSdkLibrary(String dartUri) {
     // getSdkLibrary() is only used to determine whether a library is internal
     // to the SDK.  The mock SDK doesn't have any internals, so it's safe to
@@ -348,12 +366,12 @@ external void printToConsole(String line);
   }
 }
 
-class _MockSdkLibrary implements SdkLibrary {
+class MockSdkLibrary implements SdkLibrary {
   final String shortName;
   final String path;
   final String content;
 
-  const _MockSdkLibrary(this.shortName, this.path, this.content);
+  const MockSdkLibrary(this.shortName, this.path, this.content);
 
   @override
   String get category => throw unimplemented;

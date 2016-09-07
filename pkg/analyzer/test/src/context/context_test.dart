@@ -31,19 +31,19 @@ import 'package:analyzer/task/dart.dart';
 import 'package:analyzer/task/general.dart';
 import 'package:analyzer/task/model.dart';
 import 'package:html/dom.dart' show Document;
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 import 'package:unittest/unittest.dart';
 import 'package:watcher/src/utils.dart';
 
 import '../../generated/engine_test.dart';
 import '../../generated/test_support.dart';
-import '../../reflective_tests.dart';
 import '../../utils.dart';
 import 'abstract_context.dart';
 
 main() {
   initializeTestEnvironment();
-  runReflectiveTests(AnalysisContextImplTest);
-  runReflectiveTests(LimitedInvalidateTest);
+  defineReflectiveTests(AnalysisContextImplTest);
+  defineReflectiveTests(LimitedInvalidateTest);
 }
 
 @reflectiveTest
@@ -343,6 +343,49 @@ int b = aa;''';
     expect(context.performAnalysisTask().changeNotices, isNull);
   }
 
+  void test_applyChanges_incremental_resetDriver() {
+    context.analysisOptions = new AnalysisOptionsImpl()..incremental = true;
+    Source source = addSource(
+        "/test.dart",
+        r'''
+main() {
+  print(42);
+}
+''');
+    _performPendingAnalysisTasks();
+    expect(context.getErrors(source).errors, hasLength(0));
+    // Update the source to have a parse error.
+    // This is an incremental change, but we always invalidate DART_ERRORS.
+    context.setContents(
+        source,
+        r'''
+main() {
+  print(42)
+}
+''');
+    AnalysisCache cache = context.analysisCache;
+    expect(cache.getValue(source, PARSE_ERRORS), hasLength(1));
+    expect(cache.getState(source, DART_ERRORS), CacheState.INVALID);
+    // Perform enough analysis to prepare inputs (is not actually tested) for
+    // the DART_ERRORS computing task, but don't compute it yet.
+    context.performAnalysisTask();
+    context.performAnalysisTask();
+    expect(cache.getState(source, DART_ERRORS), CacheState.INVALID);
+    // Update the source so that PARSE_ERRORS is empty.
+    context.setContents(
+        source,
+        r'''
+main() {
+  print(42);
+}
+''');
+    expect(cache.getValue(source, PARSE_ERRORS), hasLength(0));
+    // After full analysis DART_ERRORS should also be empty.
+    _performPendingAnalysisTasks();
+    expect(cache.getValue(source, DART_ERRORS), hasLength(0));
+    expect(context.getErrors(source).errors, hasLength(0));
+  }
+
   void test_applyChanges_overriddenSource() {
     String content = "library test;";
     Source source = addSource("/test.dart", content);
@@ -355,8 +398,7 @@ int b = aa;''';
     // it is already overridden in the content cache.
     ChangeSet changeSet = new ChangeSet();
     changeSet.changedSource(source);
-    ApplyChangesStatus changesStatus = context.applyChanges(changeSet);
-    expect(changesStatus.hasChanges, isFalse);
+    context.applyChanges(changeSet);
     expect(context.sourcesNeedingProcessing, hasLength(0));
   }
 
@@ -2433,7 +2475,6 @@ class ClassTwo {
     entry.setState(RESOLVED_UNIT10, CacheState.FLUSHED);
     entry.setState(RESOLVED_UNIT11, CacheState.FLUSHED);
     entry.setState(RESOLVED_UNIT12, CacheState.FLUSHED);
-    entry.setState(RESOLVED_UNIT13, CacheState.FLUSHED);
     entry.setState(RESOLVED_UNIT, CacheState.FLUSHED);
 
     context.resolveCompilationUnit2(source, source);
@@ -3754,10 +3795,10 @@ main() {
     {
       Expression argument = find42();
       expect(argument.staticParameterElement, isNull);
-      expect(argument.propagatedParameterElement, isNotNull);
     }
+
     // Update a.dart: add type annotation for 'a'.
-    // '42' has 'staticParameterElement', but not 'propagatedParameterElement'.
+    // '42' has 'staticParameterElement'.
     context.setContents(
         a,
         r'''
@@ -3773,10 +3814,10 @@ main() {
     {
       Expression argument = find42();
       expect(argument.staticParameterElement, isNotNull);
-      expect(argument.propagatedParameterElement, isNull);
     }
+
     // Update a.dart: remove type annotation for 'a'.
-    // '42' has 'propagatedParameterElement', but not 'staticParameterElement'.
+    // '42' doesn't have 'staticParameterElement'.
     context.setContents(
         a,
         r'''
@@ -3792,7 +3833,6 @@ main() {
     {
       Expression argument = find42();
       expect(argument.staticParameterElement, isNull);
-      expect(argument.propagatedParameterElement, isNotNull);
     }
   }
 
@@ -4579,6 +4619,31 @@ class B2 {}
 ''');
     _assertValidAllLibraryUnitResults(b);
     _assertValid(b, LIBRARY_ERRORS_READY);
+  }
+
+  void test_sequence_useAnyResolvedUnit_needsLibraryElement() {
+    Source a = addSource(
+        '/a.dart',
+        r'''
+class A {}
+class B {}
+''');
+    // Perform analysis until we get RESOLVED_UNIT1.
+    // But it does not have 'library' set, so `unitElement.context` is `null`.
+    LibrarySpecificUnit aUnitTarget = new LibrarySpecificUnit(a, a);
+    while (context.getResult(aUnitTarget, RESOLVED_UNIT1) == null) {
+      context.performAnalysisTask();
+    }
+    // There was a bug with exception in incremental element builder.
+    // We should not attempt to use `unitElement.context`.
+    // It calls `unitElement.library`, which might be not set yet.
+    context.setContents(
+        a,
+        r'''
+class A {}
+class B2 {}
+''');
+    // OK, no exceptions.
   }
 
   void test_unusedName_class_add() {

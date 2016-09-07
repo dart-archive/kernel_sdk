@@ -826,7 +826,7 @@ bool CompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         // Optimize (a << b) & c patterns, merge operations.
         // Run early in order to have more opportunity to optimize left shifts.
-        optimizer.TryOptimizePatterns();
+        flow_graph->TryOptimizePatterns();
         DEBUG_ASSERT(flow_graph->VerifyUseLists());
 
         FlowGraphInliner::SetInliningId(flow_graph, 0);
@@ -973,7 +973,7 @@ bool CompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         // Optimize (a << b) & c patterns, merge operations.
         // Run after CSE in order to have more opportunity to merge
         // instructions that have same inputs.
-        optimizer.TryOptimizePatterns();
+        flow_graph->TryOptimizePatterns();
         DEBUG_ASSERT(flow_graph->VerifyUseLists());
 
         {
@@ -1344,7 +1344,7 @@ static RawError* CompileFunctionHelper(CompilationPipeline* pipeline,
     if (trace_compiler && success) {
       THR_Print("--> '%s' entry: %#" Px " size: %" Pd " time: %" Pd64 " us\n",
                 function.ToFullyQualifiedCString(),
-                Code::Handle(function.CurrentCode()).EntryPoint(),
+                Code::Handle(function.CurrentCode()).PayloadStart(),
                 Code::Handle(function.CurrentCode()).Size(),
                 per_compile_timer.TotalElapsedTime());
     }
@@ -1397,7 +1397,7 @@ RawError* Compiler::CompileFunction(Thread* thread,
                                     const Function& function) {
 #ifdef DART_PRECOMPILER
   if (FLAG_precompiled_mode) {
-    return Precompiler::CompileFunction(thread, function);
+    return Precompiler::CompileFunction(thread, thread->zone(), function);
   }
 #endif
   Isolate* isolate = thread->isolate();

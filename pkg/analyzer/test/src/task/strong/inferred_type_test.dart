@@ -8,14 +8,14 @@
 library analyzer.test.src.task.strong.inferred_type_test;
 
 import 'package:analyzer/dart/element/element.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 import 'package:unittest/unittest.dart';
 
-import '../../../reflective_tests.dart';
 import 'strong_test_helper.dart' as helper;
 
 void main() {
   helper.initStrongModeTests();
-  runReflectiveTests(InferredTypeTest);
+  defineReflectiveTests(InferredTypeTest);
 }
 
 abstract class InferredTypeMixin {
@@ -625,9 +625,8 @@ class C<T> {
 
 var x = /*info:INFERRED_TYPE_ALLOCATION*/new C(42);
 
-// Don't infer if we had a context type.
 num y;
-C<int> c_int = /*info:INFERRED_TYPE_ALLOCATION*/new C(/*info:DOWN_CAST_IMPLICIT*/y);
+C<int> c_int = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER*/C(/*info:DOWN_CAST_IMPLICIT*/y);
 
 // These hints are not reported because we resolve with a null error listener.
 C<num> c_num = /*pass should be info:INFERRED_TYPE_ALLOCATION*/new C(123);
@@ -1225,10 +1224,10 @@ void main() {
     A<int, String> a5 = /*error:STATIC_TYPE_ERROR*/new A<dynamic, dynamic>.named(3, "hello");
   }
   {
-    A<int, String> a0 = /*info:INFERRED_TYPE_ALLOCATION*/new A(
+    A<int, String> a0 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER,error:COULD_NOT_INFER*/A(
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hello",
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/3);
-    A<int, String> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new A.named(
+    A<int, String> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER,error:COULD_NOT_INFER*/A.named(
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hello",
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/3);
   }
@@ -1237,14 +1236,14 @@ void main() {
     A<int, String> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new B.named("hello", 3);
     A<int, String> a2 = new B<String, int>("hello", 3);
     A<int, String> a3 = new B<String, int>.named("hello", 3);
-    A<int, String> a4 = /*error:STATIC_TYPE_ERROR*/new B<String, dynamic>("hello", 3);
-    A<int, String> a5 = /*error:STATIC_TYPE_ERROR*/new B<dynamic, dynamic>.named("hello", 3);
+    A<int, String> a4 = /*error:INVALID_ASSIGNMENT*/new B<String, dynamic>("hello", 3);
+    A<int, String> a5 = /*error:INVALID_ASSIGNMENT*/new B<dynamic, dynamic>.named("hello", 3);
   }
   {
-    A<int, String> a0 = /*info:INFERRED_TYPE_ALLOCATION*/new B(
+    A<int, String> a0 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER,error:COULD_NOT_INFER*/B(
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/3,
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hello");
-    A<int, String> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new B.named(
+    A<int, String> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER,error:COULD_NOT_INFER*/B.named(
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/3,
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hello");
   }
@@ -1253,13 +1252,13 @@ void main() {
     A<int, int> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new C.named(3);
     A<int, int> a2 = new C<int>(3);
     A<int, int> a3 = new C<int>.named(3);
-    A<int, int> a4 = /*error:STATIC_TYPE_ERROR*/new C<dynamic>(3);
-    A<int, int> a5 = /*error:STATIC_TYPE_ERROR*/new C<dynamic>.named(3);
+    A<int, int> a4 = /*error:INVALID_ASSIGNMENT*/new C<dynamic>(3);
+    A<int, int> a5 = /*error:INVALID_ASSIGNMENT*/new C<dynamic>.named(3);
   }
   {
-    A<int, int> a0 = /*info:INFERRED_TYPE_ALLOCATION*/new C(
+    A<int, int> a0 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER*/C(
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hello");
-    A<int, int> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new C.named(
+    A<int, int> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER*/C.named(
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hello");
   }
   {
@@ -1267,13 +1266,13 @@ void main() {
     A<int, String> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new D.named("hello");
     A<int, String> a2 = new D<int, String>("hello");
     A<int, String> a3 = new D<String, String>.named("hello");
-    A<int, String> a4 = /*error:STATIC_TYPE_ERROR*/new D<num, dynamic>("hello");
-    A<int, String> a5 = /*error:STATIC_TYPE_ERROR*/new D<dynamic, dynamic>.named("hello");
+    A<int, String> a4 = /*error:INVALID_ASSIGNMENT*/new D<num, dynamic>("hello");
+    A<int, String> a5 = /*error:INVALID_ASSIGNMENT*/new D<dynamic, dynamic>.named("hello");
   }
   {
-    A<int, String> a0 = /*info:INFERRED_TYPE_ALLOCATION*/new D(
+    A<int, String> a0 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER*/D(
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/3);
-    A<int, String> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new D.named(
+    A<int, String> a1 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER*/D.named(
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/3);
   }
   {
@@ -1288,9 +1287,9 @@ void main() {
         b: /*info:INFERRED_TYPE_LITERAL*/[/*error:LIST_ELEMENT_TYPE_NOT_ASSIGNABLE*/3]);
     A<int, String> a2 = /*info:INFERRED_TYPE_ALLOCATION*/new F.named(3, "hello", 3, "hello");
     A<int, String> a3 = /*info:INFERRED_TYPE_ALLOCATION*/new F.named(3, "hello");
-    A<int, String> a4 = /*info:INFERRED_TYPE_ALLOCATION*/new F.named(3, "hello",
+    A<int, String> a4 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER,error:COULD_NOT_INFER*/F.named(3, "hello",
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hello", /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/3);
-    A<int, String> a5 = /*info:INFERRED_TYPE_ALLOCATION*/new F.named(3, "hello",
+    A<int, String> a5 = /*info:INFERRED_TYPE_ALLOCATION*/new /*error:COULD_NOT_INFER*/F.named(3, "hello",
         /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hello");
   }
 }
@@ -1520,57 +1519,231 @@ int get y => null;
   }
 
   void test_futureThen() {
-    checkFile('''
+    String build({String declared, String downwards, String upwards}) => '''
 import 'dart:async';
-Future f;
-Future<int> t1 = f.then((_) async => await new Future<int>.value(3));
-Future<int> t2 = f.then(/*info:INFERRED_TYPE_CLOSURE*/(_) async {return await new Future<int>.value(3);});
-Future<int> t3 = f.then((_) async => 3);
-Future<int> t4 = f.then(/*info:INFERRED_TYPE_CLOSURE*/(_) async {return 3;});
-Future<int> t5 = f.then((_) => new Future<int>.value(3));
-Future<int> t6 = f.then((_) {return new Future<int>.value(3);});
-Future<int> t7 = f.then((_) async => new Future<int>.value(3));
-Future<int> t8 = f.then(/*info:INFERRED_TYPE_CLOSURE*/(_) async {return new Future<int>.value(3);});
-''');
+class MyFuture<T> implements Future<T> {
+  MyFuture() {}
+  MyFuture.value(T x) {}
+  dynamic noSuchMethod(invocation);
+  MyFuture/*<S>*/ then/*<S>*/(dynamic f(T x), {Function onError}) => null;
+}
+
+void main() {
+  $declared f;
+  $downwards<int> t1 = f.then((_) async => await new $upwards<int>.value(3));
+  $downwards<int> t2 = f.then(/*info:INFERRED_TYPE_CLOSURE*/(_) async {
+     return await new $upwards<int>.value(3);});
+  $downwards<int> t3 = f.then((_) async => 3);
+  $downwards<int> t4 = f.then(/*info:INFERRED_TYPE_CLOSURE*/(_) async {
+    return 3;});
+  $downwards<int> t5 = f.then((_) => new $upwards<int>.value(3));
+  $downwards<int> t6 = f.then(/*info:INFERRED_TYPE_CLOSURE*/(_) {return new $upwards<int>.value(3);});
+  $downwards<int> t7 = f.then((_) async => new $upwards<int>.value(3));
+  $downwards<int> t8 = f.then(/*info:INFERRED_TYPE_CLOSURE*/(_) async {
+    return new $upwards<int>.value(3);});
+}
+''';
+
+    checkFile(
+        build(declared: "MyFuture", downwards: "Future", upwards: "Future"));
+    checkFile(
+        build(declared: "MyFuture", downwards: "Future", upwards: "MyFuture"));
+    checkFile(
+        build(declared: "MyFuture", downwards: "MyFuture", upwards: "Future"));
+    checkFile(build(
+        declared: "MyFuture", downwards: "MyFuture", upwards: "MyFuture"));
+    checkFile(
+        build(declared: "Future", downwards: "Future", upwards: "MyFuture"));
+    checkFile(
+        build(declared: "Future", downwards: "Future", upwards: "Future"));
   }
 
   void test_futureThen_conditional() {
-    checkFile('''
+    String build({String declared, String downwards, String upwards}) => '''
 import 'dart:async';
-Future<bool> f;
-Future<int> t1 = f.then((x) async => x ? 2 : await new Future<int>.value(3));
-Future<int> t2 = f.then(/*info:INFERRED_TYPE_CLOSURE*/(x) async {return await x ? 2 : new Future<int>.value(3);});
-Future<int> t5 = f.then((x) => x ? 2 : new Future<int>.value(3));
-Future<int> t6 = f.then((x) {return x ? 2 : new Future<int>.value(3);});
-''');
+class MyFuture<T> implements Future<T> {
+  MyFuture() {}
+  MyFuture.value(T x) {}
+  dynamic noSuchMethod(invocation);
+  MyFuture/*<S>*/ then/*<S>*/(dynamic f(T x), {Function onError}) => null;
+}
+
+void main() {
+  $declared<bool> f;
+  $downwards<int> t1 = f.then(/*info:INFERRED_TYPE_CLOSURE*/
+      (x) async => x ? 2 : await new $upwards<int>.value(3));
+  $downwards<int> t2 = f.then(/*info:INFERRED_TYPE_CLOSURE,info:INFERRED_TYPE_CLOSURE*/(x) async { // TODO(leafp): Why the duplicate here?
+    return await x ? 2 : new $upwards<int>.value(3);});
+  $downwards<int> t5 = f.then(/*info:INFERRED_TYPE_CLOSURE*/
+      (x) => x ? 2 : new $upwards<int>.value(3));
+  $downwards<int> t6 = f.then(/*info:INFERRED_TYPE_CLOSURE*/
+      (x) {return x ? 2 : new $upwards<int>.value(3);});
+}
+''';
+    checkFile(
+        build(declared: "MyFuture", downwards: "Future", upwards: "Future"));
+    checkFile(
+        build(declared: "MyFuture", downwards: "Future", upwards: "MyFuture"));
+    checkFile(
+        build(declared: "MyFuture", downwards: "MyFuture", upwards: "Future"));
+    checkFile(build(
+        declared: "MyFuture", downwards: "MyFuture", upwards: "MyFuture"));
+    checkFile(
+        build(declared: "Future", downwards: "Future", upwards: "MyFuture"));
+    checkFile(
+        build(declared: "Future", downwards: "Future", upwards: "Future"));
   }
 
-  void test_futureUnion_asyncConditional() {
-    checkFile('''
+  void test_futureThen_downwardsMethodTarget() {
+    // Not working yet, see: https://github.com/dart-lang/sdk/issues/27114
+    checkFile(r'''
 import 'dart:async';
-
-Future<int> g1(bool x) async { return x ? 42 : /*info:INFERRED_TYPE_ALLOCATION*/new Future.value(42); }
-Future<int> g2(bool x) async => x ? 42 : /*info:INFERRED_TYPE_ALLOCATION*/new Future.value(42);
-
-Future<int> g3(bool x) async {
-  var y = x ? 42 : /*info:INFERRED_TYPE_ALLOCATION*/new Future.value(42);
-  return y;
+main() {
+  Future<int> f;
+  Future<List<int>> b = /*info:ASSIGNMENT_CAST should be pass*/f
+      .then(/*info:INFERRED_TYPE_CLOSURE*/(x) => [])
+      .whenComplete(/*pass should be info:INFERRED_TYPE_LITERAL*/() {});
+  b = f.then(/*info:INFERRED_TYPE_CLOSURE*/(x) => /*info:INFERRED_TYPE_LITERAL*/[]);
 }
     ''');
   }
 
-  void test_futureUnion_downwards() {
-    checkFile('''
+  void test_futureThen_explicitFuture() {
+    checkFile(r'''
+import "dart:async";
+main() {
+  Future<int> f;
+  var x = f.then/*<Future<List<int>>>*/(/*info:INFERRED_TYPE_CLOSURE*/(x) => /*info:INFERRED_TYPE_LITERAL*/[]);
+  Future<List<int>> y = x;
+}
+    ''');
+  }
+
+  void test_futureThen_upwards() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/27088.
+    String build({String declared, String downwards, String upwards}) => '''
 import 'dart:async';
-Future f;
+class MyFuture<T> implements Future<T> {
+  MyFuture() {}
+  MyFuture.value(T x) {}
+  dynamic noSuchMethod(invocation);
+  MyFuture/*<S>*/ then/*<S>*/(dynamic f(T x), {Function onError}) => null;
+}
+
+void main() {
+  var f = foo().then((_) => 2.3);
+  $downwards<int> f2 = /*error:INVALID_ASSIGNMENT*/f;
+
+  // The unnecessary cast is to illustrate that we inferred <double> for
+  // the generic type args, even though we had a return type context.
+  $downwards<num> f3 = /*info:UNNECESSARY_CAST*/foo().then(
+      (_) => 2.3) as $upwards<double>;
+}
+$declared foo() => new $declared<int>.value(1);
+    ''';
+    checkFile(
+        build(declared: "MyFuture", downwards: "Future", upwards: "Future"));
+    checkFile(build(
+        declared: "MyFuture", downwards: "MyFuture", upwards: "MyFuture"));
+    checkFile(
+        build(declared: "Future", downwards: "Future", upwards: "Future"));
+  }
+
+  void test_futureThen_upwardsFromBlock() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/27113.
+    checkFile(r'''
+import 'dart:async';
+main() {
+  Future<int> base;
+  var f = base.then(/*info:INFERRED_TYPE_CLOSURE,info:INFERRED_TYPE_CLOSURE*/(x) { return x == 0; });
+  var g = base.then(/*info:INFERRED_TYPE_CLOSURE*/(x) => x == 0);
+  Future<bool> b = f;
+  b = g;
+}
+    ''');
+  }
+
+  void test_futureUnion_asyncConditional() {
+    String build({String declared, String downwards, String upwards}) => '''
+import 'dart:async';
+class MyFuture<T> implements Future<T> {
+  MyFuture() {}
+  MyFuture.value(T x) {}
+  dynamic noSuchMethod(invocation);
+  MyFuture/*<S>*/ then/*<S>*/(dynamic f(T x), {Function onError}) => null;
+}
+
+$downwards<int> g1(bool x) async {
+  return x ? 42 : /*info:INFERRED_TYPE_ALLOCATION*/new $upwards.value(42); }
+$downwards<int> g2(bool x) async =>
+  x ? 42 : /*info:INFERRED_TYPE_ALLOCATION*/new $upwards.value(42);
+$downwards<int> g3(bool x) async {
+  var y = x ? 42 : /*info:INFERRED_TYPE_ALLOCATION*/new $upwards.value(42);
+  return y;
+}
+    ''';
+    checkFile(build(downwards: "Future", upwards: "Future"));
+    checkFile(build(downwards: "Future", upwards: "MyFuture"));
+  }
+
+  void test_futureUnion_downwards() {
+    String build({String declared, String downwards, String upwards}) {
+      // TODO(leafp): The use of matchTypes in visitInstanceCreationExpression
+      // in the resolver visitor isn't powerful enough to catch this for the
+      // subclass.  See the TODO there.
+      var allocInfo =
+          (upwards == "Future") ? "/*info:INFERRED_TYPE_ALLOCATION*/" : "";
+      return '''
+import 'dart:async';
+class MyFuture<T> implements Future<T> {
+  MyFuture() {}
+  MyFuture.value([T x]) {}
+  dynamic noSuchMethod(invocation);
+  MyFuture/*<S>*/ then/*<S>*/(dynamic f(T x), {Function onError}) => null;
+}
+
+$declared f;
 // Instantiates Future<int>
-Future<int> t1 = f.then((_) => /*info:INFERRED_TYPE_ALLOCATION*/new Future.value(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi'));
+$downwards<int> t1 = f.then((_) =>
+   ${allocInfo}new /*error:COULD_NOT_INFER*/$upwards.value(
+     /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi'));
 
 // Instantiates List<int>
-Future<List<int>> t2 = f.then((_) => /*info:INFERRED_TYPE_LITERAL*/[3]);
-Future<List<int>> g2() async { return /*info:INFERRED_TYPE_LITERAL*/[3]; }
-Future<List<int>> g3() async { return /*info:INFERRED_TYPE_ALLOCATION*/new Future.value(/*info:INFERRED_TYPE_LITERAL*/[3]); }
-''');
+$downwards<List<int>> t2 = f.then((_) => /*info:INFERRED_TYPE_LITERAL*/[3]);
+$downwards<List<int>> g2() async { return /*info:INFERRED_TYPE_LITERAL*/[3]; }
+$downwards<List<int>> g3() async {
+  return /*info:INFERRED_TYPE_ALLOCATION*/new $upwards.value(
+      /*info:INFERRED_TYPE_LITERAL*/[3]); }
+''';
+    }
+
+    ;
+    checkFile(
+        build(declared: "MyFuture", downwards: "Future", upwards: "Future"));
+    checkFile(
+        build(declared: "MyFuture", downwards: "Future", upwards: "MyFuture"));
+    checkFile(
+        build(declared: "Future", downwards: "Future", upwards: "Future"));
+    checkFile(
+        build(declared: "Future", downwards: "Future", upwards: "MyFuture"));
+  }
+
+  void test_futureUnion_downwardsGenericMethods() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/27134
+    //
+    // We need to take a future union into account for both directions of
+    // generic method inference.
+    checkFile(r'''
+import 'dart:async';
+
+foo() async {
+  Future<List<A>> f1 = null;
+  Future<List<A>> f2 = null;
+  List<List<A>> merged = await Future.wait(/*info:INFERRED_TYPE_LITERAL*/[f1, f2]);
+}
+
+class A {}
+    ''');
   }
 
   void test_genericMethods_basicDownwardInference() {
@@ -1587,16 +1760,20 @@ main() {
     // Regression test for https://github.com/dart-lang/sdk/issues/25740.
     checkFile(r'''
 class Foo<T extends Pattern> {
-  void method/*<U extends T>*/(dynamic/*=U*/ u) {}
+  /*=U*/ method/*<U extends T>*/(/*=U*/ u) => u;
 }
 main() {
-  new Foo().method/*<String>*/("str");
+  String s;
+  var a = new Foo().method/*<String>*/("str");
+  s = a;
   new Foo();
 
-  new Foo<String>().method("str");
-  new Foo().method("str");
+  var b = new Foo<String>().method("str");
+  s = b;
+  var c = new Foo().method("str");
+  s = c;
 
-  new Foo<String>().method(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/42);
+  new Foo<String>()./*error:COULD_NOT_INFER*/method(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/42);
 }
 ''');
   }
@@ -1622,14 +1799,14 @@ main() {
   printInt(myMax(1, 2) as int);
 
   // Mixing int and double means return type is num.
-  printInt(/*info:DOWN_CAST_IMPLICIT*/max(1, 2.0));
-  printInt(/*info:DOWN_CAST_IMPLICIT*/min(1, 2.0));
-  printDouble(/*info:DOWN_CAST_IMPLICIT*/max(1, 2.0));
-  printDouble(/*info:DOWN_CAST_IMPLICIT*/min(1, 2.0));
+  printInt(/*error:COULD_NOT_INFER*/max(1, /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/2.0));
+  printInt(/*error:COULD_NOT_INFER*/min(1, /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/2.0));
+  printDouble(/*error:COULD_NOT_INFER*/max(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/1, 2.0));
+  printDouble(/*error:COULD_NOT_INFER*/min(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/1, 2.0));
 
   // Types other than int and double are not accepted.
   printInt(
-      /*info:DOWN_CAST_IMPLICIT*/min(
+      /*error:COULD_NOT_INFER*/min(
           /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"hi",
           /*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/"there"));
 }
@@ -1693,10 +1870,19 @@ class D extends C {
   /*=T*/ g/*<T>*/(/*=T*/ x) => x;
 }
 main() {
-  int y = /*info:DYNAMIC_CAST*/(new D() as C).m(42);
+  int y = /*info:DYNAMIC_CAST*/(/*info:UNNECESSARY_CAST*/new D() as C).m(42);
   print(y);
 }
   ''');
+  }
+
+  void test_genericMethods_inferenceError() {
+    checkFile(r'''
+main() {
+  List<String> y;
+  Iterable<String> x = y./*error:COULD_NOT_INFER*/map(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/(String z) => 1.0);
+}
+    ''');
   }
 
   void test_genericMethods_inferGenericFunctionParameterType() {
@@ -1761,11 +1947,11 @@ takeDDN(math.max);
 takeIIO(math.max);
 takeDDO(math.max);
 
-takeOOI(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
-takeIDI(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
-takeDID(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
-takeOON(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
-takeOOO(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
+takeOOI(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
+takeIDI(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
+takeDID(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
+takeOON(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
+takeOOO(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/math.max);
 
 // Also test SimpleIdentifier
 takeIII(min);
@@ -1778,11 +1964,11 @@ takeDDN(min);
 takeIIO(min);
 takeDDO(min);
 
-takeOOI(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
-takeIDI(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
-takeDID(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
-takeOON(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
-takeOOO(/*error:STATIC_TYPE_ERROR,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
+takeOOI(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
+takeIDI(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
+takeDID(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
+takeOON(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
+takeOOO(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/min);
 
 // Also PropertyAccess
 takeIII(new C().m);
@@ -1804,14 +1990,14 @@ takeDDO(new C().m);
 //
 // That's legal because we're loosening parameter types.
 //
-takeOON(/*warning:DOWN_CAST_COMPOSITE,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
-takeOOO(/*warning:DOWN_CAST_COMPOSITE,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
+takeOON(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
+takeOOO(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
 
 // Note: this is a warning because a downcast of a method tear-off could work
 // in "normal" Dart, due to bivariance.
-takeOOI(/*warning:DOWN_CAST_COMPOSITE,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
-takeIDI(/*warning:DOWN_CAST_COMPOSITE,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
-takeDID(/*warning:DOWN_CAST_COMPOSITE,error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
+takeOOI(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
+takeIDI(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
+takeDID(/*error:ARGUMENT_TYPE_NOT_ASSIGNABLE*/new C().m);
 }
 
 void takeIII(int fn(int a, int b)) {}
@@ -2327,7 +2513,7 @@ var f = 2 + 3;          // binary expressions are OK if the left operand
 var g = -3;
 var h = new A() + 3;
 var i = /*error:UNDEFINED_OPERATOR,info:DYNAMIC_INVOKE*/- new A();
-var j = null as B;
+var j = /*info:UNNECESSARY_CAST*/null as B;
 
 test1() {
   a = /*error:INVALID_ASSIGNMENT*/"hi";
@@ -2598,18 +2784,6 @@ main() {
     expect(fns[7].type.toString(), '() → dynamic');
     expect(fns[8].type.toString(), '() → dynamic');
     expect(fns[9].type.toString(), '() → Stream<int>');
-  }
-
-  void test_inferReturnOfStatementLambda() {
-    // Regression test for https://github.com/dart-lang/sdk/issues/26139
-    checkFile(r'''
-List<String> strings() {
-  var stuff = [].expand(/*info:INFERRED_TYPE_CLOSURE*/(i) {
-    return <String>[];
-  });
-  return stuff.toList();
-}
-    ''');
   }
 
   void test_inferred_nonstatic_field_depends_on_static_field_complex() {
@@ -2992,6 +3166,18 @@ class C {
     var mainUnit = checkFile('final f = (bool b) => 1;');
     var f = mainUnit.topLevelVariables[0];
     expect(f.type.toString(), '(bool) → int');
+  }
+
+  void test_inferReturnOfStatementLambda() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/26139
+    checkFile(r'''
+List<String> strings() {
+  var stuff = [].expand(/*info:INFERRED_TYPE_CLOSURE*/(i) {
+    return <String>[];
+  });
+  return stuff.toList();
+}
+    ''');
   }
 
   void test_inferStaticsTransitively() {

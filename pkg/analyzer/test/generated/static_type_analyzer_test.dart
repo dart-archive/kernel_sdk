@@ -10,22 +10,23 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/member.dart';
 import 'package:analyzer/src/dart/element/type.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/java_core.dart';
-import 'package:analyzer/src/generated/java_engine_io.dart';
 import 'package:analyzer/src/generated/resolver.dart';
-import 'package:analyzer/src/generated/source_io.dart';
+import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/static_type_analyzer.dart';
 import 'package:analyzer/src/generated/testing/ast_factory.dart';
 import 'package:analyzer/src/generated/testing/element_factory.dart';
 import 'package:analyzer/src/generated/testing/test_type_provider.dart';
 import 'package:analyzer/src/generated/testing/token_factory.dart';
+import 'package:analyzer/src/source/source_resource.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 import 'package:unittest/unittest.dart';
 
-import '../reflective_tests.dart';
 import '../utils.dart';
 import 'analysis_context_factory.dart';
 import 'resolver_test_case.dart';
@@ -33,8 +34,8 @@ import 'test_support.dart';
 
 main() {
   initializeTestEnvironment();
-  runReflectiveTests(StaticTypeAnalyzerTest);
-  runReflectiveTests(StaticTypeAnalyzer2Test);
+  defineReflectiveTests(StaticTypeAnalyzerTest);
+  defineReflectiveTests(StaticTypeAnalyzer2Test);
 }
 
 /**
@@ -387,6 +388,7 @@ class StaticTypeAnalyzerTest extends EngineTestCase {
       expect(_analyze(node), same(intType));
       _listener.assertNoErrors();
     }
+
     validate(TokenType.MINUS_EQ);
     validate(TokenType.PERCENT_EQ);
     validate(TokenType.PLUS_EQ);
@@ -403,6 +405,7 @@ class StaticTypeAnalyzerTest extends EngineTestCase {
       expect(_analyze(node), same(boolType));
       _listener.assertNoErrors();
     }
+
     validate(TokenType.AMPERSAND_AMPERSAND_EQ);
     validate(TokenType.BAR_BAR_EQ);
   }
@@ -420,6 +423,7 @@ class StaticTypeAnalyzerTest extends EngineTestCase {
       expect(_analyze(node), same(doubleType));
       _listener.assertNoErrors();
     }
+
     validate(TokenType.MINUS_EQ);
     validate(TokenType.PERCENT_EQ);
     validate(TokenType.PLUS_EQ);
@@ -1526,16 +1530,18 @@ class StaticTypeAnalyzerTest extends EngineTestCase {
    * Create the analyzer used by the tests.
    */
   StaticTypeAnalyzer _createAnalyzer({bool strongMode: false}) {
+    MemoryResourceProvider resourceProvider = new MemoryResourceProvider();
     InternalAnalysisContext context;
     if (strongMode) {
       AnalysisOptionsImpl options = new AnalysisOptionsImpl();
       options.strongMode = true;
-      context = AnalysisContextFactory.contextWithCoreAndOptions(options);
+      context = AnalysisContextFactory.contextWithCoreAndOptions(options,
+          resourceProvider: resourceProvider);
     } else {
-      context = AnalysisContextFactory.contextWithCore();
+      context = AnalysisContextFactory.contextWithCore(
+          resourceProvider: resourceProvider);
     }
-    FileBasedSource source =
-        new FileBasedSource(FileUtilities2.createFile("/lib.dart"));
+    Source source = new FileSource(resourceProvider.getFile("/lib.dart"));
     CompilationUnitElementImpl definingCompilationUnit =
         new CompilationUnitElementImpl("lib.dart");
     definingCompilationUnit.librarySource =
@@ -1546,7 +1552,7 @@ class StaticTypeAnalyzerTest extends EngineTestCase {
     _typeProvider = new TestTypeProvider(context);
     _visitor = new ResolverVisitor(
         definingLibrary, source, _typeProvider, _listener,
-        nameScope: new LibraryScope(definingLibrary, _listener));
+        nameScope: new LibraryScope(definingLibrary));
     _visitor.overrideManager.enterScope();
     try {
       return _visitor.typeAnalyzer;

@@ -1905,8 +1905,8 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
    */
   void _inferGenericInvocationExpression(InvocationExpression node) {
     ArgumentList arguments = node.argumentList;
-    FunctionType inferred = _inferGenericInvoke(
-        node, node.function.staticType, node.typeArguments, arguments);
+    FunctionType inferred = _inferGenericInvoke(node, node.function.staticType,
+        node.typeArguments, arguments, node.function);
     if (inferred != null && inferred != node.staticInvokeType) {
       // Fix up the parameter elements based on inferred method.
       arguments.correspondingStaticParameters = ResolverVisitor
@@ -1923,8 +1923,12 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
    * This takes into account both the context type, as well as information from
    * the argument types.
    */
-  FunctionType _inferGenericInvoke(Expression node, DartType fnType,
-      TypeArgumentList typeArguments, ArgumentList argumentList) {
+  FunctionType _inferGenericInvoke(
+      Expression node,
+      DartType fnType,
+      TypeArgumentList typeArguments,
+      ArgumentList argumentList,
+      AstNode errorNode) {
     TypeSystem ts = _typeSystem;
     if (typeArguments == null &&
         fnType is FunctionType &&
@@ -1944,17 +1948,46 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
         }
       }
 
-      DartType returnContext = InferenceContext.getContext(node);
-      DartType returnType;
-      if (returnContext is FutureUnionType) {
-        returnType = fnType.returnType.isDartAsyncFuture
-            ? returnContext.futureOfType
-            : returnContext.type;
-      } else {
-        returnType = returnContext;
+      // Special case Future<T>.then upwards inference. It has signature:
+      //
+      //     <S>(T -> (S | Future<S>)) -> Future<S>
+      //
+      // Based on the first argument type, we'll pick one of these signatures:
+      //
+      //     <S>(T -> S) -> Future<S>
+      //     <S>(T -> Future<S>) -> Future<S>
+      //
+      // ... and finish the inference using that.
+      if (argTypes.isNotEmpty && _resolver.isFutureThen(fnType.element)) {
+        var firstArgType = argTypes[0];
+        var firstParamType = paramTypes[0] as FunctionType;
+        if (firstArgType is FunctionType) {
+          var argReturnType = firstArgType.returnType;
+          // Skip the inference if we have the top type. It can only lead to
+          // worse inference. For example, this happens when the lambda returns
+          // S or Future<S> in a conditional.
+          if (!argReturnType.isObject && !argReturnType.isDynamic) {
+            DartType paramReturnType = fnType.typeFormals[0].type;
+            if (_resolver.isSubtypeOfFuture(argReturnType)) {
+              // Given an argument of (T) -> Future<S>, instantiate with <S>
+              paramReturnType =
+                  _typeProvider.futureType.instantiate([paramReturnType]);
+            }
+
+            // Adjust the expected parameter type to have this return type.
+            var function = new FunctionElementImpl(firstParamType.name, -1)
+              ..synthetic = true
+              ..shareParameters(firstParamType.parameters)
+              ..returnType = paramReturnType;
+            function.type = new FunctionTypeImpl(function);
+            // Use this as the expected 1st parameter type.
+            paramTypes[0] = function.type;
+          }
+        }
       }
-      return ts.inferGenericFunctionCall(
-          _typeProvider, fnType, paramTypes, argTypes, returnType);
+      return ts.inferGenericFunctionCall(_typeProvider, fnType, paramTypes,
+          argTypes, InferenceContext.getContext(node),
+          errorReporter: _resolver.errorReporter, errorNode: errorNode);
     }
     return null;
   }
@@ -1976,6 +2009,13 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
       return;
     }
 
+    // TODO(leafp): Currently, we may re-infer types here, since we
+    // sometimes resolve multiple times.  We should really check that we
+    // have not already inferred something.  However, the obvious ways to
+    // check this don't work, since we may have been instantiated
+    // to bounds in an earlier phase, and we *do* want to do inference
+    // in that case.
+
     // Get back to the uninstantiated generic constructor.
     // TODO(jmesserly): should we store this earlier in resolution?
     // Or look it up, instead of jumping backwards through the Member?
@@ -1985,8 +2025,8 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
         _constructorToGenericFunctionType(rawElement);
 
     ArgumentList arguments = node.argumentList;
-    FunctionType inferred = _inferGenericInvoke(
-        node, constructorType, constructor.type.typeArguments, arguments);
+    FunctionType inferred = _inferGenericInvoke(node, constructorType,
+        constructor.type.typeArguments, arguments, node.constructorName);
 
     if (inferred != null && inferred != originalElement.type) {
       // Fix up the parameter elements based on inferred method.
@@ -2036,7 +2076,6 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
     }
 
     computedType = _computeReturnTypeOfFunction(body, computedType);
-
     functionElement.returnType = computedType;
     _recordPropagatedTypeOfFunction(functionElement, node.body);
     _recordStaticType(node, functionElement.type);

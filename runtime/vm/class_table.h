@@ -191,6 +191,10 @@ class ClassTable {
   void Unregister(intptr_t index);
 #endif
 
+#if defined(DART_PRECOMPILER)
+  void Remap(intptr_t* old_to_new_cids);
+#endif
+
   void VisitObjectPointers(ObjectPointerVisitor* visitor);
 
   void Validate();
@@ -238,6 +242,7 @@ class ClassTable {
   void PrintToJSONObject(JSONObject* object);
 #endif  // !PRODUCT
 
+  void AddOldTable(RawClass** old_table);
   // Deallocates table copies. Do not call during concurrent access to table.
   void FreeOldTables();
 

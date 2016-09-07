@@ -82,12 +82,9 @@ Future<String> compile(String code,
     compiler.processQueue(compiler.enqueuer.resolution, element);
     compiler.world.populate();
     compiler.backend.onResolutionComplete();
-    var context = new js.JavaScriptItemCompilationContext();
-    ResolutionWorkItem resolutionWork =
-        new ResolutionWorkItem(element, context);
+    ResolutionWorkItem resolutionWork = new ResolutionWorkItem(element);
     resolutionWork.run(compiler, compiler.enqueuer.resolution);
-    CodegenWorkItem work =
-        new CodegenWorkItem(compiler, element, context);
+    CodegenWorkItem work = new CodegenWorkItem(compiler, element);
     compiler.phase = Compiler.PHASE_COMPILING;
     work.run(compiler, compiler.enqueuer.codegen);
     js.JavaScriptBackend backend = compiler.backend;
@@ -179,7 +176,7 @@ Future compileAndCheck(String code,
 
 Future compileSources(Map<String, String> sources,
                check(MockCompiler compiler)) {
-  Uri base = new Uri(scheme: 'source');
+  Uri base = new Uri(scheme: 'source', path: '/');
   Uri mainUri = base.resolve('main.dart');
   String mainCode = sources['main.dart'];
   Expect.isNotNull(mainCode, 'No source code found for "main.dart"');
@@ -213,7 +210,7 @@ types.TypeMask findTypeMask(compiler, String name,
     element = compiler.backend.helpers.interceptorsLibrary.find(sourceName);
   }
   if (element == null) {
-    element = compiler.coreLibrary.find(sourceName);
+    element = compiler.commonElements.coreLibrary.find(sourceName);
   }
   Expect.isNotNull(element, 'Could not locate $name');
   switch (how) {

@@ -44,6 +44,8 @@ namespace dart {
   V(InitStaticField)                                                           \
   V(GrowRegExpStack)                                                           \
   V(CompileFunction)                                                           \
+  V(MonomorphicMiss)                                                           \
+  V(SingleTargetMiss)                                                          \
 
 #define LEAF_RUNTIME_ENTRY_LIST(V)                                             \
   V(void, PrintStopMessage, const char*)                                       \
