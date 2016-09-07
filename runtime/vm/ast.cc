@@ -755,7 +755,7 @@ AstNode* StaticGetterNode::MakeAssignmentNode(AstNode* rhs) {
     const Function& getter =
         Function::Handle(zone, cls().LookupStaticFunction(getter_name));
     ASSERT(!getter.IsNull() &&
-           (getter.kind() == RawFunction::kImplicitStaticFinalGetter));
+           (getter.kind() == RawFunction::kImplicitStaticGetter));
 #endif
     if (isolate->type_checks()) {
       rhs = new AssignableNode(

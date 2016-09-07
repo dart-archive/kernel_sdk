@@ -1479,7 +1479,7 @@ void ClassFinalizer::ResolveAndFinalizeMemberTypes(const Class& cls) {
           const Function& getter = Function::Handle(
               zone,
               Function::New(getter_name,
-                            RawFunction::kImplicitStaticFinalGetter,
+                            RawFunction::kImplicitStaticGetter,
                             /* is_static = */ true,
                             /* is_const = */ field.is_const(),
                             /* is_abstract = */ false,

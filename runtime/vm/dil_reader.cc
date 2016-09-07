@@ -396,20 +396,34 @@ void DilReader::ReadProcedure(const dart::Library& library,
 void DilReader::GenerateFieldAccessors(const dart::Class& klass,
                                        const dart::Field& field,
                                        Field* dil_field) {
+  // If the field is static and has an initializer, we assume that
+  // GenerateStaticFieldInitializer has been called to determine if the
+  // initializer value is simple enough to set directly on the field.
+  // GenerateStaticFieldInitializer will set field.has_initializer() if the
+  // field has an initializer.
+  ASSERT(!dil_field->IsStatic() ||
+         dil_field->initializer() == NULL ||
+         field.has_initializer());
   TokenPosition pos(0);
 
-  // For static fields we only need the getter if the field is lazy-initialized.
+  // For static fields we only need the getter if the field is lazily
+  // initialized.
   if (dil_field->IsStatic() &&
       !(field.has_initializer() && field.IsUninitialized())) {
     return;
   }
 
   const dart::String& getter_name = H.DartGetterName(dil_field->name());
-  dart::Function& getter = dart::Function::ZoneHandle(Z, dart::Function::New(
+  Function& getter = Function::ZoneHandle(Z, Function::New(
       getter_name,
-      dart::RawFunction::kImplicitGetter,
+      dil_field->IsStatic()
+          ? RawFunction::kImplicitStaticGetter
+          : RawFunction::kImplicitGetter,
       dil_field->IsStatic(),
-      dil_field->IsFinal(),
+      // The functions created by the parser have is_const for static fields
+      // that are const (not just final) and they have is_const for non-static
+      // fields that are final.
+      dil_field->IsStatic() ? dil_field->IsConst() : dil_field->IsFinal(),
       false,  // is_abstract
       false,  // is_external
       false,  // is_native
@@ -426,12 +440,14 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
   SetupFieldAccessorFunction(klass, getter);
 
   if (!dil_field->IsStatic() && !dil_field->IsFinal()) {
+    // Only static fields can be const.
+    ASSERT(!dil_field->IsConst());
     const dart::String& setter_name = H.DartSetterName(dil_field->name());
-    dart::Function& setter = dart::Function::ZoneHandle(Z, dart::Function::New(
+    Function& setter = Function::ZoneHandle(Z, Function::New(
           setter_name,
           RawFunction::kImplicitSetter,
-          dil_field->IsStatic(),
-          dil_field->IsFinal(),
+          false,  // is_static
+          false,  // is_const
           false,  // is_abstract
           false,  // is_external
           false,  // is_native
@@ -555,16 +571,16 @@ void DilReader::GenerateStaticFieldInitializer(const dart::Field& field,
       dart::Class& owner = dart::Class::Handle(Z, field.Owner());
       const dart::String& initializer_name =
           H.DartInitializerName(dil_field->name());
-      dart::Function& initializer = dart::Function::Handle(Z,
-          dart::Function::New(initializer_name,
-                              RawFunction::kImplicitStaticFinalGetter,
-                              true,  // is_static
-                              false,  // is_const
-                              false,  // is_abstract
-                              false,  // is_external
-                              false,  // is_native
-                              owner,
-                              TokenPosition::kNoSource));
+      Function& initializer = Function::Handle(Z,
+          Function::New(initializer_name,
+                        RawFunction::kStaticInitializer,
+                        true,  // is_static
+                        false,  // is_const
+                        false,  // is_abstract
+                        false,  // is_external
+                        false,  // is_native
+                        owner,
+                        TokenPosition::kNoSource));
       initializer.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
       initializer.set_result_type(AbstractType::dynamic_type());
       initializer.set_is_debuggable(false);

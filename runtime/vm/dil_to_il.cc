@@ -270,6 +270,7 @@ ScopeBuildingResult* ScopeBuilder::BuildScopes() {
       break;
     }
     case RawFunction::kImplicitGetter:
+    case RawFunction::kImplicitStaticGetter:
     case RawFunction::kImplicitSetter: {
       ASSERT(node_->IsField());
       bool is_setter = function.IsImplicitSetterFunction();
@@ -288,7 +289,7 @@ ScopeBuildingResult* ScopeBuilder::BuildScopes() {
       }
       break;
     }
-    case RawFunction::kImplicitStaticFinalGetter:
+    case RawFunction::kStaticInitializer:
       node_->AcceptVisitor(this);
       break;
     case RawFunction::kMethodExtractor: {
@@ -311,9 +312,9 @@ ScopeBuildingResult* ScopeBuilder::BuildScopes() {
         scope_->InsertParameterAt(i, variable);
       }
       break;
-    default:
+    case RawFunction::kSignatureFunction:
+    case RawFunction::kIrregexpFunction:
       UNREACHABLE();
-      break;
   }
 
   parsed_function->AllocateVariables();
@@ -2680,12 +2681,13 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       }
     }
     case RawFunction::kImplicitGetter:
+    case RawFunction::kImplicitStaticGetter:
     case RawFunction::kImplicitSetter: {
       ASSERT(node_->IsField());
       return BuildGraphOfFieldAccessor(Field::Cast(node_),
                                        scopes_->setter_value);
     }
-    case RawFunction::kImplicitStaticFinalGetter: {
+    case RawFunction::kStaticInitializer: {
       ASSERT(node_->IsField());
       return BuildGraphOfStaticFieldInitializer(Field::Cast(node_));
     }
@@ -2695,11 +2697,12 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       return BuildGraphOfNoSuchMethodDispatcher(function);
     case RawFunction::kInvokeFieldDispatcher:
       return BuildGraphOfInvokeFieldDispatcher(function);
-    default: {
-      UNREACHABLE();
-      return NULL;
-    }
+    case RawFunction::kSignatureFunction:
+    case RawFunction::kIrregexpFunction:
+      break;
   }
+  UNREACHABLE();
+  return NULL;
 }
 
 

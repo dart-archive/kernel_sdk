@@ -2327,7 +2327,7 @@ class Function : public Object {
   RawContextScope* context_scope() const;
   void set_context_scope(const ContextScope& value) const;
 
-  RawField* LookupImplicitGetterSetterField() const;
+  RawField* LookupImplicitGetterSetterOrInitializerField() const;
 
   // Enclosing function of this local function.
   RawFunction* parent_function() const;
@@ -2409,13 +2409,15 @@ class Function : public Object {
         return true;
       case RawFunction::kClosureFunction:
       case RawFunction::kConstructor:
-      case RawFunction::kImplicitStaticFinalGetter:
+      case RawFunction::kImplicitStaticGetter:
+      case RawFunction::kStaticInitializer:
       case RawFunction::kIrregexpFunction:
         return false;
-      default:
-        UNREACHABLE();
-        return false;
+      case RawFunction::kSignatureFunction:
+        break;
     }
+    UNREACHABLE();
+    return false;
   }
   bool IsStaticFunction() const {
     if (!is_static()) {
@@ -2427,16 +2429,21 @@ class Function : public Object {
       case RawFunction::kSetterFunction:
       case RawFunction::kImplicitGetter:
       case RawFunction::kImplicitSetter:
-      case RawFunction::kImplicitStaticFinalGetter:
+      case RawFunction::kImplicitStaticGetter:
+      case RawFunction::kStaticInitializer:
       case RawFunction::kIrregexpFunction:
         return true;
       case RawFunction::kClosureFunction:
       case RawFunction::kConstructor:
         return false;
-      default:
-        UNREACHABLE();
-        return false;
+      case RawFunction::kSignatureFunction:
+      case RawFunction::kMethodExtractor:
+      case RawFunction::kNoSuchMethodDispatcher:
+      case RawFunction::kInvokeFieldDispatcher:
+        break;
     }
+    UNREACHABLE();
+    return false;
   }
   bool IsInFactoryScope() const;
 
