@@ -1,3 +1,5 @@
 unsorted/invocation_errors_test: RuntimeError
 
-[ ($compiler == dartk && $runtime == vm) || ($compiler == dartkp && $runtime == dart_precompiled) ]
+[ $compiler == dartk && $runtime == vm ]
+
+[ $compiler == dartkp && $runtime == dart_precompiled ]
