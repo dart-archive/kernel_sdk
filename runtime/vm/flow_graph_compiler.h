@@ -656,6 +656,10 @@ class FlowGraphCompiler : public ValueObject {
     return code_source_map_builder_;
   }
 
+  bool HasSafepointAtCurrentPC() {
+    return stackmap_table_builder()->WasLastEntryAt(assembler_->CodeSize());
+  }
+
   void BeginCodeSourceRange();
   bool EndCodeSourceRange(TokenPosition token_pos);
 

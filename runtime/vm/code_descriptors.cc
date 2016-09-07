@@ -66,6 +66,7 @@ void StackmapTableBuilder::AddEntry(intptr_t pc_offset,
                                     intptr_t register_bit_count) {
   stack_map_ = Stackmap::New(pc_offset, bitmap, register_bit_count);
   list_.Add(stack_map_, Heap::kOld);
+  last_pc_ = pc_offset;
 }
 
 

@@ -2743,6 +2743,12 @@ void CheckStackOverflowInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   // (not the next instruction).  It is therefore different than normal calls
   // which save the PC of the next instruction.  We therefore do the
   // `RecordSafepoint` call before the actual read.
+  if (compiler->HasSafepointAtCurrentPC()) {
+    // Since the two safepoints are not equal (signal continuation safepoints
+    // have more state) we need to ensure we have 2 different safepoints and
+    // therefore two different PCs.
+    __ nop();
+  }
   compiler->RecordSignalContinuationSafepoint(locs());
 
   // Generate an interrupt check (if we are interrupted this will cause a
