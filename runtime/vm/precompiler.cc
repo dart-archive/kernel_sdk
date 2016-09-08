@@ -1597,9 +1597,10 @@ void Precompiler::DropFunctions() {
         } else {
           bool top_level = cls.IsTopLevel();
           if (top_level &&
+              (function.kind() != RawFunction::kStaticInitializer) &&
               (function.kind() != RawFunction::kImplicitStaticGetter)) {
-            // Implicit static getters are not added to the library dictionary
-            // in the first place.
+            // Static initializers and implicit static getters are not
+            // added to the library dictionary in the first place.
             name = function.DictionaryName();
             bool removed = lib.RemoveObject(function, name);
             ASSERT(removed);
