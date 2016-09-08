@@ -2908,21 +2908,29 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFieldAccessor(
       body += StoreStaticField(field);
     }
     body += NullConstant();
-    body += Return();
+  } else if (is_method) {
+    body += LoadLocal(scopes_->this_variable);
+    body += LoadField(field);
+  } else if (field.is_const()) {
+    // If the parser needs to know the value of an uninitialized constant field
+    // it will set the value to the transition sentinel (used to detect circular
+    // initialization) and then call the implicit getter.  Thus, the getter
+    // cannot contain the InitStaticField instruction that normal static getters
+    // contain because it would detect spurious circular initialization when it
+    // checks for the transition sentinel.
+    Expression* initializer = dil_field->initializer();
+    ASSERT(initializer != NULL);
+    body += Constant(constant_evaluator_.EvaluateExpression(initializer));
   } else {
-    if (is_method) {
-      body += LoadLocal(scopes_->this_variable);
-      body += LoadField(field);
-    } else {
-      if (field.has_initializer()) {
-        body += Constant(field);
-        body += InitStaticField(field);
-      }
-      body += Constant(field);
-      body += LoadStaticField();
-    }
-    body += Return();
+    // The field always has an initializer because static fields without
+    // initializers are initialized eagerly and do not have implicit getters.
+    ASSERT(field.has_initializer());
+    body += Constant(field);
+    body += InitStaticField(field);
+    body += Constant(field);
+    body += LoadStaticField();
   }
+  body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
 }
