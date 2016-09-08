@@ -288,9 +288,12 @@ class DartKCompilerConfiguration extends CompilerConfiguration {
       CommandBuilder commandBuilder,
       List arguments,
       Map<String, String> environmentOverrides) {
+    String sdkDir = useSdk
+        ? '$buildDir/dart-sdk'
+        : 'sdk';
     var extraArguments = [
       '--sdk',
-      '$buildDir/obj/gen/patched_sdk',
+      sdkDir,
       '--link',
       '--target=vm',
       '--out',
