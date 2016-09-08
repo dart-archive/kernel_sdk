@@ -2934,25 +2934,18 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfStaticFieldInitializer(
 
   Expression* initializer = dil_field->initializer();
 
-  dart::Field& field =
-      dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
-
   TargetEntryInstr* normal_entry = BuildTargetEntry();
   graph_entry_ =
       new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
                              Compiler::kNoOSRDeoptId);
 
   Fragment body(normal_entry);
+  body += CheckStackOverflowInPrologue();
   if (dil_field->IsConst()) {
     body += Constant(constant_evaluator_.EvaluateExpression(initializer));
   } else {
     body += TranslateExpression(initializer);
   }
-
-  LocalVariable* field_value = MakeTemporary();
-  body += LoadLocal(field_value);
-  body += StoreStaticField(field);
-
   body += Return();
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
