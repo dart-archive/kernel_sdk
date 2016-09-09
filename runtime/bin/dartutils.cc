@@ -48,8 +48,8 @@ const char* const DartUtils::kUriLibURL = "dart:uri";
 const char* const DartUtils::kHttpScheme = "http:";
 const char* const DartUtils::kVMServiceLibURL = "dart:vmservice";
 
-const uint8_t DartUtils::magic_number[] = { 0xf5, 0xf5, 0xdc, 0xdc };
-static const uint8_t magic_number_dilfile[] = { 0x90, 0xab, 0xcd, 0xef };
+const uint8_t DartUtils::snapshot_magic_number[] = { 0xf5, 0xf5, 0xdc, 0xdc };
+static const uint8_t kernel_magic_number[] = { 0x90, 0xab, 0xcd, 0xef };
 
 
 static bool IsWindowsHost() {
@@ -473,26 +473,22 @@ Dart_Handle DartUtils::LibraryTagHandler(Dart_LibraryTag tag,
 const uint8_t* DartUtils::SniffForMagicNumber(const uint8_t* text_buffer,
                                               intptr_t* buffer_len,
                                               bool* is_snapshot,
-                                              bool* is_dilfile) {
+                                              bool* is_kernel) {
   *is_snapshot = false;
-  *is_dilfile = false;
+  *is_kernel = false;
 
-  intptr_t len = sizeof(magic_number);
-  if (*buffer_len <= len) return text_buffer;
-
-  if (memcmp(text_buffer, magic_number, sizeof(magic_number)) == 0) {
+  intptr_t len = sizeof(snapshot_magic_number);
+  if ((*buffer_len >= len) &&
+      (memcmp(text_buffer, snapshot_magic_number, len) == 0)) {
     *is_snapshot = true;
     *buffer_len -= len;
     return text_buffer + len;
   }
 
-  len = sizeof(magic_number_dilfile);
-  if (*buffer_len <= len) return text_buffer;
-
-  if (memcmp(text_buffer,
-             magic_number_dilfile,
-             sizeof(magic_number_dilfile)) == 0) {
-    *is_dilfile = true;
+  len = sizeof(kernel_magic_number);
+  if ((*buffer_len >= len) &&
+      (memcmp(text_buffer, kernel_magic_number, len) == 0)) {
+    *is_kernel = true;
     return text_buffer;
   }
 
@@ -500,9 +496,10 @@ const uint8_t* DartUtils::SniffForMagicNumber(const uint8_t* text_buffer,
 }
 
 
-void DartUtils::WriteMagicNumber(File* file) {
+void DartUtils::WriteSnapshotMagicNumber(File* file) {
   // Write a magic number and version information into the snapshot file.
-  bool bytes_written = file->WriteFully(magic_number, sizeof(magic_number));
+  bool bytes_written =
+      file->WriteFully(snapshot_magic_number, sizeof(snapshot_magic_number));
   ASSERT(bytes_written);
 }
 
@@ -571,13 +568,13 @@ void FUNCTION_NAME(Builtin_LoadSource)(Dart_NativeArguments args) {
   if (Dart_IsNull(tag_in) && Dart_IsNull(library_uri)) {
     // Entry file. Check for payload and load accordingly.
     bool is_snapshot = false;
-    bool is_dilfile = false;
+    bool is_kernel = false;
     const uint8_t* payload = DartUtils::SniffForMagicNumber(
-        data, &num_bytes, &is_snapshot, &is_dilfile);
+        data, &num_bytes, &is_snapshot, &is_kernel);
 
     if (is_snapshot) {
       result = Dart_LoadScriptFromSnapshot(payload, num_bytes);
-    } else if (is_dilfile) {
+    } else if (is_kernel) {
       result = Dart_LoadDil(payload, num_bytes);
     } else {
       Dart_Handle source = Dart_NewStringFromUTF8(data, num_bytes);

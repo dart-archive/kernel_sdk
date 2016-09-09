@@ -211,7 +211,7 @@ class DartUtils {
                                             bool* is_dilfile);
 
   // Write a magic number to indicate a script snapshot file.
-  static void WriteMagicNumber(File* file);
+  static void WriteSnapshotMagicNumber(File* file);
 
   // Global state that stores the original working directory..
   static const char* original_working_directory;
@@ -232,7 +232,7 @@ class DartUtils {
   static const char* const kHttpScheme;
   static const char* const kVMServiceLibURL;
 
-  static const uint8_t magic_number[];
+  static const uint8_t snapshot_magic_number[];
 
   static Dart_Handle LibraryFilePath(Dart_Handle library_uri);
 
