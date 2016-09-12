@@ -323,6 +323,13 @@ class EffectGraphVisitor : public AstNodeVisitor {
       intptr_t offset,
       StoreBarrierType emit_store_barrier);
 
+  ConstantInstr* SmiConstant(intptr_t value,
+                             TokenPosition position = TokenPosition::kConstant);
+
+  // Try to emit inlined instructions for a native static getter.  Returns
+  // true if the getter was inlined, false if not.
+  bool InlineNativeStaticGetter(const Function& getter, TokenPosition position);
+
   // Helpers for translating parts of the AST.
   void BuildPushArguments(const ArgumentListNode& node,
                           ZoneGrowableArray<PushArgumentInstr*>* values);

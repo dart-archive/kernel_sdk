@@ -2265,8 +2265,7 @@ void EffectGraphVisitor::VisitAwaitMarkerNode(AwaitMarkerNode* node) {
   // state.
   ASSERT(jump_count == owner()->await_joins()->length());
   // Store the counter in :await_jump_var.
-  Value* jump_val = Bind(new(Z) ConstantInstr(
-      Smi::ZoneHandle(Z, Smi::New(jump_count)), node->token_pos()));
+  Value* jump_val = Bind(SmiConstant(jump_count, node->token_pos()));
   Do(BuildStoreLocal(*jump_var, jump_val, node->token_pos()));
   // Save the current context for resuming.
   BuildSaveContext(*ctx_var, node->token_pos());
@@ -2362,8 +2361,7 @@ void EffectGraphVisitor::VisitArrayNode(ArrayNode* node) {
       TypeArguments::ZoneHandle(Z, node->type().arguments());
   Value* element_type = BuildInstantiatedTypeArguments(node->token_pos(),
                                                        type_args);
-  Value* num_elements =
-      Bind(new(Z) ConstantInstr(Smi::ZoneHandle(Z, Smi::New(node->length()))));
+  Value* num_elements = Bind(SmiConstant(node->length()));
   CreateArrayInstr* create = new(Z) CreateArrayInstr(node->token_pos(),
                                                      element_type,
                                                      num_elements);
@@ -2374,9 +2372,7 @@ void EffectGraphVisitor::VisitArrayNode(ArrayNode* node) {
     const intptr_t deopt_id = Thread::kNoDeoptId;
     for (int i = 0; i < node->length(); ++i) {
       Value* array = Bind(new(Z) LoadLocalInstr(*tmp_var, node->token_pos()));
-      Value* index =
-          Bind(new(Z) ConstantInstr(Smi::ZoneHandle(Z, Smi::New(i)),
-                                    node->token_pos()));
+      Value* index = Bind(SmiConstant(i, node->token_pos()));
       ValueGraphVisitor for_value(owner());
       node->ElementAt(i)->Visit(&for_value);
       Append(for_value);
@@ -3159,12 +3155,53 @@ void ValueGraphVisitor::VisitInstanceSetterNode(InstanceSetterNode* node) {
 }
 
 
+bool EffectGraphVisitor::InlineNativeStaticGetter(const Function& getter,
+                                                  TokenPosition position) {
+  // Inline native static getters if they are small and do not make a native
+  // call.
+  //
+  // TOOD(kmillikin): It should be possible to inline native call
+  // instructions as well as long as they take no arguments (e.g., like
+  // static getters).
+  intptr_t cid = -1;
+  switch (MethodRecognizer::RecognizeKind(getter)) {
+    case MethodRecognizer::kClassID_getCidArray:
+      cid = kArrayCid;
+      break;
+    case MethodRecognizer::kClassID_getCidExternalOneByteString:
+      cid = kExternalOneByteStringCid;
+      break;
+    case MethodRecognizer::kClassID_getCidGrowableObjectArray:
+      cid = kGrowableObjectArrayCid;
+      break;
+    case MethodRecognizer::kClassID_getCidImmutableArray:
+      cid = kImmutableArrayCid;
+      break;
+    case MethodRecognizer::kClassID_getCidOneByteString:
+      cid = kOneByteStringCid;
+      break;
+    case MethodRecognizer::kClassID_getCidTwoByteString:
+      cid = kTwoByteStringCid;
+      break;
+    case MethodRecognizer::kClassID_getCidBigint:
+      cid = kBigintCid;
+      break;
+    default:
+      break;
+  }
+  if (cid != -1) {
+    ReturnDefinition(SmiConstant(cid, position));
+    return true;
+  }
+  return false;
+}
+
 void EffectGraphVisitor::VisitStaticGetterNode(StaticGetterNode* node) {
   const String& getter_name =
       String::ZoneHandle(Z, Field::GetterSymbol(node->field_name()));
+  Function& getter_function = Function::ZoneHandle(Z);
   ZoneGrowableArray<PushArgumentInstr*>* arguments =
       new(Z) ZoneGrowableArray<PushArgumentInstr*>();
-  Function& getter_function = Function::ZoneHandle(Z, Function::null());
   if (node->is_super_getter()) {
     // Statically resolved instance getter, i.e. "super getter".
     ASSERT(node->receiver() != NULL);
@@ -3181,8 +3218,7 @@ void EffectGraphVisitor::VisitStaticGetterNode(StaticGetterNode* node) {
                                       arguments,
                                       false,  // Don't save last argument.
                                       true);  // Super invocation.
-      ReturnDefinition(call);
-      return;
+      return ReturnDefinition(call);
     } else {
       ValueGraphVisitor receiver_value(owner());
       node->receiver()->Visit(&receiver_value);
@@ -3213,11 +3249,13 @@ void EffectGraphVisitor::VisitStaticGetterNode(StaticGetterNode* node) {
           getter_name,
           NULL,  // No Arguments to getter.
           InvocationMirror::EncodeType(
-              node->cls().IsTopLevel() ?
-                  InvocationMirror::kTopLevel :
-                  InvocationMirror::kStatic,
+              node->cls().IsTopLevel()
+                  ? InvocationMirror::kTopLevel
+                  : InvocationMirror::kStatic,
               InvocationMirror::kGetter));
-      ReturnDefinition(call);
+      return ReturnDefinition(call);
+    } else if (getter_function.is_native() &&
+               InlineNativeStaticGetter(getter_function, node->token_pos())) {
       return;
     }
   }
@@ -3228,7 +3266,7 @@ void EffectGraphVisitor::VisitStaticGetterNode(StaticGetterNode* node) {
       Object::null_array(),  // No names
       arguments,
       owner()->ic_data_array());
-  ReturnDefinition(call);
+  return ReturnDefinition(call);
 }
 
 
@@ -3381,10 +3419,21 @@ ConstantInstr* EffectGraphVisitor::DoNativeSetterStoreValue(
 }
 
 
+ConstantInstr* EffectGraphVisitor::SmiConstant(intptr_t value,
+                                               TokenPosition position) {
+  return new(Z) ConstantInstr(Smi::ZoneHandle(Z, Smi::New(value)), position);
+}
+
+
 void EffectGraphVisitor::VisitNativeBodyNode(NativeBodyNode* node) {
   const Function& function = owner()->function();
   const TokenPosition token_pos = node->token_pos();
   if (!function.IsClosureFunction()) {
+    if (function.is_static() &&
+        function.IsGetterFunction() &&
+        InlineNativeStaticGetter(function, token_pos)) {
+      return;
+    }
     MethodRecognizer::Kind kind = MethodRecognizer::RecognizeKind(function);
     switch (kind) {
       case MethodRecognizer::kObjectEquals: {
@@ -3417,8 +3466,7 @@ void EffectGraphVisitor::VisitNativeBodyNode(NativeBodyNode* node) {
           return ReturnDefinition(load);
         }
         ASSERT(kind == MethodRecognizer::kStringBaseIsEmpty);
-        Value* zero_val = Bind(new(Z) ConstantInstr(
-            Smi::ZoneHandle(Z, Smi::New(0))));
+        Value* zero_val = Bind(SmiConstant(0));
         Value* load_val = Bind(load);
         StrictCompareInstr* compare =
             new(Z) StrictCompareInstr(token_pos,
@@ -4416,8 +4464,7 @@ StaticCallInstr* EffectGraphVisitor::BuildThrowNoSuchMethodError(
   Value* member_name_value = Bind(new(Z) ConstantInstr(member_name));
   arguments->Add(PushArgument(member_name_value));
   // Smi invocation_type.
-  Value* invocation_type_value = Bind(new(Z) ConstantInstr(
-      Smi::ZoneHandle(Z, Smi::New(invocation_type))));
+  Value* invocation_type_value = Bind(SmiConstant(invocation_type));
   arguments->Add(PushArgument(invocation_type_value));
   // List arguments.
   if (function_arguments == NULL) {

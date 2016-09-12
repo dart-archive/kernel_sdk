@@ -3532,33 +3532,32 @@ class StoreLocalInstr : public TemplateDefinition<1, NoThrow> {
 class NativeCallInstr : public TemplateDefinition<0, Throws> {
  public:
   explicit NativeCallInstr(NativeBodyNode* node)
-      : ast_node_(*node),
+      : native_name_(&node->native_c_function_name()),
+        function_(&node->function()),
         native_c_function_(NULL),
-        is_bootstrap_native_(false) { }
+        is_bootstrap_native_(false),
+        link_lazily_(node->link_lazily()),
+        token_pos_(node->token_pos()) { }
+
+  NativeCallInstr(const String* name,
+                  const Function* function,
+                  bool link_lazily,
+                  TokenPosition position)
+      : native_name_(name),
+        function_(function),
+        native_c_function_(NULL),
+        is_bootstrap_native_(false),
+        link_lazily_(link_lazily),
+        token_pos_(position) { }
 
   DECLARE_INSTRUCTION(NativeCall)
 
-  virtual TokenPosition token_pos() const {
-    return ast_node_.token_pos();
-  }
-
-  const Function& function() const { return ast_node_.function(); }
-
-  const String& native_name() const {
-    return ast_node_.native_c_function_name();
-  }
-
-  NativeFunction native_c_function() const {
-    return native_c_function_;
-  }
-
-  bool is_bootstrap_native() const {
-    return is_bootstrap_native_;
-  }
-
-  bool link_lazily() const {
-    return ast_node_.link_lazily();
-  }
+  const String& native_name() const { return *native_name_; }
+  const Function& function() const { return *function_; }
+  NativeFunction native_c_function() const { return native_c_function_; }
+  bool is_bootstrap_native() const { return is_bootstrap_native_; }
+  bool link_lazily() const { return link_lazily_; }
+  virtual TokenPosition token_pos() const { return token_pos_; }
 
   virtual bool CanDeoptimize() const { return false; }
 
@@ -3575,9 +3574,12 @@ class NativeCallInstr : public TemplateDefinition<0, Throws> {
 
   void set_is_bootstrap_native(bool value) { is_bootstrap_native_ = value; }
 
-  const NativeBodyNode& ast_node_;
+  const String* native_name_;
+  const Function* function_;
   NativeFunction native_c_function_;
   bool is_bootstrap_native_;
+  bool link_lazily_;
+  const TokenPosition token_pos_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeCallInstr);
 };

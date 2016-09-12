@@ -15,6 +15,18 @@ namespace dart {
 #define OTHER_RECOGNIZED_LIST(V)                                               \
   V(::, identical, ObjectIdentical, Bool, 0x49c6e96a)                          \
   V(ClassID, getID, ClassIDgetID, Smi, 0x528fd455)                             \
+  V(ClassID, get:cidArray, ClassID_getCidArray, Smi, 0x7d351ade)               \
+  V(ClassID, get:cidExternalOneByteString,                                     \
+    ClassID_getCidExternalOneByteString, Smi, 0x588e44e9)                      \
+  V(ClassID, get:cidGrowableObjectArray, ClassID_getCidGrowableObjectArray,    \
+    Smi, 0x794a533a)                                                           \
+  V(ClassID, get:cidImmutableArray, ClassID_getCidImmutableArray, Smi,         \
+    0x6e7fbeaa)                                                                \
+  V(ClassID, get:cidOneByteString, ClassID_getCidOneByteString, Smi,           \
+    0x10b80720)                                                                \
+  V(ClassID, get:cidTwoByteString, ClassID_getCidTwoByteString, Smi,           \
+    0x1abcd775)                                                                \
+  V(ClassID, get:cidBigint, ClassID_getCidBigint, Smi, 0x24821f61)             \
   V(Object, Object., ObjectConstructor, Dynamic, 0x681617fe)                   \
   V(_List, ., ObjectArrayAllocate, Array, 0x63078b15)                          \
   V(_TypedList, _getInt8, ByteArrayBaseGetInt8, Smi, 0x59e7291d)               \

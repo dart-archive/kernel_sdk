@@ -1614,30 +1614,6 @@ NOT_IN_PRODUCT(
   // Set up recognized state of all functions (core, math and typed data).
   MethodRecognizer::InitializeState();
 
-  // Adds static const fields (class ids) to the class 'ClassID');
-  lib = Library::LookupLibrary(thread, Symbols::DartInternal());
-  ASSERT(!lib.IsNull());
-  cls = lib.LookupClassAllowPrivate(Symbols::ClassID());
-  ASSERT(!cls.IsNull());
-  Field& field = Field::Handle(zone);
-  Smi& value = Smi::Handle(zone);
-  String& field_name = String::Handle(zone);
-
-#define CLASS_LIST_WITH_NULL(V)                                                \
-  V(Null)                                                                      \
-  CLASS_LIST_NO_OBJECT(V)
-
-#define ADD_SET_FIELD(clazz)                                                   \
-  field_name = Symbols::New(thread, "cid"#clazz);                              \
-  field = Field::New(field_name, true, false, true, false, cls,                \
-      Type::Handle(Type::IntType()), TokenPosition::kMinSource);               \
-  value = Smi::New(k##clazz##Cid);                                             \
-  field.SetStaticValue(value, true);                                           \
-  cls.AddField(field);                                                         \
-
-  CLASS_LIST_WITH_NULL(ADD_SET_FIELD)
-#undef ADD_SET_FIELD
-
   isolate->object_store()->InitKnownObjects();
 
   return Error::null();
