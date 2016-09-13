@@ -905,7 +905,11 @@ void AssemblyInstructionsWriter::Write() {
           if (comment[0] == '.') {  // Is comment a directive to assembler?
             assembly_stream_.Print("%s\n", comment);
           } else {
+#if defined(TARGET_ARCH_ARM) || defined(TARGET_ARCH_ARM64)
             assembly_stream_.Print("@ %s\n", comment);
+#else
+            assembly_stream_.Print("# %s\n", comment);
+#endif
           }
           comment_finger++;
         }
