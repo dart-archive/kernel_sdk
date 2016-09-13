@@ -309,13 +309,16 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
         T.TranslateTypeWithoutFinalization(dil_field->type());
     dart::Field& field = dart::Field::Handle(Z,
         dart::Field::New(name,
-                   dil_field->IsStatic(),
-                   dil_field->IsFinal(),
-                   dil_field->IsConst(),
-                   false,  // is_reflectable
-                   klass,
-                   type,
-                   pos));
+                         dil_field->IsStatic(),
+                         // In the VM all const fields are implicitly final
+                         // whereas in Kernel they are not final because they
+                         // are not explicitly declared that way.
+                         dil_field->IsFinal() || dil_field->IsConst(),
+                         dil_field->IsConst(),
+                         false,  // is_reflectable
+                         klass,
+                         type,
+                         pos));
     field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
 
     if (dil_field->IsStatic()) {

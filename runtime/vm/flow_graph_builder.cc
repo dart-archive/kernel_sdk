@@ -3594,6 +3594,16 @@ void EffectGraphVisitor::VisitNativeBodyNode(NativeBodyNode* node) {
             node, kind, Bigint::neg_offset(),
             Type::ZoneHandle(Z, Type::BoolType()), kBoolCid));
       }
+      case MethodRecognizer::kClassID_getCidArray:
+      case MethodRecognizer::kClassID_getCidExternalOneByteString:
+      case MethodRecognizer::kClassID_getCidGrowableObjectArray:
+      case MethodRecognizer::kClassID_getCidImmutableArray:
+      case MethodRecognizer::kClassID_getCidOneByteString:
+      case MethodRecognizer::kClassID_getCidTwoByteString:
+      case MethodRecognizer::kClassID_getCidBigint:
+        // These functions are always emitted inline.
+        UNREACHABLE();
+        break;
       default:
         break;
     }
