@@ -9,6 +9,7 @@
 #include "vm/dil.h"
 #include "vm/dil_to_il.h"
 #include "vm/il_printer.h"
+#include "vm/intrinsifier.h"
 #include "vm/regexp_assembler.h"
 #include "vm/timeline.h"
 
@@ -818,18 +819,27 @@ CompileType ParameterInstr::ComputeType() const {
 
   // If we have an [InferredValue] for the parameter, use it!
   if (!is_catch_entry && function.dil_function() != 0) {
+    // We want the left-to-right numbering of parameters starting with 0, which
+    // is used by Kernel.  ParameterInstr can have two indexing schemes,
+    // FP-relative which left-to-right starting with 0 and SP-relative which
+    // is right-to-left starting with Intrinsifier::ParameterSlotFromSp()+1.
+    intptr_t parameter_index = index();
+    ASSERT(base_reg() == FPREG || base_reg() == SPREG);
+    if (base_reg() == SPREG) {
+      parameter_index = function.NumParameters() - parameter_index +
+          Intrinsifier::ParameterSlotFromSp();
+    }
+    // We don't have [InferredValue]s for receiver / type arguments array
+    // (used in factory constructors).  Shift the index to map them to
+    // negative indexes.
+    parameter_index -= function.NumImplicitParameters();
+
     dil::TreeNode* node = reinterpret_cast<dil::TreeNode*>(
         function.dil_function());
-
     // TODO(kustermann): Support not just [dil::Procedure]s!
     if (node->IsProcedure()) {
       dil::FunctionNode* dil_function = dil::Procedure::Cast(node)->function();
 
-      // We don't have [InferredValue]s for receiver / type arguments array
-      // (used in factory constructors).
-      const intptr_t offset = function.NumImplicitParameters();
-
-      const intptr_t parameter_index = index() - offset;
       if (parameter_index >= 0) {
         dil::List<dil::VariableDeclaration>& positional =
             dil_function->positional_parameters();
