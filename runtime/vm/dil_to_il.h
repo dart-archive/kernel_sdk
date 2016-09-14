@@ -76,13 +76,21 @@ typedef ZoneGrowableArray<PushArgumentInstr*>* ArgumentArray;
 
 class ActiveClass {
  public:
-  ActiveClass() : dil_class(NULL), klass(NULL), dil_function(NULL) {}
+  ActiveClass()
+      : dil_class(NULL),
+        klass(NULL),
+        member(NULL),
+        dil_function(NULL) { }
 
   // The current enclosing dil class (if available, otherwise NULL).
   Class* dil_class;
 
   // The current enclosing class (or the library top-level class).
   const dart::Class* klass;
+
+  // The enclosing member (e.g., Constructor, Procedure, or Field) if there
+  // is one.
+  Member* member;
 
   // The current function.
   FunctionNode* dil_function;
@@ -96,21 +104,42 @@ class ActiveClassScope {
                    const dart::Class* klass)
     : active_class_(active_class) {
     saved_dil_class_ = active_class_->dil_class;
-    saved_class_ = active_class_->klass;
+    saved_klass_ = active_class_->klass;
 
     active_class_->dil_class = dil_class;
     active_class_->klass = klass;
   }
+
   ~ActiveClassScope() {
-    active_class_->klass = saved_class_;
     active_class_->dil_class = saved_dil_class_;
+    active_class_->klass = saved_klass_;
   }
 
  private:
   ActiveClass* active_class_;
   Class* saved_dil_class_;
-  const dart::Class* saved_class_;
+  const dart::Class* saved_klass_;
 };
+
+
+class ActiveMemberScope {
+ public:
+  ActiveMemberScope(ActiveClass* active_class,
+                    Member* member)
+    : active_class_(active_class) {
+    saved_member_ = active_class_->member;
+    active_class_->member = member;
+  }
+
+  ~ActiveMemberScope() {
+    active_class_->member = saved_member_;
+  }
+
+ private:
+  ActiveClass* active_class_;
+  Member* saved_member_;
+};
+
 
 class ActiveFunctionScope {
  public:
@@ -120,6 +149,7 @@ class ActiveFunctionScope {
     saved_function_ = active_class_->dil_function;
     active_class_->dil_function = dil_function;
   }
+
   ~ActiveFunctionScope() {
     active_class_->dil_function = saved_function_;
   }

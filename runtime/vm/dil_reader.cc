@@ -157,6 +157,7 @@ void DilReader::ReadLibrary(Library* dil_library) {
     // Load toplevel fields.
     for (intptr_t i = 0; i < dil_library->fields().length(); i++) {
       Field* dil_field = dil_library->fields()[i];
+      ActiveMemberScope active_member_scope(&active_class_, dil_field);
 
       const dart::String& name = H.DartFieldName(dil_field->name());
       dart::Field& field = dart::Field::Handle(Z, dart::Field::NewTopLevel(
@@ -301,6 +302,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
 
   for (intptr_t i = 0; i < dil_klass->fields().length(); i++) {
     Field* dil_field = dil_klass->fields()[i];
+    ActiveMemberScope active_member_scope(&active_class_, dil_field);
 
     const dart::String& name = H.DartFieldName(dil_field->name());
     // TODO(vegorov) check if this might have some ordering issues
@@ -331,6 +333,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
 
   for (intptr_t i = 0; i < dil_klass->constructors().length(); i++) {
     Constructor* dil_constructor = dil_klass->constructors()[i];
+    ActiveMemberScope active_member_scope(&active_class_, dil_constructor);
     ActiveFunctionScope active_function_scope(
         &active_class_, dil_constructor->function());
 
@@ -355,6 +358,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
 
   for (intptr_t i = 0; i < dil_klass->procedures().length(); i++) {
     Procedure* dil_procedure = dil_klass->procedures()[i];
+    ActiveMemberScope active_member_scope(&active_class_, dil_procedure);
     ReadProcedure(library, klass, dil_procedure, dil_klass);
   }
 }
@@ -364,6 +368,7 @@ void DilReader::ReadProcedure(const dart::Library& library,
                               Procedure* dil_procedure,
                               Class* dil_klass) {
   ActiveClassScope active_class_scope(&active_class_, dil_klass, &owner);
+  ActiveMemberScope active_member_scope(&active_class_, dil_procedure);
   ActiveFunctionScope active_function_scope(
       &active_class_, dil_procedure->function());
 

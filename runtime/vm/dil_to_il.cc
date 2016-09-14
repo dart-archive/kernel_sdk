@@ -329,7 +329,12 @@ void ScopeBuilder::VisitThisExpression(ThisExpression* node) {
 
 
 void ScopeBuilder::VisitTypeParameterType(TypeParameterType* node) {
-  if (parsed_function_->function().IsFactory()) {
+  Function& function = Function::Handle(Z, parsed_function_->function().raw());
+  while (function.IsClosureFunction()) {
+    function = function.parent_function();
+  }
+
+  if (function.IsFactory()) {
     // The type argument vector is passed as the very first argument to the
     // factory constructor function.
     HandleSpecialLoad(&result_->type_arguments_variable,
@@ -1816,7 +1821,14 @@ Fragment FlowGraphBuilder::LoadInstantiatorTypeArguments() {
   // TODO(kustermann): We could use `active_class_->IsGeneric()`.
   Fragment instructions;
   if (scopes_->type_arguments_variable != NULL) {
-    ASSERT(parsed_function_->function().IsFactory());
+#ifdef DEBUG
+    Function& function =
+        Function::Handle(Z, parsed_function_->function().raw());
+    while (function.IsClosureFunction()) {
+      function = function.parent_function();
+    }
+    ASSERT(function.IsFactory());
+#endif
     instructions += LoadLocal(scopes_->type_arguments_variable);
   } else if (scopes_->this_variable != NULL &&
              active_class_.dil_class != NULL &&
@@ -2643,8 +2655,13 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
   }
 
   // Mark that we are using [klass]/[dill_klass] as active class.  Resolving of
-  // type parameters will get resolved via [dill_klass].
+  // type parameters will get resolved via [dill_klass] unless we are nested
+  // inside a static factory in which case we will use [member].
   ActiveClassScope active_class_scope(&active_class_, dil_klass, &klass);
+  Member* member = topmost_node != NULL && topmost_node->IsMember()
+      ? Member::Cast(topmost_node)
+      : NULL;
+  ActiveMemberScope active_member(&active_class_, member);
 
   // The IR builder will create its own local variables and scopes, and it
   // will not need an AST.  The code generator will assume that there is a
@@ -3594,27 +3611,31 @@ void DartTypeTranslator::VisitTypeParameterType(TypeParameterType* node) {
 
   List<TypeParameter>* parameters =
       &active_class_->dil_class->type_parameters();
-  if ((active_class_->dil_function != NULL) &&
-      (active_class_->dil_function->type_parameters().length() > 0)) {
-    //
-    // WARNING: This is a little hackisch:
-    //
-    // We have a static factory constructor. The kernel IR gives the factory
-    // constructor function it's own type parameters (which are equal in name
-    // and number to the ones of the enclosing class).
-    // E.e.
-    //
-    //   class A<T> {
-    //     factory A.x() { return new B<T>(); }
-    //   }
-    //
-    //  Is basically translated to this:
-    //
-    //   class A<T> {
-    //     static A.x<T'>() { return new B<T'>(); }
-    //   }
-    //
-    parameters = &active_class_->dil_function->type_parameters();
+  if ((active_class_->member != NULL) &&
+      active_class_->member->IsProcedure()) {
+    Procedure* procedure = Procedure::Cast(active_class_->member);
+    if ((procedure->function() != NULL) &&
+        (procedure->function()->type_parameters().length() > 0)) {
+      //
+      // WARNING: This is a little hackish:
+      //
+      // We have a static factory constructor. The kernel IR gives the factory
+      // constructor function it's own type parameters (which are equal in name
+      // and number to the ones of the enclosing class).
+      // I.e.,
+      //
+      //   class A<T> {
+      //     factory A.x() { return new B<T>(); }
+      //   }
+      //
+      //  is basically translated to this:
+      //
+      //   class A<T> {
+      //     static A.x<T'>() { return new B<T'>(); }
+      //   }
+      //
+      parameters = &procedure->function()->type_parameters();
+    }
   }
 
   for (intptr_t i = 0; i < parameters->length(); i++) {
