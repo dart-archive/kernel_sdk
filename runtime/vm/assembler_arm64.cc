@@ -1044,6 +1044,34 @@ void Assembler::ReserveAlignedFrameSpace(intptr_t frame_space) {
 }
 
 
+void Assembler::PushCallerSavedFPUState() {
+  // Store fpu registers with the lowest register number at the lowest
+  // address.
+  for (int i = kNumberOfVRegisters - 1; i >= 0; i--) {
+    if ((i >= kAbiFirstPreservedFpuReg) && (i <= kAbiLastPreservedFpuReg)) {
+      // TODO(zra): When SIMD is added, we must also preserve the top
+      // 64-bits of the callee-saved registers.
+      continue;
+    }
+    // TODO(zra): Save the whole V register.
+    PushDouble(static_cast<VRegister>(i));
+  }
+}
+
+
+void Assembler::PopCallerSavedFPUState() {
+  for (int i = 0; i < kNumberOfVRegisters; i++) {
+    if ((i >= kAbiFirstPreservedFpuReg) && (i <= kAbiLastPreservedFpuReg)) {
+      // TODO(zra): When SIMD is added, we must also restore the top
+      // 64-bits of the callee-saved registers.
+      continue;
+    }
+    // TODO(zra): Restore the whole V register.
+    PopDouble(static_cast<VRegister>(i));
+  }
+}
+
+
 void Assembler::RestoreCodePointer() {
   ldr(CODE_REG, Address(FP, kPcMarkerSlotFromFp * kWordSize));
   CheckCodePointer();
@@ -1170,19 +1198,7 @@ void Assembler::LeaveDartFrame(RestorePP restore_pp) {
 void Assembler::EnterCallRuntimeFrame(intptr_t frame_size) {
   Comment("EnterCallRuntimeFrame");
   EnterStubFrame();
-
-  // Store fpu registers with the lowest register number at the lowest
-  // address.
-  for (int i = kNumberOfVRegisters - 1; i >= 0; i--) {
-    if ((i >= kAbiFirstPreservedFpuReg) && (i <= kAbiLastPreservedFpuReg)) {
-      // TODO(zra): When SIMD is added, we must also preserve the top
-      // 64-bits of the callee-saved registers.
-      continue;
-    }
-    // TODO(zra): Save the whole V register.
-    VRegister reg = static_cast<VRegister>(i);
-    PushDouble(reg);
-  }
+  PushCallerSavedFPUState();
 
   for (int i = kDartFirstVolatileCpuReg; i <= kDartLastVolatileCpuReg; i++) {
     const Register reg = static_cast<Register>(i);
@@ -1207,17 +1223,7 @@ void Assembler::LeaveCallRuntimeFrame() {
     Pop(reg);
   }
 
-  for (int i = 0; i < kNumberOfVRegisters; i++) {
-    if ((i >= kAbiFirstPreservedFpuReg) && (i <= kAbiLastPreservedFpuReg)) {
-      // TODO(zra): When SIMD is added, we must also restore the top
-      // 64-bits of the callee-saved registers.
-      continue;
-    }
-    // TODO(zra): Restore the whole V register.
-    VRegister reg = static_cast<VRegister>(i);
-    PopDouble(reg);
-  }
-
+  PopCallerSavedFPUState();
   LeaveStubFrame();
 }
 

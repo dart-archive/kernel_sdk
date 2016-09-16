@@ -29,19 +29,6 @@
 #include "vm/thread.h"
 #include "vm/zone.h"
 
-#ifdef __x86_64__
-extern "C" void InterruptContinuationRaw();
-#define CONTINUATION_FUNCTION InterruptContinuationRaw
-#elif defined(__arm__)
-extern "C" void InterruptContinuationRawARM();
-#define CONTINUATION_FUNCTION InterruptContinuationRawARM
-#elif defined(__arm64__) || defined(__aarch64__)
-extern "C" void InterruptContinuationRawARM64();
-#define CONTINUATION_FUNCTION InterruptContinuationRawARM64
-#else
-#error "Unsupported architecture"
-#endif
-
 namespace dart {
 
 static struct sigaction new_sigaction_;
@@ -59,6 +46,10 @@ void SegvHandler::InitOnce() {
   // Should we block SIGPROF?
   ret = sigemptyset(&new_sigaction_.sa_mask);
   if (ret != 0) FATAL("sigemptyset() failed.");
+
+  if (sigaddset(&new_sigaction_.sa_mask, SIGPROF) != 0) {
+    FATAL("sigaddset() failed");
+  }
 
   ret = sigaction(SIGSEGV, &new_sigaction_, &old_sigaction_);
   if (ret != 0) FATAL("sigaction() failed.");
@@ -177,7 +168,8 @@ void SegvHandler::SignalHandler(int signal, siginfo_t* siginfo, void* context) {
 void SegvHandler::SetContinuationPC(Thread* thread, void* context) {
   intptr_t* pc_pointer = GetPointerToSavedPc(context);
   thread->set_saved_interrupt_pc(*pc_pointer);
-  *pc_pointer = reinterpret_cast<intptr_t>(&CONTINUATION_FUNCTION);
+  const RawCode* code = thread->guard_page_continuation_stub_->ptr();
+  *pc_pointer = code->entry_point_;
 }
 
 intptr_t* SegvHandler::GetPointerToSavedPc(void* context) {

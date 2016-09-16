@@ -923,6 +923,9 @@ class Assembler : public ValueObject {
   void Ret();
   void ReserveAlignedFrameSpace(intptr_t frame_space);
 
+  void PushCallerSavedFPUState();
+  void PopCallerSavedFPUState();
+
   // Create a frame for calling into runtime that preserves all volatile
   // registers.  Frame's SP is guaranteed to be correctly aligned and
   // frame_space bytes are reserved under it.

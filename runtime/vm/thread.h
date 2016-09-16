@@ -88,6 +88,8 @@ class Zone;
     StubCode::InvokeDartCode_entry()->code(), NULL)                            \
   V(RawCode*, call_to_runtime_stub_,                                           \
     StubCode::CallToRuntime_entry()->code(), NULL)                             \
+  V(RawCode*, guard_page_continuation_stub_,                                   \
+    StubCode::GuardPageContinuation_entry()->code(), NULL)                     \
   V(RawCode*, monomorphic_miss_stub_,                                          \
     StubCode::MonomorphicMiss_entry()->code(), NULL)                           \
   V(RawCode*, ic_lookup_through_code_stub_,                                    \
@@ -653,7 +655,8 @@ LEAF_RUNTIME_ENTRY_LIST(DEFINE_OFFSET_METHOD)
 
   void InitVMConstants();
 
-#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+#if defined(USE_STACKOVERFLOW_TRAPS)
+#if defined(DART_PRECOMPILED_RUNTIME)
   void MakeInterruptPageUnaccessable();
   void MakeInterruptPageAccessable();
 
@@ -679,7 +682,12 @@ LEAF_RUNTIME_ENTRY_LIST(DEFINE_OFFSET_METHOD)
   bool has_stackoverflow() {
     return has_stackoverflow_;
   }
-#endif  // defined(DART_PRECOMPILED_RUNTIME) && defined(USE_STACKOVERFLOW_TRAPS)
+#endif  // defined(DART_PRECOMPILED_RUNTIME)
+
+  static intptr_t interruption_continuation_fun_offset() {
+    return OFFSET_OF(Thread, interruption_continuation_fun_);
+  }
+#endif  // defined(USE_STACKOVERFLOW_TRAPS)
 
  protected:
   explicit Thread(Isolate* isolate);
@@ -742,6 +750,7 @@ LEAF_RUNTIME_ENTRY_LIST(DECLARE_MEMBERS)
 
   CompilerStats* compiler_stats_;
 
+  void* interruption_continuation_fun_;
 #if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
   friend class SegvHandler;
 
@@ -752,7 +761,7 @@ LEAF_RUNTIME_ENTRY_LIST(DECLARE_MEMBERS)
 
   intptr_t saved_interrupt_pc_;
   bool has_stackoverflow_;
-#endif  // defined(DART_PRECOMPILED_RUNTIME) &&defined(USE_STACKOVERFLOW_TRAPS)
+#endif  // defined(DART_PRECOMPILED_RUNTIME) && defined(USE_STACKOVERFLOW_TRAPS)
 
   // Reusable handles support.
 #define REUSABLE_HANDLE_FIELDS(object)                                         \

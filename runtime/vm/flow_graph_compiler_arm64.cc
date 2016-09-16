@@ -126,7 +126,7 @@ void FlowGraphCompiler::RecordSignalContinuationSafepoint(
 
   // b) We push most GPRs.
   PushRegisterToStackmap(bitmap, registers, R30);
-  PushRegisterToStackmap(bitmap, registers, R29);
+  ASSERT(R29 == FP);
   PushRegisterToStackmap(bitmap, registers, R28);
   PushRegisterToStackmap(bitmap, registers, R27);
   PushRegisterToStackmap(bitmap, registers, R26);
@@ -140,6 +140,7 @@ void FlowGraphCompiler::RecordSignalContinuationSafepoint(
   PushRegisterToStackmap(bitmap, registers, R18);
   PushRegisterToStackmap(bitmap, registers, R17);
   PushRegisterToStackmap(bitmap, registers, R16);
+  ASSERT(R15 == SP);
   PushRegisterToStackmap(bitmap, registers, R14);
   PushRegisterToStackmap(bitmap, registers, R13);
   PushRegisterToStackmap(bitmap, registers, R12);

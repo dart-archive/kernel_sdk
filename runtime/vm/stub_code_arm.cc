@@ -101,6 +101,65 @@ void StubCode::GenerateCallToRuntimeStub(Assembler* assembler) {
 }
 
 
+#if defined(USE_STACKOVERFLOW_TRAPS)
+// If Dart code triggered a SEGV trap due to interrupt (or stackoverflow) guard
+// page being invoked, the `SegvHandler::SignalHandler` will save the PC and
+// will redirect to this stub.  Our responsibility is saving all register state,
+// calling into the runtime to perform GC or throw a Stackoverflow exception.
+// And restore all the state afterwards (in case no exception occurs).
+//
+// The register state on entrance to this function is precisely what the Dart
+// code had when it triggered the fault (modulo the PC which is saved in the
+// [Thread] structure).
+void StubCode::GenerateGuardPageContinuationStub(Assembler* assembler) {
+  // All GPRS except sp/fp will be saved (including a PC slot for jumping back
+  // to Dart).
+  const RegList kSavedRegs = (1 << R0) | (1 << R1) | (1 << R2)  | (1 << R3)  |
+                             (1 << R4) | (1 << R5) | (1 << R6)  | (1 << R7)  |
+                             (1 << R8) | (1 << R9) | (1 << R10) | (1 << R12) |
+                             (1 << LR) | (1 << PC);
+  __ PushList(kSavedRegs);
+  intptr_t pc_word_difference = (16 - 2 - 1);
+
+  // Make an artificial exit frame.  We do this because the stack walker
+  // assumes the stack always starts with an exit frame.
+  const RegList kArtificialFrameRegs =
+      (1 << PP) | (1 << CODE_REG) | (1 << FP) | (1 << LR);
+  __ EnterFrame(kArtificialFrameRegs, 0);
+  pc_word_difference += 2;
+
+  __ PushCallerSavedFPUState();
+
+  // Add stack padding to guarantee C calling convention alignment.
+  __ mov(R9, Operand(SP));
+  __ ReserveAlignedFrameSpace(0);
+
+  // Prepare arguments:
+  //   Argument 0: pointer to saved PC
+  //   Argument 1: pointer to saved PC in artificial frame
+  //   Argument 2: artificial frame pointer
+  __ add(R0, FP, Operand(pc_word_difference * 4));
+  __ add(R1, FP, Operand(kWordSize));
+  __ add(R2, FP, Operand(0));
+
+  // Call `InterruptContinuation`.
+  __ ldr(R3, Address(THR, Thread::interruption_continuation_fun_offset()));
+  __ blx(R3);
+
+  // Undo padding.
+  __ mov(SP, Operand(R9));
+
+  __ PopCallerSavedFPUState();
+
+  // Leave artificial frame.
+  __ LeaveFrame(kArtificialFrameRegs);
+
+  // Restore & GPRs and jump back to Dart code.
+  __ PopList(kSavedRegs);
+}
+#endif  // defined(USE_STACKOVERFLOW_TRAPS)
+
+
 // Print the stop message.
 DEFINE_LEAF_RUNTIME_ENTRY(void, PrintStopMessage, 1, const char* message) {
   OS::Print("Stop message: %s\n", message);

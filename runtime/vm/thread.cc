@@ -16,6 +16,7 @@
 #include "vm/os_thread.h"
 #include "vm/profiler.h"
 #include "vm/runtime_entry.h"
+#include "vm/segv_handler.h"
 #include "vm/stub_code.h"
 #include "vm/symbols.h"
 #include "vm/thread_interrupter.h"
@@ -94,12 +95,18 @@ Thread::Thread(Isolate* isolate)
       pending_functions_(GrowableObjectArray::null()),
       sticky_error_(Error::null()),
       compiler_stats_(NULL),
-#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
+#if defined(USE_STACKOVERFLOW_TRAPS)
+#if defined(DART_PRECOMPILED_RUNTIME)
+      interruption_continuation_fun_(
+          reinterpret_cast<void*>(&InterruptContinuation)),
       virtual_memory_(0),
       virtual_memory_protected_(false),
       saved_interrupt_pc_(0),
       has_stackoverflow_(false),
-#endif  // defined(DART_PRECOMPILED_RUNTIME) &&defined(USE_STACKOVERFLOW_TRAPS)
+#else
+      interruption_continuation_fun_(NULL),
+#endif  // defined(DART_PRECOMPILED_RUNTIME)
+#endif  // defined(USE_STACKOVERFLOW_TRAPS)
       REUSABLE_HANDLE_LIST(REUSABLE_HANDLE_INITIALIZERS)
       REUSABLE_HANDLE_LIST(REUSABLE_HANDLE_SCOPE_INIT)
       safepoint_state_(0),

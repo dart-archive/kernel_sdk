@@ -22,6 +22,10 @@ class SegvHandler {
   static void SetContinuationPC(Thread* thread, void* context);
   static intptr_t* GetPointerToSavedPc(void* context);
 };
+
+extern "C" void InterruptContinuation(
+    intptr_t *rip, intptr_t* rip2, intptr_t exit_frame_fp);
+
 #endif  // defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
 
 }  // namespace dart
