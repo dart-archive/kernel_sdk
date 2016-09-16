@@ -94,7 +94,6 @@ void StubCode::GenerateCallToRuntimeStub(Assembler* assembler) {
 }
 
 
-#if defined(USE_STACKOVERFLOW_TRAPS)
 // If Dart code triggered a SEGV trap due to interrupt (or stackoverflow) guard
 // page being invoked, the `SegvHandler::SignalHandler` will save the PC and
 // will redirect to this stub.  Our responsibility is saving all register state,
@@ -105,6 +104,7 @@ void StubCode::GenerateCallToRuntimeStub(Assembler* assembler) {
 // code had when it triggered the fault (modulo the PC which is saved in the
 // [Thread] structure).
 void StubCode::GenerateGuardPageContinuationStub(Assembler* assembler) {
+#if defined(USE_STACKOVERFLOW_TRAPS)
   // All GPRS except sp/fp will be saved (including a PC slot for jumping back
   // to Dart).
   __ pushq(Immediate(0xFFFFFFFFDEADBEEF));
@@ -163,8 +163,8 @@ void StubCode::GenerateGuardPageContinuationStub(Assembler* assembler) {
     __ popq(reg);
   }
   __ ret();
-}
 #endif  // defined(USE_STACKOVERFLOW_TRAPS)
+}
 
 
 // Print the stop message.
