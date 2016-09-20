@@ -10805,9 +10805,11 @@ RawLibrary* Library::MathLibrary() {
 }
 
 
+#if !defined(PRODUCT)
 RawLibrary* Library::MirrorsLibrary() {
   return Isolate::Current()->object_store()->mirrors_library();
 }
+#endif
 
 
 RawLibrary* Library::NativeWrappersLibrary() {
