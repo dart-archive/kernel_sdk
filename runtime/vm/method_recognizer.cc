@@ -133,7 +133,6 @@ const char* MethodRecognizer::KindToCString(Kind kind) {
 }
 
 
-#if defined(DART_NO_SNAPSHOT)
 void MethodRecognizer::InitializeState() {
   GrowableArray<Library*> libs(3);
   libs.Add(&Library::ZoneHandle(Library::CoreLibrary()));
@@ -146,14 +145,16 @@ void MethodRecognizer::InitializeState() {
 
 // TODO(kustermann): Figure out why fingerprint validation failes in
 // PRODUCT+DEBUG mode.
+//
+// TODO(kmillikin): Re-enable the fingerprint checks when compiling from
+// source.  Come up with some mechanism to detect changes to recognized
+// methods when compiling from Kernel.
 #define SET_RECOGNIZED_KIND(class_name, function_name, enum_name, type, fp)    \
   func = Library::GetFunction(libs, #class_name, #function_name);              \
   if (func.IsNull()) {                                                         \
     OS::PrintErr("Missing %s::%s\n", #class_name, #function_name);             \
     UNREACHABLE();                                                             \
   }                                                                            \
-  NOT_IN_PRODUCT(CHECK_FINGERPRINT3(                                           \
-        func, class_name, function_name, enum_name, fp));                      \
   func.set_recognized_kind(k##enum_name);
 
   RECOGNIZED_LIST(SET_RECOGNIZED_KIND);
@@ -166,8 +167,6 @@ void MethodRecognizer::InitializeState() {
     OS::PrintErr("Missing %s::%s\n", #class_name, #function_name);             \
     UNREACHABLE();                                                             \
   }                                                                            \
-  NOT_IN_PRODUCT(CHECK_FINGERPRINT3(                                           \
-        func, class_name, function_name, dest, fp));                           \
   func.setter(value);
 
 #define SET_IS_ALWAYS_INLINE(class_name, function_name, dest, fp)              \
@@ -189,6 +188,5 @@ void MethodRecognizer::InitializeState() {
 #undef SET_IS_POLYMORPHIC_TARGET
 #undef SET_FUNCTION_BIT
 }
-#endif  // defined(DART_NO_SNAPSHOT).
 
 }  // namespace dart

@@ -3313,6 +3313,7 @@ class StaticCallInstr : public TemplateDefinition<0, Throws> {
         identity_(AliasIdentity::Unknown()) {
     ic_data_ = GetICData(ic_data_array);
     ASSERT(function.IsZoneHandle());
+    ASSERT(!function.IsNull());
     ASSERT(argument_names.IsZoneHandle() ||  argument_names.InVMHeap());
   }
 
@@ -3331,6 +3332,7 @@ class StaticCallInstr : public TemplateDefinition<0, Throws> {
         is_known_list_constructor_(false),
         identity_(AliasIdentity::Unknown()) {
     ASSERT(function.IsZoneHandle());
+    ASSERT(!function.IsNull());
     ASSERT(argument_names.IsZoneHandle() ||  argument_names.InVMHeap());
   }
 

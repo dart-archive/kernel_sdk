@@ -553,8 +553,10 @@ class Object {
   static void InitOnce(Isolate* isolate);
   static void FinalizeVMIsolate(Isolate* isolate);
 
-  // Initialize a new isolate either from source or from a snapshot.
-  static RawError* Init(Isolate* isolate);
+  // Initialize a new isolate either from a DIL file, from source, or from a
+  // snapshot.
+  static RawError* Init(Isolate* isolate, const uint8_t* dilfile,
+                        intptr_t dilfile_length);
 
   static void MakeUnusedSpaceTraversable(const Object& obj,
                                          intptr_t original_size,

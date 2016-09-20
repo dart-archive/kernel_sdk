@@ -57,15 +57,13 @@ def ProcessOptions(options):
 def makeString(input_file):
   result = ' '
   fileHandle = open(input_file, 'rb')
-  lineCounter = 0
+  counter = 0
   for byte in fileHandle.read():
-    result += ' %d,' % ord(byte)
-    lineCounter += 1
-    if lineCounter == 10:
+    if counter == 10:
       result += '\n   '
-      lineCounter = 0
-  if lineCounter != 0:
-    result += '\n   '
+      counter = 0
+    result += ' %d,' % ord(byte)
+    counter += 1
   return result
 
 

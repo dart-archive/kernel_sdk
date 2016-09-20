@@ -15,7 +15,14 @@ class RawError;
 
 class Bootstrap : public AllStatic {
  public:
-  static RawError* LoadandCompileScripts();
+  // Compile the bootstrap libraries, either from sources or a Kernel binary.
+  // If dilfile is NULL, compile from sources or source paths linked into the
+  // VM.  If it is non-NULL it represents a buffer holding a Kernel binary.  The
+  // caller of this function is responsible for managing the dilfile buffer's
+  // memory, and is welcome to deallocate it after this function returns.
+  static RawError* DoBootstrapping(const uint8_t* dilfile,
+                                   intptr_t dilfile_length);
+
   static void SetupNativeResolver();
   static bool IsBootstapResolver(Dart_NativeEntryResolver resolver);
 
@@ -45,9 +52,11 @@ class Bootstrap : public AllStatic {
   static const char* isolate_patch_paths_[];
   static const char* math_patch_paths_[];
   static const char* mirrors_patch_paths_[];
-  static const char* profiler_patch_paths_[];
-  static const char* typed_data_patch_paths_[];
   static const char* _vmservice_patch_paths_[];
+
+  // NULL patch paths for libraries that do not have patch files.
+  static const char** profiler_patch_paths_;
+  static const char** typed_data_patch_paths_;
 };
 
 }  // namespace dart

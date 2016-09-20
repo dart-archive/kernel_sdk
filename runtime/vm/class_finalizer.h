@@ -71,7 +71,7 @@ class ClassFinalizer : public AllStatic {
   // failed. The function returns true if the processing was successful.
   // If processing fails, an error message is set in the sticky error field
   // in the object store.
-  static bool ProcessPendingClasses();
+  static bool ProcessPendingClasses(bool from_dilfile = false);
 
   // Finalize the types appearing in the declaration of class 'cls', i.e. its
   // type parameters and their upper bounds, its super type and interfaces.
@@ -82,11 +82,9 @@ class ClassFinalizer : public AllStatic {
   // Finalize the class including its fields and functions.
   static void FinalizeClass(const Class& cls);
 
-#if defined(DART_NO_SNAPSHOT)
   // Verify that the classes have been properly prefinalized. This is
   // needed during bootstrapping where the classes have been preloaded.
   static void VerifyBootstrapClasses();
-#endif  // defined(DART_NO_SNAPSHOT).
 
   // Resolve the class of the type, but not the type's type arguments.
   // May promote the type to function type by setting its signature field.

@@ -85,6 +85,7 @@ RawClass* BuildingTranslationHelper::LookupClassByDilClass(Class* klass) {
 }
 
 Object& DilReader::ReadProgram() {
+  ASSERT(!bootstrapping_);
   Program* program = ReadPrecompiledDilFromBuffer(buffer_, buffer_length_);
   if (program == NULL) {
     const dart::String& error = H.DartString("Failed to read .dill file");
@@ -107,12 +108,12 @@ Object& DilReader::ReadProgram() {
     // finalization of a class needs all of its superclasses to be finalized).
     for (intptr_t i = 0; i < length; i++) {
       Library* dil_library = program->libraries()[i];
-      if (!dil_library->IsCorelibrary()) {
+      dart::Library& library = LookupLibrary(dil_library);
+      if (!library.Loaded()) {
         for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
           Class* dil_klass = dil_library->classes()[i];
           ClassFinalizer::FinalizeClass(LookupClass(dil_klass));
         }
-        dart::Library& library = LookupLibrary(dil_library);
         library.SetLoaded();
       }
     }
@@ -142,48 +143,57 @@ Object& DilReader::ReadProgram() {
 
 void DilReader::ReadLibrary(Library* dil_library) {
   dart::Library& library = LookupLibrary(dil_library);
-  if (!dil_library->IsCorelibrary()) {
-    // Setup toplevel class (which contains library fields/procedures).
+  if (library.Loaded()) return;
 
-    // FIXME(kustermann): Figure out why we need this script stuff here.
-    Script& script = Script::Handle(Z,
-        Script::New(H.DartString(""), H.DartString(""), RawScript::kScriptTag));
-    script.SetLocationOffset(0, 0);
-    script.Tokenize(H.DartString("nop() {}"));
-    dart::Class& toplevel_class = dart::Class::Handle(dart::Class::New(
-          library, Symbols::TopLevel(), script, TokenPosition::kNoSource));
-    library.set_toplevel_class(toplevel_class);
+  library.SetLoadInProgress();
+  // Setup toplevel class (which contains library fields/procedures).
 
-    // Load toplevel fields.
-    for (intptr_t i = 0; i < dil_library->fields().length(); i++) {
-      Field* dil_field = dil_library->fields()[i];
-      ActiveMemberScope active_member_scope(&active_class_, dil_field);
+  // FIXME(kustermann): Figure out why we need this script stuff here.
+  Script& script = Script::Handle(Z,
+      Script::New(H.DartString(""), H.DartString(""), RawScript::kScriptTag));
+  script.SetLocationOffset(0, 0);
+  script.Tokenize(H.DartString("nop() {}"));
+  dart::Class& toplevel_class = dart::Class::Handle(dart::Class::New(
+      library, Symbols::TopLevel(), script, TokenPosition::kNoSource));
+  toplevel_class.set_is_cycle_free();
+  library.set_toplevel_class(toplevel_class);
+  if (bootstrapping_) {
+    GrowableObjectArray::Handle(I->object_store()->pending_classes())
+        .Add(toplevel_class, Heap::kOld);
+  }
 
-      const dart::String& name = H.DartFieldName(dil_field->name());
-      dart::Field& field = dart::Field::Handle(Z, dart::Field::NewTopLevel(
-            name,
-            dil_field->IsFinal(),
-            dil_field->IsConst(),
-            toplevel_class,
-            TokenPosition::kNoSource));
-      field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
-      GenerateStaticFieldInitializer(field, dil_field);
-      GenerateFieldAccessors(toplevel_class, field, dil_field);
-      toplevel_class.AddField(field);
-      library.AddObject(field, name);
-    }
+  ActiveClassScope active_class_scope(&active_class_, NULL, &toplevel_class);
+  // Load toplevel fields.
+  for (intptr_t i = 0; i < dil_library->fields().length(); i++) {
+    Field* dil_field = dil_library->fields()[i];
 
-    // Load toplevel procedures.
-    for (intptr_t i = 0; i < dil_library->procedures().length(); i++) {
-      Procedure* dil_procedure = dil_library->procedures()[i];
-      ReadProcedure(library, toplevel_class, dil_procedure);
-    }
+    ActiveMemberScope active_member_scope(&active_class_, dil_field);
+    const dart::String& name = H.DartFieldName(dil_field->name());
+    dart::Field& field = dart::Field::Handle(Z, dart::Field::NewTopLevel(
+        name,
+        dil_field->IsFinal(),
+        dil_field->IsConst(),
+        toplevel_class,
+        TokenPosition::kNoSource));
+    field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
+    const AbstractType& type = T.TranslateType(dil_field->type());
+    field.SetFieldType(type);
+    GenerateStaticFieldInitializer(field, dil_field);
+    GenerateFieldAccessors(toplevel_class, field, dil_field);
+    toplevel_class.AddField(field);
+    library.AddObject(field, name);
+  }
 
-    // Load all classes.
-    for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
-      Class* dil_klass = dil_library->classes()[i];
-      ReadClass(library, dil_klass);
-    }
+  // Load toplevel procedures.
+  for (intptr_t i = 0; i < dil_library->procedures().length(); i++) {
+    Procedure* dil_procedure = dil_library->procedures()[i];
+    ReadProcedure(library, toplevel_class, dil_procedure);
+  }
+
+  // Load all classes.
+  for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
+    Class* dil_klass = dil_library->classes()[i];
+    ReadClass(library, dil_klass);
   }
 }
 
@@ -236,11 +246,13 @@ void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
   if (dil_klass->IsNormalClass()) {
     NormalClass* dil_normal_class = NormalClass::Cast(dil_klass);
 
-    // Set super type.
-    AbstractType& super_type = T.TranslateTypeWithoutFinalization(
-        dil_normal_class->super_class());
-    if (super_type.IsMalformed()) H.ReportError("Malformed super type");
-    klass->set_super_type(super_type);
+    // Set super type.  Some classes (e.g., Object) do not have one.
+    if (dil_normal_class->super_class() != NULL) {
+      AbstractType& super_type = T.TranslateTypeWithoutFinalization(
+          dil_normal_class->super_class());
+      if (super_type.IsMalformed()) H.ReportError("Malformed super type");
+      klass->set_super_type(super_type);
+    }
   } else {
     MixinClass* dil_mixin = MixinClass::Cast(dil_klass);
 
@@ -285,11 +297,12 @@ void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
     interface_class.set_is_implemented();
   }
   klass->set_interfaces(interfaces);
-  if (dil_klass->is_abstract()) {
-    klass->set_is_abstract();
-  }
-
-  ClassFinalizer::FinalizeTypesInClass(*klass);
+  if (dil_klass->is_abstract()) klass->set_is_abstract();
+  klass->set_is_cycle_free();
+  // When bootstrapping we should not finalize types yet because they will be
+  // finalized when the object store's pending_classes list is drained by
+  // ClassFinalizer::ProcessPendingClasses.
+  if (!bootstrapping_) ClassFinalizer::FinalizeTypesInClass(*klass);
 }
 
 void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
@@ -361,6 +374,12 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
     ActiveMemberScope active_member_scope(&active_class_, dil_procedure);
     ReadProcedure(library, klass, dil_procedure, dil_klass);
   }
+
+  if (bootstrapping_ && !klass.is_marked_for_parsing()) {
+    klass.set_is_marked_for_parsing();
+    GrowableObjectArray::Handle(Z, I->object_store()->pending_classes())
+        .Add(klass, Heap::kOld);
+  }
 }
 
 void DilReader::ReadProcedure(const dart::Library& library,
@@ -376,19 +395,55 @@ void DilReader::ReadProcedure(const dart::Library& library,
   TokenPosition pos(0);
   bool is_method = dil_klass != NULL && !dil_procedure->IsStatic();
   bool is_abstract = dil_procedure->IsAbstract();
+  bool is_external = dil_procedure->IsExternal();
+  dart::String* native_name = NULL;
+  if (is_external) {
+    // Maybe it has a native implementation, which is not external as far as
+    // the VM is concerned because it does have an implementation.  Check for
+    // an ExternalName annotation and extract the string from it.
+    for (int i = 0; i < dil_procedure->annotations().length(); ++i) {
+      Expression* annotation = dil_procedure->annotations()[i];
+      if (!annotation->IsConstructorInvocation()) continue;
+      ConstructorInvocation* invocation =
+          ConstructorInvocation::Cast(annotation);
+      Class* annotation_class = Class::Cast(invocation->target()->parent());
+      String* class_name = annotation_class->name();
+      // Just compare by name, do not generate the annotation class.
+      int length = sizeof("ExternalName") - 1;
+      if (class_name->size() != length) continue;
+      if (memcmp(class_name->buffer(), "ExternalName", length) != 0) continue;
+      String* library_name = annotation_class->parent()->name();
+      length = sizeof("dart._internal") - 1;
+      if (library_name->size() != length) continue;
+      if (memcmp(library_name->buffer(), "dart._internal", length) != 0) {
+        continue;
+      }
+
+      is_external = false;
+      ASSERT(invocation->arguments()->positional().length() == 1 &&
+             invocation->arguments()->named().length() == 0);
+      StringLiteral* literal =
+          StringLiteral::Cast(invocation->arguments()->positional()[0]);
+      native_name = &H.DartSymbol(literal->value());
+      break;
+    }
+  }
   dart::Function& function = dart::Function::ZoneHandle(Z, Function::New(
         name,
         GetFunctionType(dil_procedure),
         !is_method,  // is_static
         false,  // is_const
         is_abstract,
-        dil_procedure->IsExternal(),
-        false,  // is_native
+        is_external,
+        native_name != NULL,  // is_native
         owner,
         pos));
   owner.AddFunction(function);
   function.set_dil_function(reinterpret_cast<intptr_t>(dil_procedure));
   function.set_is_debuggable(false);
+  if (native_name != NULL) {
+    function.set_native_name(*native_name);
+  }
 
   SetupFunctionParameters(H, T, owner, function, dil_procedure->function(),
                           is_method,
@@ -499,13 +554,10 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
       Array::Handle(Array::New(num_parameters, Heap::kOld)));
   function.set_parameter_names(
       Array::Handle(Array::New(num_parameters, Heap::kOld)));
-  Type& klass_type = Type::Handle(H.zone());
-  if (!klass.IsNull()) {
-    klass_type = T.ReceiverType(klass).raw();
-  }
   intptr_t pos = 0;
   if (is_method) {
-    function.SetParameterTypeAt(pos, klass_type);
+    ASSERT(!klass.IsNull());
+    function.SetParameterTypeAt(pos, T.ReceiverType(klass));
     function.SetParameterNameAt(pos, Symbols::This());
     pos++;
   } else if (is_closure) {
@@ -601,17 +653,11 @@ void DilReader::GenerateStaticFieldInitializer(const dart::Field& field,
 dart::Library& DilReader::LookupLibrary(Library* library) {
   dart::Library* handle = NULL;
   if (!libraries_.Lookup(library, &handle)) {
-    handle = &dart::Library::Handle(Z);
-
-    // If this is a core library, we'll use the VM version.
     const dart::String& url = H.DartSymbol(library->import_uri());
-    if (library->IsCorelibrary()) {
-      *handle = dart::Library::LookupLibrary(thread_, url);
-      bool ok = ClassFinalizer::ProcessPendingClasses();
-      if (!ok) FATAL("Could not finish loading core libraries");
-    } else {
+    handle =
+        &dart::Library::Handle(Z, dart::Library::LookupLibrary(thread_, url));
+    if (handle->IsNull()) {
       *handle = dart::Library::New(url);
-      handle->SetLoadInProgress();
       handle->Register(thread_);
     }
     ASSERT(!handle->IsNull());
@@ -626,25 +672,35 @@ dart::Class& DilReader::LookupClass(Class* klass) {
     dart::Library& library = LookupLibrary(klass->parent());
     const dart::String& name = H.DartClassName(klass);
     handle = &dart::Class::Handle(Z, library.LookupClass(name));
-    if (!handle->IsNull()) {
-      if (klass->parent()->IsCorelibrary()) {
-        classes_.Insert(klass, handle);
-        handle->EnsureIsFinalized(thread_);
-      } else {
-        // We only generate one mixin application for same base/mixin class
-        // inside one library.
-        ASSERT(klass->IsMixinClass());
-      }
-    } else {
+    if (handle->IsNull()) {
+      // The class needs to have a script because all the functions in the class
+      // will inherit it.  The predicate Function::IsOptimizable uses the
+      // absence of a script to detect test functions that should not be
+      // optimized.  Use a dummy script.
+      //
+      // TODO(kmillikin): We shouldn't need a dummy script per class.  At the
+      // least we could have a singleton.  At best, we'd change IsOptimizable to
+      // detect test functions some other way (like simply not setting the
+      // optimizable bit on those functions in the first place).
       TokenPosition pos(0);
       Script& script = Script::Handle(Z, Script::New(H.DartString(""),
           H.DartString(""), RawScript::kScriptTag));
       handle = &dart::Class::Handle(Z,
           dart::Class::New(library, name, script, pos));
-      classes_.Insert(klass, handle);
-
       library.AddClass(*handle);
-
+    } else if (handle->script() == Script::null()) {
+      // When bootstrapping we can encounter classes that do not yet have a
+      // dummy script.
+      TokenPosition pos(0);
+      Script& script = Script::Handle(Z, Script::New(H.DartString(""),
+          H.DartString(""), RawScript::kScriptTag));
+      handle->set_script(script);
+    }
+    // Insert the class in the cache before calling ReadPreliminaryClass so
+    // we do not risk allocating the class again by calling LookupClass
+    // recursively from ReadPreliminaryClass for the same class.
+    classes_.Insert(klass, handle);
+    if (!handle->is_type_finalized()) {
       ReadPreliminaryClass(handle, klass);
     }
   }

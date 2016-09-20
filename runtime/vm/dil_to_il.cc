@@ -12,12 +12,16 @@
 #include "vm/dil_reader.h"
 #include "vm/intermediate_language.h"
 #include "vm/longjump.h"
+#include "vm/method_recognizer.h"
 #include "vm/object_store.h"
 #include "vm/report.h"
 #include "vm/resolver.h"
 #include "vm/stack_frame.h"
 
 namespace dart {
+
+DECLARE_FLAG(bool, support_externalizable_strings);
+
 namespace dil {
 
 #define Z (zone_)
@@ -869,7 +873,7 @@ const dart::String& TranslationHelper::DartSymbol(const char* content) const {
 }
 
 
-const dart::String& TranslationHelper::DartSymbol(String* content) const {
+dart::String& TranslationHelper::DartSymbol(String* content) const {
   return dart::String::ZoneHandle(Z,
       dart::Symbols::FromUTF8(thread_, content->buffer(), content->size()));
 }
@@ -1621,7 +1625,8 @@ const Object& ConstantEvaluator::RunFunction(const Function& function,
                                              Arguments* dil_arguments,
                                              const Instance* receiver,
                                              const TypeArguments* type_args) {
-  ASSERT(!((receiver != NULL) && (type_args != NULL)));
+  // We do not support generic methods yet.
+  ASSERT((receiver == NULL) || (type_args == NULL));
   intptr_t extra_arguments =
       (receiver != NULL ? 1 : 0) + (type_args != NULL ? 1 : 0);
 
@@ -2180,6 +2185,13 @@ Fragment FlowGraphBuilder::RethrowException(int catch_try_index) {
 }
 
 
+Fragment FlowGraphBuilder::LoadClassId() {
+  LoadClassIdInstr* load = new(Z) LoadClassIdInstr(Pop());
+  Push(load);
+  return Fragment(load);
+}
+
+
 Fragment FlowGraphBuilder::LoadField(const dart::Field& field) {
   LoadFieldInstr* load =
       new(Z) LoadFieldInstr(Pop(),
@@ -2191,12 +2203,31 @@ Fragment FlowGraphBuilder::LoadField(const dart::Field& field) {
 }
 
 
-Fragment FlowGraphBuilder::LoadField(intptr_t offset) {
+Fragment FlowGraphBuilder::LoadField(intptr_t offset, intptr_t class_id) {
   LoadFieldInstr* load =
       new(Z) LoadFieldInstr(Pop(),
                             offset,
                             AbstractType::ZoneHandle(Z),
                             TokenPosition::kNoSource);
+  load->set_result_cid(class_id);
+  Push(load);
+  return Fragment(load);
+}
+
+
+Fragment FlowGraphBuilder::LoadNativeField(MethodRecognizer::Kind kind,
+                                           intptr_t offset,
+                                           const Type& type,
+                                           intptr_t class_id,
+                                           bool is_immutable) {
+  LoadFieldInstr* load =
+      new (Z) LoadFieldInstr(Pop(),
+                             offset,
+                             type,
+                             TokenPosition::kNoSource);
+  load->set_recognized_kind(kind);
+  load->set_result_cid(class_id);
+  load->set_is_immutable(is_immutable);
   Push(load);
   return Fragment(load);
 }
@@ -2233,6 +2264,18 @@ Fragment FlowGraphBuilder::LoadStaticField() {
 
 Fragment FlowGraphBuilder::NullConstant() {
   return Constant(Instance::ZoneHandle(Z, Instance::null()));
+}
+
+
+Fragment FlowGraphBuilder::NativeCall(const dart::String* name,
+                                      const Function* function) {
+  InlineBailout("dil::FlowGraphBuilder::NativeCall");
+  NativeCallInstr* call =
+      new(Z) NativeCallInstr(name, function,
+                             FLAG_link_natives_lazily,
+                             TokenPosition::kNoSource);
+  Push(call);
+  return Fragment(call);
 }
 
 
@@ -2725,6 +2768,7 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
 
 FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
                                                   Constructor* constructor) {
+  const Function& dart_function = parsed_function_->function();
   TargetEntryInstr* normal_entry = BuildTargetEntry();
   graph_entry_ =
       new(Z) GraphEntryInstr(*parsed_function_, normal_entry,
@@ -2733,7 +2777,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
   SetupDefaultParameterValues(function);
 
   Fragment body;
-  body += CheckStackOverflowInPrologue();
+  if (!dart_function.is_native()) body += CheckStackOverflowInPrologue();
   intptr_t context_size =
       parsed_function_->node_sequence()->scope()->num_context_variables();
   if (context_size > 0) {
@@ -2742,7 +2786,7 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
 
     // Copy captured parameters from the stack into the context.
     LocalScope* scope = parsed_function_->node_sequence()->scope();
-    intptr_t parameter_count = parsed_function_->function().NumParameters();
+    intptr_t parameter_count = dart_function.NumParameters();
     intptr_t parameter_index = parsed_function_->first_parameter_index();
     for (intptr_t i = 0; i < parameter_count; ++i, --parameter_index) {
       LocalVariable* variable = scope->VariableAt(i);
@@ -2790,10 +2834,9 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
   // The default `operator==` implementation in `Object` is implemented in terms
   // of identical (which we assume here!) which means that case a) is actually
   // included in b).  So we just use the normal implementation in the body.
-  const Function& f = parsed_function_->function();
-  if ((f.NumParameters() == 2) &&
-      (f.name() == Symbols::EqualOperator().raw()) &&
-      (f.Owner() != I->object_store()->object_class())) {
+  if ((dart_function.NumParameters() == 2) &&
+      (dart_function.name() == Symbols::EqualOperator().raw()) &&
+      (dart_function.Owner() != I->object_store()->object_class())) {
     LocalVariable* parameter =
         LookupVariable(function->positional_parameters()[0]);
 
@@ -2813,7 +2856,9 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
     body = Fragment(body.entry, non_null_entry);
   }
 
-  if (function->body() != NULL) {
+  if (dart_function.is_native()) {
+    body += NativeFunctionBody(function, dart_function);
+  } else if (function->body() != NULL) {
     body += TranslateStatement(function->body());
   }
   if (body.is_open()) {
@@ -2895,6 +2940,207 @@ FlowGraph* FlowGraphBuilder::BuildGraphOfFunction(FunctionNode* function,
   normal_entry->LinkTo(body.entry);
 
   return new(Z) FlowGraph(*parsed_function_, graph_entry_, next_block_id_ - 1);
+}
+
+
+Fragment FlowGraphBuilder::NativeFunctionBody(FunctionNode* dil_function,
+                                              const Function& function) {
+  ASSERT(function.is_native());
+  // We explicitly build the graph for native functions in the same way that the
+  // from-source backend does.  We should find a way to have a single component
+  // to build these graphs so that this code is not duplicated.
+
+  Fragment body;
+  MethodRecognizer::Kind kind = MethodRecognizer::RecognizeKind(function);
+  switch (kind) {
+    case MethodRecognizer::kObjectEquals:
+      body += LoadLocal(scopes_->this_variable);
+      body +=
+          LoadLocal(LookupVariable(dil_function->positional_parameters()[0]));
+      body += StrictCompare(Token::kEQ_STRICT);
+      break;
+    case MethodRecognizer::kStringBaseLength:
+    case MethodRecognizer::kStringBaseIsEmpty:
+      // Depending on FLAG_support_externalizable_strings, treat string length
+      // loads as mutable so that the class check that precedes them will not be
+      // hoisted.  This is unsafe because string externalization can change the
+      // class.
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(MethodRecognizer::kStringBaseLength,
+                              dart::String::length_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid,
+                              !FLAG_support_externalizable_strings);
+      if (kind == MethodRecognizer::kStringBaseIsEmpty) {
+        body += IntConstant(0);
+        body += StrictCompare(Token::kEQ_STRICT);
+      }
+      break;
+    case MethodRecognizer::kGrowableArrayLength:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              GrowableObjectArray::length_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid);
+      break;
+    case MethodRecognizer::kObjectArrayLength:
+    case MethodRecognizer::kImmutableArrayLength:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              Array::length_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid,
+                              true);
+      break;
+    case MethodRecognizer::kTypedDataLength:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              TypedData::length_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid,
+                              true);
+      break;
+    case MethodRecognizer::kClassIDgetID:
+      body +=
+          LoadLocal(LookupVariable(dil_function->positional_parameters()[0]));
+      body += LoadClassId();
+      break;
+    case MethodRecognizer::kClassID_getCidArray:
+      body += IntConstant(kArrayCid);
+      break;
+    case MethodRecognizer::kClassID_getCidExternalOneByteString:
+      body += IntConstant(kExternalOneByteStringCid);
+      break;
+    case MethodRecognizer::kClassID_getCidGrowableObjectArray:
+      body += IntConstant(kGrowableObjectArrayCid);
+      break;
+    case MethodRecognizer::kClassID_getCidImmutableArray:
+      body += IntConstant(kImmutableArrayCid);
+      break;
+    case MethodRecognizer::kClassID_getCidOneByteString:
+      body += IntConstant(kOneByteStringCid);
+      break;
+    case MethodRecognizer::kClassID_getCidTwoByteString:
+      body += IntConstant(kTwoByteStringCid);
+      break;
+    case MethodRecognizer::kClassID_getCidBigint:
+      body += IntConstant(kBigintCid);
+      break;
+    case MethodRecognizer::kGrowableArrayCapacity:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadField(Array::data_offset(), kArrayCid);
+      body += LoadNativeField(MethodRecognizer::kObjectArrayLength,
+                              Array::length_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid);
+      break;
+    case MethodRecognizer::kObjectArrayAllocate:
+      body += LoadLocal(scopes_->type_arguments_variable);
+      body +=
+          LoadLocal(LookupVariable(dil_function->positional_parameters()[0]));
+      body += CreateArray();
+      break;
+    case MethodRecognizer::kBigint_getDigits:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              Bigint::digits_offset(),
+                              Object::dynamic_type(),
+                              kTypedDataUint32ArrayCid);
+      break;
+    case MethodRecognizer::kBigint_getUsed:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              Bigint::used_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid);
+      break;
+    case MethodRecognizer::kLinkedHashMap_getIndex:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              LinkedHashMap::index_offset(),
+                              Object::dynamic_type(),
+                              kDynamicCid);
+      break;
+    case MethodRecognizer::kLinkedHashMap_setIndex:
+      body += LoadLocal(scopes_->this_variable);
+      body +=
+          LoadLocal(LookupVariable(dil_function->positional_parameters()[0]));
+      body += StoreInstanceField(LinkedHashMap::index_offset());
+      body += NullConstant();
+      break;
+    case MethodRecognizer::kLinkedHashMap_getData:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              LinkedHashMap::data_offset(),
+                              Object::dynamic_type(),
+                              kArrayCid);
+      break;
+    case MethodRecognizer::kLinkedHashMap_setData:
+      body += LoadLocal(scopes_->this_variable);
+      body +=
+          LoadLocal(LookupVariable(dil_function->positional_parameters()[0]));
+      body += StoreInstanceField(LinkedHashMap::data_offset());
+      body += NullConstant();
+      break;
+    case MethodRecognizer::kLinkedHashMap_getHashMask:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              LinkedHashMap::hash_mask_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid);
+      break;
+    case MethodRecognizer::kLinkedHashMap_setHashMask:
+      body += LoadLocal(scopes_->this_variable);
+      body +=
+          LoadLocal(LookupVariable(dil_function->positional_parameters()[0]));
+      // TODO(kmillikin): This store does not need a store barrier.
+      body += StoreInstanceField(LinkedHashMap::hash_mask_offset());
+      body += NullConstant();
+      break;
+    case MethodRecognizer::kLinkedHashMap_getUsedData:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              LinkedHashMap::used_data_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid);
+      break;
+    case MethodRecognizer::kLinkedHashMap_setUsedData:
+      body += LoadLocal(scopes_->this_variable);
+      body +=
+          LoadLocal(LookupVariable(dil_function->positional_parameters()[0]));
+      // TODO(kmillikin): This store does not need a store barrier.
+      body += StoreInstanceField(LinkedHashMap::used_data_offset());
+      body += NullConstant();
+      break;
+    case MethodRecognizer::kLinkedHashMap_getDeletedKeys:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              LinkedHashMap::deleted_keys_offset(),
+                              Type::ZoneHandle(Z, Type::SmiType()),
+                              kSmiCid);
+      break;
+    case MethodRecognizer::kLinkedHashMap_setDeletedKeys:
+      body += LoadLocal(scopes_->this_variable);
+      body +=
+          LoadLocal(LookupVariable(dil_function->positional_parameters()[0]));
+      // TODO(kmillikin): This store does not need a store barrier.
+      body += StoreInstanceField(LinkedHashMap::deleted_keys_offset());
+      body += NullConstant();
+      break;
+    case MethodRecognizer::kBigint_getNeg:
+      body += LoadLocal(scopes_->this_variable);
+      body += LoadNativeField(kind,
+                              Bigint::neg_offset(),
+                              Type::ZoneHandle(Z, Type::BoolType()),
+                              kBoolCid);
+      break;
+    default: {
+      dart::String& name = dart::String::ZoneHandle(Z, function.native_name());
+      body += NativeCall(&name, &function);
+      break;
+    }
+  }
+  return body + Return();
 }
 
 
@@ -3598,8 +3844,10 @@ void DartTypeTranslator::VisitFunctionType(FunctionType* node) {
   Type& signature_type =
       Type::ZoneHandle(Z, signature_function.SignatureType());
 
-  signature_type ^= ClassFinalizer::FinalizeType(
-      *active_class_->klass, signature_type, ClassFinalizer::kCanonicalize);
+  if (finalize_) {
+    signature_type ^= ClassFinalizer::FinalizeType(
+        *active_class_->klass, signature_type, ClassFinalizer::kCanonicalize);
+  }
   signature_function.SetSignatureType(signature_type);
 
   result_ = signature_type.raw();
@@ -3665,6 +3913,7 @@ void DartTypeTranslator::VisitInterfaceType(InterfaceType* node) {
       H.LookupClassByDilClass(node->klass()));
 
   result_ = Type::New(klass, type_arguments, TokenPosition::kNoSource);
+  result_.SetIsResolved();
   if (finalize_) {
     result_ = ClassFinalizer::FinalizeType(
         klass, result_, ClassFinalizer::kCanonicalize);
@@ -3723,8 +3972,10 @@ const TypeArguments& DartTypeTranslator::TranslateInstantiatedTypeArguments(
   // (This can for example make the [type_arguments] vector larger)
   Type& type = Type::Handle(Z,
       Type::New(receiver_class, type_arguments, TokenPosition::kNoSource));
-  type ^= ClassFinalizer::FinalizeType(
-      *active_class_->klass, type, ClassFinalizer::kCanonicalizeWellFormed);
+  if (finalize_) {
+    type ^= ClassFinalizer::FinalizeType(
+        *active_class_->klass, type, ClassFinalizer::kCanonicalizeWellFormed);
+  }
 
   const TypeArguments& instantiated_type_arguments =
       TypeArguments::ZoneHandle(Z, type.arguments());

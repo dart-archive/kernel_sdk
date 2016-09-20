@@ -54,12 +54,13 @@ class Mapping {
 
 class DilReader {
  public:
-  DilReader(const uint8_t* buffer, intptr_t len)
+  DilReader(const uint8_t* buffer, intptr_t len, bool bootstrapping = false)
       : thread_(dart::Thread::Current()),
         zone_(thread_->zone()),
         isolate_(thread_->isolate()),
         translation_helper_(this, thread_, zone_, isolate_),
-        type_translator_(&translation_helper_, &active_class_),
+        type_translator_(&translation_helper_, &active_class_, !bootstrapping),
+        bootstrapping_(bootstrapping),
         buffer_(buffer),
         buffer_length_(len) {}
 
@@ -74,10 +75,11 @@ class DilReader {
                                       bool is_method,
                                       bool is_closure);
 
+  void ReadLibrary(Library* dil_library);
+
  private:
   friend class BuildingTranslationHelper;
 
-  void ReadLibrary(Library* dil_library);
   void ReadPreliminaryClass(dart::Class* klass, Class* dil_klass);
   void ReadClass(const dart::Library& library, Class* dil_klass);
   void ReadProcedure(const dart::Library& library,
@@ -106,6 +108,8 @@ class DilReader {
   ActiveClass active_class_;
   BuildingTranslationHelper translation_helper_;
   DartTypeTranslator type_translator_;
+
+  bool bootstrapping_;
 
   const uint8_t* buffer_;
   intptr_t buffer_length_;

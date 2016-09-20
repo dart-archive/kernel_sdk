@@ -117,7 +117,7 @@ static void CollectImmediateSuperInterfaces(
 // Processing ObjectStore::pending_classes_ occurs:
 // a) when bootstrap process completes (VerifyBootstrapClasses).
 // b) after the user classes are loaded (dart_api).
-bool ClassFinalizer::ProcessPendingClasses() {
+bool ClassFinalizer::ProcessPendingClasses(bool from_dilfile) {
   Thread* thread = Thread::Current();
   NOT_IN_PRODUCT(TimelineDurationScope tds(thread, Timeline::GetIsolateStream(),
                                            "ProcessPendingClasses"));
@@ -149,6 +149,10 @@ bool ClassFinalizer::ProcessPendingClasses() {
     for (intptr_t i = 0; i < class_array.Length(); i++) {
       cls ^= class_array.At(i);
       FinalizeTypesInClass(cls);
+      // Classes compiled from Dart sources are finalized more lazily, classes
+      // compiled from Kernel binaries can be finalized now (and should be,
+      // since we will not revisit them).
+      if (from_dilfile) FinalizeClass(cls);
     }
     if (FLAG_print_classes) {
       for (intptr_t i = 0; i < class_array.Length(); i++) {
@@ -187,7 +191,6 @@ void ClassFinalizer::CollectInterfaces(
 }
 
 
-#if defined(DART_NO_SNAPSHOT)
 void ClassFinalizer::VerifyBootstrapClasses() {
   if (FLAG_trace_class_finalization) {
     OS::Print("VerifyBootstrapClasses START.\n");
@@ -253,7 +256,6 @@ void ClassFinalizer::VerifyBootstrapClasses() {
   }
   Isolate::Current()->heap()->Verify();
 }
-#endif  // defined(DART_NO_SNAPSHOT).
 
 
 static bool IsLoaded(const Type& type) {
@@ -2454,8 +2456,20 @@ void ClassFinalizer::FinalizeTypesInClass(const Class& cls) {
     // if the class is being refinalized because a patch is being applied
     // after the class has been finalized then it is ok for the class to have
     // functions.
-    ASSERT((Array::Handle(cls.functions()).Length() == 0) ||
-           cls.is_refinalize_after_patch());
+    //
+    // TODO(kmillikin): This ASSERT will fail when bootstrapping from Kernel
+    // because classes are first created, methods are added, and then classes
+    // are finalized.  It is not easy to finalize classes earlier because not
+    // all bootstrap classes have been created yet.  It would be possible to
+    // create all classes, delay adding methods, finalize the classes, and then
+    // reprocess all classes to add methods, but that seems unnecessary.
+    // Marking the bootstrap classes as is_refinalize_after_patch seems cute but
+    // it causes other things to fail by violating their assumptions.  Reenable
+    // this ASSERT if it's important, remove it if it's just a sanity check and
+    // not required for correctness.
+    //
+    // ASSERT((Array::Handle(cls.functions()).Length() == 0) ||
+    //        cls.is_refinalize_after_patch());
   }
 }
 
@@ -2598,6 +2612,7 @@ void ClassFinalizer::AllocateEnumValues(const Class& enum_cls) {
 
 
 bool ClassFinalizer::IsSuperCycleFree(const Class& cls) {
+  if (cls.is_cycle_free()) return true;
   Class& test1 = Class::Handle(cls.raw());
   Class& test2 = Class::Handle(cls.SuperClass());
   // A finalized class has been checked for cycles.

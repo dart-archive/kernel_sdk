@@ -736,7 +736,6 @@ static Dart_Handle EnvironmentCallback(Dart_Handle name) {
   }                                                                            \
 
 
-// Returns true on success, false on failure.
 static Dart_Isolate CreateIsolateAndSetupHelper(const char* script_uri,
                                                 const char* main,
                                                 const char* package_root,
@@ -759,15 +758,33 @@ static Dart_Isolate CreateIsolateAndSetupHelper(const char* script_uri,
     return NULL;
   }
 
-  IsolateData* isolate_data = new IsolateData(script_uri,
-                                              package_root,
-                                              packages_config);
-  Dart_Isolate isolate = Dart_CreateIsolate(script_uri,
-                                            main,
-                                            isolate_snapshot_buffer,
-                                            flags,
-                                            isolate_data,
-                                            error);
+  // If the script is Dart Kernel IL, then we will try to bootstrap from the
+  // script.
+  const uint8_t* dil_file = NULL;
+  intptr_t dil_length = -1;
+  bool is_dilfile = false;
+  void* script_file = DartUtils::OpenFile(script_uri, false);
+  if (script_file != NULL) {
+    const uint8_t* buffer = NULL;
+    DartUtils::ReadFile(&buffer, &dil_length, script_file);
+    DartUtils::CloseFile(script_file);
+    if (dil_length > 0 && buffer != NULL) {
+      bool ignore;
+      dil_file = DartUtils::SniffForMagicNumber(buffer, &dil_length, &ignore,
+                                                &is_dilfile);
+      // If is_dilfile, then dil_file is backed by the same memory as buffer so
+      // we do not leak buffer in that case, provided we do not leak dil_file.
+      if (!is_dilfile) free(const_cast<uint8_t*>(buffer));
+    }
+  }
+
+  IsolateData* isolate_data =
+      new IsolateData(script_uri, package_root, packages_config);
+  Dart_Isolate isolate = is_dilfile
+      ? Dart_CreateIsolateFromKernel(script_uri, main, dil_file, dil_length,
+                                     flags, isolate_data, error)
+      : Dart_CreateIsolate(script_uri, main, isolate_snapshot_buffer, flags,
+                           isolate_data, error);
   if (isolate == NULL) {
     delete isolate_data;
     return NULL;
@@ -775,15 +792,19 @@ static Dart_Isolate CreateIsolateAndSetupHelper(const char* script_uri,
 
   Dart_EnterScope();
 
-  if (isolate_snapshot_buffer != NULL) {
+  // Set up the library tag handler for this isolate.
+  Dart_Handle result = Dart_SetLibraryTagHandler(Loader::LibraryTagHandler);
+  CHECK_RESULT(result);
+
+  if (is_dilfile) {
+    Builtin::LoadAndCheckLibrary(Builtin::kBuiltinLibrary);
+    Builtin::LoadAndCheckLibrary(Builtin::kIOLibrary);
+  }
+  if (is_dilfile || isolate_snapshot_buffer != NULL) {
     // Setup the native resolver as the snapshot does not carry it.
     Builtin::SetNativeResolver(Builtin::kBuiltinLibrary);
     Builtin::SetNativeResolver(Builtin::kIOLibrary);
   }
-
-  // Set up the library tag handler for this isolate.
-  Dart_Handle result = Dart_SetLibraryTagHandler(Loader::LibraryTagHandler);
-  CHECK_RESULT(result);
 
   if (Dart_IsServiceIsolate(isolate)) {
     // If this is the service isolate, load embedder specific bits and return.

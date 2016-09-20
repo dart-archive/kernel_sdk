@@ -1230,12 +1230,15 @@ static char* BuildIsolateName(const char* script_uri,
 }
 
 
-DART_EXPORT Dart_Isolate Dart_CreateIsolate(const char* script_uri,
-                                            const char* main,
-                                            const uint8_t* snapshot,
-                                            Dart_IsolateFlags* flags,
-                                            void* callback_data,
-                                            char** error) {
+static Dart_Isolate CreateIsolate(const char* script_uri,
+                                  const char* main,
+                                  const uint8_t* snapshot_buffer,
+                                  intptr_t snapshot_length,
+                                  bool from_dilfile,
+                                  Dart_IsolateFlags* flags,
+                                  void* callback_data,
+                                  char** error) {
+  ASSERT(!from_dilfile || (snapshot_buffer != NULL));
   CHECK_NO_ISOLATE(Isolate::Current());
   char* isolate_name = BuildIsolateName(script_uri, main);
 
@@ -1259,14 +1262,15 @@ DART_EXPORT Dart_Isolate Dart_CreateIsolate(const char* script_uri,
     // bootstrap library files which call out to a tag handler that may create
     // Api Handles when an error is encountered.
     Dart_EnterScope();
-    const Error& error_obj =
-        Error::Handle(Z, Dart::InitializeIsolate(snapshot, callback_data));
+    const Error& error_obj = Error::Handle(Z,
+        Dart::InitializeIsolate(snapshot_buffer, snapshot_length, from_dilfile,
+                                callback_data));
     if (error_obj.IsNull()) {
-  #if defined(DART_NO_SNAPSHOT) && !defined(PRODUCT)
-      if (FLAG_check_function_fingerprints) {
+#if defined(DART_NO_SNAPSHOT) && !defined(PRODUCT)
+      if (FLAG_check_function_fingerprints && !from_dilfile) {
         Library::CheckFunctionFingerprints();
       }
-  #endif  // defined(DART_NO_SNAPSHOT) && !defined(PRODUCT).
+#endif  // defined(DART_NO_SNAPSHOT) && !defined(PRODUCT).
       // We exit the API scope entered above.
       Dart_ExitScope();
       // A Thread structure has been associated to the thread, we do the
@@ -1283,6 +1287,29 @@ DART_EXPORT Dart_Isolate Dart_CreateIsolate(const char* script_uri,
   }
   Dart::ShutdownIsolate();
   return reinterpret_cast<Dart_Isolate>(NULL);
+}
+
+
+DART_EXPORT Dart_Isolate Dart_CreateIsolate(const char* script_uri,
+                                            const char* main,
+                                            const uint8_t* snapshot_buffer,
+                                            Dart_IsolateFlags* flags,
+                                            void* callback_data,
+                                            char** error) {
+  return CreateIsolate(script_uri, main, snapshot_buffer, -1, false, flags,
+                       callback_data, error);
+}
+
+
+DART_EXPORT Dart_Isolate Dart_CreateIsolateFromKernel(const char* script_uri,
+                                                      const char* main,
+                                                      const uint8_t* dil_file,
+                                                      intptr_t dil_length,
+                                                      Dart_IsolateFlags* flags,
+                                                      void* callback_data,
+                                                      char** error) {
+  return CreateIsolate(script_uri, main, dil_file, dil_length, true, flags,
+                       callback_data, error);
 }
 
 

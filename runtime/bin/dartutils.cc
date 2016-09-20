@@ -575,7 +575,7 @@ void FUNCTION_NAME(Builtin_LoadSource)(Dart_NativeArguments args) {
     if (is_snapshot) {
       result = Dart_LoadScriptFromSnapshot(payload, num_bytes);
     } else if (is_kernel) {
-      result = Dart_LoadDil(payload, num_bytes);
+      UNREACHABLE();
     } else {
       Dart_Handle source = Dart_NewStringFromUTF8(data, num_bytes);
       if (Dart_IsError(source)) {

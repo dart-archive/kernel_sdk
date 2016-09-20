@@ -85,7 +85,8 @@ class ActiveClass {
   // The current enclosing dil class (if available, otherwise NULL).
   Class* dil_class;
 
-  // The current enclosing class (or the library top-level class).
+  // The current enclosing class (or the library top-level class).  When this is
+  // a library's top-level class, the dil_class will be NULL.
   const dart::Class* klass;
 
   // The enclosing member (e.g., Constructor, Procedure, or Field) if there
@@ -176,7 +177,7 @@ class TranslationHelper {
                                  Heap::Space space = Heap::kNew);
   dart::String& DartString(String* content, Heap::Space space = Heap::kNew);
   const dart::String& DartSymbol(const char* content) const;
-  const dart::String& DartSymbol(String* content) const;
+  dart::String& DartSymbol(String* content) const;
 
   const dart::String& DartClassName(Class* dil_klass);
   const dart::String& DartConstructorName(Constructor* node);
@@ -626,6 +627,9 @@ class FlowGraphBuilder : public TreeVisitor {
   FlowGraph* BuildGraphOfNoSuchMethodDispatcher(const Function& function);
   FlowGraph* BuildGraphOfInvokeFieldDispatcher(const Function& function);
 
+  Fragment NativeFunctionBody(FunctionNode* dil_function,
+                              const Function& function);
+
   void SetupDefaultParameterValues(FunctionNode* function);
 
   TargetEntryInstr* BuildTargetEntry();
@@ -698,12 +702,20 @@ class FlowGraphBuilder : public TreeVisitor {
   Fragment ClosureCall(int argument_count, const Array& argument_names);
   Fragment ThrowException();
   Fragment RethrowException(int catch_try_index);
+  Fragment LoadClassId();
   Fragment LoadField(const dart::Field& field);
-  Fragment LoadField(intptr_t offset);
+  Fragment LoadField(intptr_t offset,
+                     intptr_t class_id = kDynamicCid);
+  Fragment LoadNativeField(MethodRecognizer::Kind kind,
+                           intptr_t offset,
+                           const Type& type,
+                           intptr_t class_id,
+                           bool is_immutable = false);
   Fragment LoadLocal(LocalVariable* variable);
   Fragment InitStaticField(const dart::Field& field);
   Fragment LoadStaticField();
   Fragment NullConstant();
+  Fragment NativeCall(const dart::String* name, const Function* function);
   Fragment PushArgument();
   Fragment Return();
   Fragment StaticCall(const Function& target, intptr_t argument_count);
