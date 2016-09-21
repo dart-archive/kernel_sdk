@@ -800,6 +800,3 @@ cyclic_type_test/03: Crash
 
 # runtime/vm/object.cc: 5070: error: expected: (index >= 0) && (index < Length())
 issue23244_test: Crash
-
-# runtime/vm/growable_array.h: 60: error: expected: 0 <= index
-vm/optimized_guarded_field_isolates_test: Crash

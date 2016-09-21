@@ -4763,7 +4763,6 @@ void FlowGraphBuilder::VisitRethrow(Rethrow* node) {
 
 void FlowGraphBuilder::VisitBlockExpression(BlockExpression* node) {
   Fragment instructions = TranslateStatement(node->body());
-  ASSERT(instructions.is_open());
   instructions += TranslateExpression(node->value());
   fragment_ = instructions;
 }
