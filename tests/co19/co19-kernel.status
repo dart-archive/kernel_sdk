@@ -714,3 +714,6 @@ LibTest/core/Invocation/positionalArguments_A01_t01: Crash
 
 # runtime/vm/dil_to_il.cc: 3900: error: unreachable code
 Language/Expressions/Constants/identifier_denotes_a_constant_t04: Crash
+
+# runtime/vm/growable_array.h: 60: error: expected: 0 <= index
+Language/Expressions/Spawning_an_Isolate/new_isolate_t01: Crash

@@ -752,7 +752,6 @@ stacktrace_rethrow_error_test/withtraceparameter: RuntimeError
 stacktrace_rethrow_nonerror_test: RuntimeError
 static_const_field_test: RuntimeError
 static_setter_get_test/01: RuntimeError
-string_interpolation7_test: RuntimeError
 super_call3_test/01: Crash
 super_call4_test: RuntimeError
 super_getter_setter_test: RuntimeError
@@ -801,3 +800,6 @@ cyclic_type_test/03: Crash
 
 # runtime/vm/object.cc: 5070: error: expected: (index >= 0) && (index < Length())
 issue23244_test: Crash
+
+# runtime/vm/growable_array.h: 60: error: expected: 0 <= index
+vm/optimized_guarded_field_isolates_test: Crash
