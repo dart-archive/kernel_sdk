@@ -855,6 +855,18 @@ Fragment operator<<(const Fragment& fragment, Instruction* next) {
 }
 
 
+RawInstance* TranslationHelper::Canonicalize(const Instance& instance) {
+  if (instance.IsNull()) return instance.raw();
+
+  const char* error_str = NULL;
+  RawInstance* result = instance.CheckAndCanonicalize(thread(), &error_str);
+  if (result == Object::null()) {
+    ReportError("Invalid const object %s", error_str);
+  }
+  return result;
+}
+
+
 const dart::String& TranslationHelper::DartString(const char* content,
                                                   Heap::Space space) {
   return dart::String::ZoneHandle(Z, dart::String::New(content, space));
@@ -1226,7 +1238,7 @@ Instance& ConstantEvaluator::EvaluateMapLiteral(MapLiteral* node) {
 void ConstantEvaluator::VisitBigintLiteral(BigintLiteral* node) {
   const dart::String& value = H.DartString(node->value());
   result_ = Integer::New(value, Heap::kOld);
-  result_ = Canonicalize(result_);
+  result_ = H.Canonicalize(result_);
 }
 
 
@@ -1237,13 +1249,13 @@ void ConstantEvaluator::VisitBoolLiteral(BoolLiteral* node) {
 
 void ConstantEvaluator::VisitDoubleLiteral(DoubleLiteral* node) {
   result_ = dart::Double::New(H.DartString(node->value()), Heap::kOld);
-  result_ = Canonicalize(result_);
+  result_ = H.Canonicalize(result_);
 }
 
 
 void ConstantEvaluator::VisitIntLiteral(IntLiteral* node) {
   result_ = dart::Integer::New(node->value(), Heap::kOld);
-  result_ = Canonicalize(result_);
+  result_ = H.Canonicalize(result_);
 }
 
 
@@ -1302,7 +1314,7 @@ RawObject* ConstantEvaluator::EvaluateConstConstructorCall(
     // The factory method returns the allocated object.
     instance ^= result.raw();
   }
-  return Canonicalize(instance);
+  return H.Canonicalize(instance);
 }
 
 
@@ -1336,7 +1348,7 @@ void ConstantEvaluator::VisitListLiteral(ListLiteral* node) {
     const_list.SetAt(i, expression);
   }
   const_list.MakeImmutable();
-  result_ = Canonicalize(const_list);
+  result_ = H.Canonicalize(const_list);
 }
 
 
@@ -1357,7 +1369,7 @@ void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
   }
 
   const_kv_array.MakeImmutable();
-  const_kv_array ^= Canonicalize(const_kv_array);
+  const_kv_array ^= H.Canonicalize(const_kv_array);
 
   const dart::Class& map_class = dart::Class::Handle(Z,
       dart::Library::LookupCoreClass(Symbols::ImmutableMap()));
@@ -1373,7 +1385,7 @@ void ConstantEvaluator::VisitMapLiteral(MapLiteral* node) {
   ASSERT(!result_.IsNull());
   result_.SetTypeArguments(type_arguments);
   result_.SetField(field, const_kv_array);
-  result_ = Canonicalize(result_);
+  result_ = H.Canonicalize(result_);
 }
 
 
@@ -1407,10 +1419,10 @@ void ConstantEvaluator::VisitConstructorInvocation(
   if (constructor.IsFactory()) {
     // Factories return the new object.
     result_ ^= result.raw();
-    result_ = Canonicalize(result_);
+    result_ = H.Canonicalize(result_);
   } else {
     ASSERT(!receiver->IsNull());
-    result_ = Canonicalize(*receiver);
+    result_ = H.Canonicalize(*receiver);
   }
 }
 
@@ -1441,7 +1453,7 @@ void ConstantEvaluator::VisitMethodInvocation(MethodInvocation* node) {
   // Run the method and canonicalize the result.
   const Object& result = RunFunction(function, dil_arguments, &receiver);
   result_ ^= result.raw();
-  result_ = Canonicalize(result_);
+  result_ = H.Canonicalize(result_);
 }
 
 
@@ -1455,7 +1467,7 @@ void ConstantEvaluator::VisitStaticGet(StaticGet* node) {
         field.StaticValue() == Object::transition_sentinel().raw()) {
       field.EvaluateInitializer();
       result_ = field.StaticValue();
-      result_ = Canonicalize(result_);
+      result_ = H.Canonicalize(result_);
       field.SetStaticValue(result_, true);
     } else {
       result_ = field.StaticValue();
@@ -1471,7 +1483,7 @@ void ConstantEvaluator::VisitStaticGet(StaticGet* node) {
           Function::ZoneHandle(Z, target.ImplicitClosureFunction());
       closure_function.set_dil_function(target.dil_function());
       result_ = closure_function.ImplicitStaticClosure();
-      result_ = Canonicalize(result_);
+      result_ = H.Canonicalize(result_);
     } else if (procedure->kind() == Procedure::kGetter) {
       UNIMPLEMENTED();
     } else {
@@ -1503,7 +1515,7 @@ void ConstantEvaluator::VisitStaticInvocation(StaticInvocation* node) {
   const Object& result =
       RunFunction(function, node->arguments(), NULL, type_arguments);
   result_ ^= result.raw();
-  result_ = Canonicalize(result_);
+  result_ = H.Canonicalize(result_);
 }
 
 
@@ -1519,7 +1531,7 @@ void ConstantEvaluator::VisitStringConcatenation(StringConcatenation* node) {
   }
   if (all_string) {
     result_ = dart::String::ConcatAll(strings, Heap::kOld);
-    result_ = Canonicalize(result_);
+    result_ = H.Canonicalize(result_);
   } else {
     // Get string interpolation function.
     const dart::Class& cls = dart::Class::Handle(
@@ -1536,7 +1548,7 @@ void ConstantEvaluator::VisitStringConcatenation(StringConcatenation* node) {
     // Run and canonicalize.
     const Object& result =
         RunFunction(func, interpolate_arg, Array::null_array());
-    result_ = Canonicalize(dart::String::Cast(result));
+    result_ = H.Canonicalize(dart::String::Cast(result));
   }
 }
 
@@ -1578,21 +1590,6 @@ void ConstantEvaluator::VisitNot(Not* node) {
   ASSERT(result_.IsBool());
   result_ = Bool::Cast(result_).value()
       ? Bool::False().raw() : Bool::True().raw();
-}
-
-
-RawInstance* ConstantEvaluator::Canonicalize(const Instance& instance) {
-  ASSERT(instance.IsInstance() || instance.IsNull());
-  if (instance.IsNull()) {
-    return instance.raw();
-  } else {
-    const char* error_str = NULL;
-    RawInstance* result = instance.CheckAndCanonicalize(H.thread(), &error_str);
-    if (result == Object::null()) {
-      H.ReportError("Invalid const object %s", error_str);
-    }
-    return result;
-  }
 }
 
 

@@ -36,19 +36,28 @@ class SimpleExpressionConverter : public ExpressionVisitor {
 
   virtual void VisitIntLiteral(IntLiteral* node) {
     is_simple_ = true;
-    simple_value_ = &dart::Integer::ZoneHandle(
-        Z, dart::Integer::New(node->value(), Heap::kOld));
+    simple_value_ = &Integer::ZoneHandle(
+        Z, Integer::New(node->value(), Heap::kOld));
+    *simple_value_ = H.Canonicalize(*simple_value_);
+  }
+
+  virtual void VisitBigintLiteral(BigintLiteral* node) {
+    is_simple_ = true;
+    simple_value_ = &Integer::ZoneHandle(
+        Z, Integer::New(H.DartString(node->value(), Heap::kOld)));
+    *simple_value_ = H.Canonicalize(*simple_value_);
   }
 
   virtual void VisitDoubleLiteral(DoubleLiteral* node) {
     is_simple_ = true;
     simple_value_ = &Double::ZoneHandle(
-        Z, dart::Double::New(H.DartString(node->value()), Heap::kOld));
+        Z, Double::New(H.DartString(node->value()), Heap::kOld));
+    *simple_value_ = H.Canonicalize(*simple_value_);
   }
 
   virtual void VisitBoolLiteral(BoolLiteral* node) {
     is_simple_ = true;
-    simple_value_ = &dart::Bool::Get(node->value());
+    simple_value_ = &Bool::Handle(Z, Bool::Get(node->value()).raw());
   }
 
   virtual void VisitNullLiteral(NullLiteral* node) {
@@ -72,7 +81,7 @@ class SimpleExpressionConverter : public ExpressionVisitor {
   TranslationHelper translation_helper_;
   dart::Zone* zone_;
   bool is_simple_;
-  const dart::Instance* simple_value_;
+  dart::Instance* simple_value_;
 };
 
 RawLibrary* BuildingTranslationHelper::LookupLibraryByDilLibrary(

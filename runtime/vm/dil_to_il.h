@@ -173,6 +173,8 @@ class TranslationHelper {
 
   Isolate* isolate() { return isolate_; }
 
+  RawInstance* Canonicalize(const Instance& instance);
+
   const dart::String& DartString(const char* content,
                                  Heap::Space space = Heap::kNew);
   dart::String& DartString(String* content, Heap::Space space = Heap::kNew);
@@ -353,8 +355,6 @@ class ConstantEvaluator : public ExpressionVisitor {
   virtual void VisitNot(Not* node);
 
  private:
-  RawInstance* Canonicalize(const Instance& instance);
-
   // This will translate type arguments form [dil_arguments].  If no type
   // arguments are passed and the [target] is a factory then the null type
   // argument array will be returned.
