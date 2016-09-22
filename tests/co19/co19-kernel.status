@@ -369,9 +369,6 @@ LibTest/core/Invocation/memberName_A01_t01: RuntimeError
 LibTest/core/Invocation/namedArguments_A01_t01: RuntimeError
 LibTest/core/Invocation/positionalArguments_A01_t01: RuntimeError
 
-# runtime/vm/dil_to_il.cc: 3900: error: unreachable code
-Language/Expressions/Constants/identifier_denotes_a_constant_t04: Crash
-
 # dartk: precompilation failures
 [ $compiler == dartkp && $runtime == dart_precompiled ]
 Language/Classes/Constructors/Generative_Constructors/execution_of_a_superinitializer_t01: RuntimeError
