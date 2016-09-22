@@ -352,7 +352,14 @@ String _qualifiedName(Declaration node) {
     className = parent.name.name + '.';
   }
   var name = (node as dynamic).name;
-  return className + (name != null ? name.name : '');
+  name = (name != null ? name.name : '');
+
+  var accessor = '';
+  if (node is MethodDeclaration) {
+    if (node.isGetter) accessor = 'get:';
+    else if (node.isSetter) accessor = 'set:';
+  }
+  return className + accessor + name;
 }
 
 bool _isPatch(AnnotatedNode node) => node.metadata.any(_isPatchAnnotation);
