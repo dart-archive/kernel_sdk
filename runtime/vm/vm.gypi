@@ -1249,6 +1249,7 @@
         'generate_core_library_patch',
         'generate_developer_library_patch',
         'generate_internal_library_patch',
+        'generate_io_library_patch',
         'generate_isolate_library_patch',
         'generate_math_library_patch',
         'generate_mirrors_library_patch',
@@ -1261,17 +1262,23 @@
           'inputs': [
             '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)dart<(EXECUTABLE_SUFFIX)',
             '<!@(["python", "../tools/list_files.py",' '"dart$",' '"sdk/lib"])',
+            '../../tools/patch_sdk.dart',
             # Unlike the other libraries in the SDK, dart:typed_data is not
             # implemented as a patch applied to the base SDK implementation.
             # Instead the VM has a complete replacement library and the
             # implementation in the SDK is ignored.
             '../lib/typed_data.dart',
+            # Unlike the other libraries in the SDK, dart:_builtin and
+            # dart:nativewrappers are only available for the Dart VM.
+            '../bin/builtin.dart',
+            '../bin/nativewrappers.dart',
             '<(gen_source_dir)/patches/async_patch.dart',
             '<(gen_source_dir)/patches/collection_patch.dart',
             '<(gen_source_dir)/patches/convert_patch.dart',
             '<(gen_source_dir)/patches/core_patch.dart',
             '<(gen_source_dir)/patches/developer_patch.dart',
             '<(gen_source_dir)/patches/internal_patch.dart',
+            '<(gen_source_dir)/patches/io_patch.dart',
             '<(gen_source_dir)/patches/isolate_patch.dart',
             '<(gen_source_dir)/patches/math_patch.dart',
             '<(gen_source_dir)/patches/mirrors_patch.dart',
@@ -1464,6 +1471,38 @@
       'toolsets': ['host'],
       'includes': [
         '../lib/internal_sources.gypi',
+      ],
+      'actions': [
+        {
+          'action_name': 'concatenate_<(library_name)_patches',
+          'inputs': [
+            '../tools/concatenate_patches.py',
+            '<@(_sources)',
+          ],
+          'outputs': [
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart'
+          ],
+          'action': [
+            'python',
+            'tools/concatenate_patches.py',
+            '--output',
+            '<(gen_source_dir)/patches/<(library_name)_patch.dart',
+            '<@(_sources)',
+          ],
+          'message': 'Generating <(library_uri) patch.',
+        },
+      ],
+    },
+    {
+      'variables': {
+        'library_name': 'io',
+        'library_uri': 'dart:io',
+      },
+      'target_name': 'generate_<(library_name)_library_patch',
+      'type': 'none',
+      'toolsets': ['host'],
+      'includes': [
+        '../bin/io_sources.gypi',
       ],
       'actions': [
         {

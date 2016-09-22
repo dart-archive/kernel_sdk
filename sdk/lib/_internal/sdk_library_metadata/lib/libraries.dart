@@ -50,6 +50,13 @@ const Map<String, LibraryInfo> libraries = const {
       documented: false,
       platforms: VM_PLATFORM),
 
+  "_builtin": const LibraryInfo(
+      "_builtin/_builtin.dart",
+      categories: "Client,Server",
+      implementation: true,
+      documented: false,
+      platforms: VM_PLATFORM),
+
   "_chrome": const LibraryInfo(
       "_chrome/dart2js/chrome_dart2js.dart",
       categories: "Client",
@@ -135,8 +142,8 @@ const Map<String, LibraryInfo> libraries = const {
       dart2jsPatchPath: "_internal/js_runtime/lib/mirrors_patch.dart"),
 
   "nativewrappers": const LibraryInfo(
-      "html/dartium/nativewrappers.dart",
-      categories: "Client",
+      "nativewrappers/nativewrappers.dart",
+      categories: "Client,Server",
       implementation: true,
       documented: false,
       platforms: VM_PLATFORM),

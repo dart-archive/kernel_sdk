@@ -214,6 +214,7 @@ instance_creation_in_function_annotation_test: RuntimeError
 invocation_mirror_test: RuntimeError
 is_not_class2_test: RuntimeError
 issue13474_test: RuntimeError
+issue23244_test: Crash
 issue_1751477_test: RuntimeError
 least_upper_bound_expansive_test/01: CompileTimeError
 least_upper_bound_expansive_test/02: CompileTimeError
@@ -322,8 +323,6 @@ not_enough_positional_arguments_test/01: CompileTimeError
 not_enough_positional_arguments_test/02: Crash
 not_enough_positional_arguments_test/05: Crash
 null_test/none: RuntimeError
-number_identifier_test/02: MissingCompileTimeError
-number_identifier_test/04: Crash
 number_identifier_test/05: RuntimeError
 positional_parameters_type_test/01: MissingRuntimeError
 positional_parameters_type_test/02: MissingRuntimeError
@@ -395,7 +394,6 @@ regress_16640_test: Crash
 cyclic_type_test/03: Crash
 
 # runtime/vm/object.cc: 5070: error: expected: (index >= 0) && (index < Length())
-issue23244_test: Crash
 
 # dartk: precompilation failures
 [ $compiler == dartkp && $runtime == dart_precompiled ]

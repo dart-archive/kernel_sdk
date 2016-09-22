@@ -3771,7 +3771,7 @@ class Library : public Object {
   static RawLibrary* GetLibrary(intptr_t index);
 
   static void InitCoreLibrary(Isolate* isolate);
-  static void InitNativeWrappersLibrary(Isolate* isolate);
+  static void InitNativeWrappersLibrary(Isolate* isolate, bool is_dilfile);
 
   static RawLibrary* AsyncLibrary();
   static RawLibrary* ConvertLibrary();

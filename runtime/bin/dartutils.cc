@@ -51,6 +51,30 @@ const char* const DartUtils::kVMServiceLibURL = "dart:vmservice";
 const uint8_t DartUtils::snapshot_magic_number[] = { 0xf5, 0xf5, 0xdc, 0xdc };
 static const uint8_t kernel_magic_number[] = { 0x90, 0xab, 0xcd, 0xef };
 
+bool TryReadDil(const char* script_uri,
+                const uint8_t** dil_file,
+                intptr_t* dil_length) {
+  *dil_file = NULL;
+  *dil_length = -1;
+  bool is_dilfile = false;
+  void* script_file = DartUtils::OpenFile(script_uri, false);
+  if (script_file != NULL) {
+    const uint8_t* buffer = NULL;
+    DartUtils::ReadFile(&buffer, dil_length, script_file);
+    DartUtils::CloseFile(script_file);
+    if (*dil_length > 0 && buffer != NULL) {
+      bool ignore;
+      *dil_file = DartUtils::SniffForMagicNumber(buffer, dil_length, &ignore,
+                                                 &is_dilfile);
+      // If is_dilfile, then dil_file is backed by the same memory as buffer so
+      // we do not leak buffer in that case, provided we do not leak dil_file.
+      if (!is_dilfile) {
+        free(const_cast<uint8_t*>(buffer));
+      }
+    }
+  }
+  return is_dilfile;
+}
 
 static bool IsWindowsHost() {
 #if defined(TARGET_OS_WINDOWS)

@@ -14,9 +14,11 @@ import 'package:analyzer/src/generated/sdk.dart';
 import 'package:path/path.dart' as path;
 
 void main(List<String> argv) {
+  var base = path.fromUri(Platform.script);
+  var dartDir = path.dirname(path.dirname(path.absolute(base)));
+
   if (argv.length != 4 ||
       !argv.isEmpty && argv.first != 'vm' && argv.first != 'ddc') {
-    var base = path.fromUri(Platform.script);
     var self = path.relative(base);
     print('Usage: $self MODE SDK_DIR PATCH_DIR OUTPUT_DIR');
     print('MODE must be one of ddc or vm.');
@@ -82,7 +84,7 @@ void main(List<String> argv) {
       // Instead, the VM provides a replacement implementation and ignores the
       // sources in the SDK.
       libraryIn =
-          path.join('..', 'runtime', 'lib', 'typed_data.dart');
+          path.join(dartDir, 'runtime', 'lib', 'typed_data.dart');
     } else if (mode == 'ddc' && library.path.contains(INTERNAL_PATH)) {
       libraryIn =
           path.join(privateIn, library.path.replaceAll(INTERNAL_PATH, ''));
@@ -150,6 +152,18 @@ void main(List<String> argv) {
           _writeSync(outPaths[i], contents[i]);
         }
       }
+    }
+  }
+  if (mode == 'vm') {
+    for (var tuple in [['nativewrappers', 'nativewrappers.dart'],
+                       ['_builtin', 'builtin.dart']]) {
+      var vmLibrary = tuple[0];
+      var dartFile = tuple[1];
+
+      // The "dart:_builtin" library is only available for the DartVM.
+      var builtinLibraryIn  = path.join(dartDir, 'runtime', 'bin', dartFile);
+      var builtinLibraryOut = path.join(sdkOut, vmLibrary, '${vmLibrary}.dart');
+      _writeSync(builtinLibraryOut, new File(builtinLibraryIn).readAsStringSync());
     }
   }
 }

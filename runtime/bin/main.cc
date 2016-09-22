@@ -762,21 +762,8 @@ static Dart_Isolate CreateIsolateAndSetupHelper(const char* script_uri,
   // script.
   const uint8_t* dil_file = NULL;
   intptr_t dil_length = -1;
-  bool is_dilfile = false;
-  void* script_file = DartUtils::OpenFile(script_uri, false);
-  if (script_file != NULL) {
-    const uint8_t* buffer = NULL;
-    DartUtils::ReadFile(&buffer, &dil_length, script_file);
-    DartUtils::CloseFile(script_file);
-    if (dil_length > 0 && buffer != NULL) {
-      bool ignore;
-      dil_file = DartUtils::SniffForMagicNumber(buffer, &dil_length, &ignore,
-                                                &is_dilfile);
-      // If is_dilfile, then dil_file is backed by the same memory as buffer so
-      // we do not leak buffer in that case, provided we do not leak dil_file.
-      if (!is_dilfile) free(const_cast<uint8_t*>(buffer));
-    }
-  }
+  bool is_dilfile = !run_app_snapshot &&
+                    TryReadDil(script_uri, &dil_file, &dil_length);
 
   IsolateData* isolate_data =
       new IsolateData(script_uri, package_root, packages_config);
@@ -785,6 +772,8 @@ static Dart_Isolate CreateIsolateAndSetupHelper(const char* script_uri,
                                      flags, isolate_data, error)
       : Dart_CreateIsolate(script_uri, main, isolate_snapshot_buffer, flags,
                            isolate_data, error);
+  if (is_dilfile) free(const_cast<uint8_t*>(dil_file));
+
   if (isolate == NULL) {
     delete isolate_data;
     return NULL;
@@ -797,8 +786,13 @@ static Dart_Isolate CreateIsolateAndSetupHelper(const char* script_uri,
   CHECK_RESULT(result);
 
   if (is_dilfile) {
-    Builtin::LoadAndCheckLibrary(Builtin::kBuiltinLibrary);
-    Builtin::LoadAndCheckLibrary(Builtin::kIOLibrary);
+    // TODO(kustermann): We should not read the dil file again!
+    if (!TryReadDil(script_uri, &dil_file, &dil_length)) {
+      FATAL("Failed to read dil second time");
+    }
+    Dart_Handle result = Dart_LoadDil(dil_file, dil_length);
+    free(const_cast<uint8_t*>(dil_file));
+    CHECK_RESULT(result);
   }
   if (is_dilfile || isolate_snapshot_buffer != NULL) {
     // Setup the native resolver as the snapshot does not carry it.
@@ -854,10 +848,12 @@ static Dart_Isolate CreateIsolateAndSetupHelper(const char* script_uri,
     Dart_Handle uri =
         DartUtils::ResolveScript(Dart_NewStringFromCString(script_uri));
     CHECK_RESULT(uri);
-    result = Loader::LibraryTagHandler(Dart_kScriptTag,
-                                       Dart_Null(),
-                                       uri);
-    CHECK_RESULT(result);
+    if (!is_dilfile) {
+      result = Loader::LibraryTagHandler(Dart_kScriptTag,
+                                         Dart_Null(),
+                                         uri);
+      CHECK_RESULT(result);
+    }
 
     Dart_TimelineEvent("LoadScript",
                        Dart_TimelineGetMicros(),

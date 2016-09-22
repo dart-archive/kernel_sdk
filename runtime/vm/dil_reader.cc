@@ -154,7 +154,14 @@ void DilReader::ReadLibrary(Library* dil_library) {
   dart::Library& library = LookupLibrary(dil_library);
   if (library.Loaded()) return;
 
-  library.SetLoadInProgress();
+  // The bootstrapper will take care of creating the native wrapper classes, but
+  // we will add the synthetic constructors to them here.
+  if (library.name() ==
+      Symbols::Symbol(Symbols::kDartNativeWrappersLibNameId).raw()) {
+    ASSERT(library.LoadInProgress());
+  } else {
+    library.SetLoadInProgress();
+  }
   // Setup toplevel class (which contains library fields/procedures).
 
   // FIXME(kustermann): Figure out why we need this script stuff here.

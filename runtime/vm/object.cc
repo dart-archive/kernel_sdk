@@ -1143,6 +1143,7 @@ RawError* Object::Init(Isolate* isolate, const uint8_t* dilfile,
   Thread* thread = Thread::Current();
   Zone* zone = thread->zone();
   ASSERT(isolate == thread->isolate());
+  bool is_dilfile = dilfile != NULL;
 NOT_IN_PRODUCT(
   TimelineDurationScope tds(thread,
                             Timeline::GetIsolateStream(),
@@ -1152,7 +1153,7 @@ NOT_IN_PRODUCT(
 #ifdef DART_NO_SNAPSHOT
   bool bootstrapping = true;
 #else
-  bool bootstrapping = dilfile != NULL;
+  bool bootstrapping = is_dilfile;
 #endif
 
   if (bootstrapping) {
@@ -1457,7 +1458,7 @@ NOT_IN_PRODUCT(
     // TODO(kmillikin): See if we can come up with a way that we don't need to
     // hardcode the number of type arguments---it can obviously break if the SDK
     // implementation changes.
-    cls.set_num_type_arguments(dilfile == NULL ? 2 : 4);
+    cls.set_num_type_arguments(is_dilfile ? 4 : 2);
     cls.set_num_own_type_arguments(0);
     RegisterPrivateClass(cls, Symbols::_LinkedHashMap(), lib);
     pending_classes.Add(cls);
@@ -1479,7 +1480,7 @@ NOT_IN_PRODUCT(
 
     // Setup some default native field classes which can be extended for
     // specifying native fields in dart classes.
-    Library::InitNativeWrappersLibrary(isolate);
+    Library::InitNativeWrappersLibrary(isolate, is_dilfile);
     ASSERT(object_store->native_wrappers_library() != Library::null());
 
     // Pre-register the typed_data library so the native class implementations
@@ -10521,7 +10522,7 @@ RawObject* Library::Evaluate(const String& expr,
 }
 
 
-void Library::InitNativeWrappersLibrary(Isolate* isolate) {
+void Library::InitNativeWrappersLibrary(Isolate* isolate, bool is_dilfile) {
   static const int kNumNativeWrappersClasses = 4;
   COMPILE_ASSERT((kNumNativeWrappersClasses > 0) &&
                  (kNumNativeWrappersClasses < 10));
@@ -10550,7 +10551,12 @@ void Library::InitNativeWrappersLibrary(Isolate* isolate) {
     cls_name = Symbols::New(thread, name_buffer);
     Class::NewNativeWrapper(native_flds_lib, cls_name, fld_cnt);
   }
-  native_flds_lib.SetLoaded();
+  // NOTE: If we bootstrap from a Kernel IR file we want to generate the
+  // synthetic constructors for the native wrapper classes.  We leave this up to
+  // the [DilReader] who will take care of it later.
+  if (!is_dilfile) {
+    native_flds_lib.SetLoaded();
+  }
 }
 
 

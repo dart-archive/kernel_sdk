@@ -33,6 +33,15 @@ static inline Dart_Handle ThrowIfError(Dart_Handle handle) {
   return handle;
 }
 
+// Tries to read [script_uri] as a Kernel IR file.  If successful this function
+// returns `true` and sets [dil_file] and [dil_length] to be the memory
+// contents.
+//
+// The caller is responsible for free()ing [dil_file] if `true` was returned.
+bool TryReadDil(const char* script_uri,
+                const uint8_t** dil_file,
+                intptr_t* dil_length);
+
 class CommandLineOptions {
  public:
   explicit CommandLineOptions(int max_count)
