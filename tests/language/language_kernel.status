@@ -338,11 +338,9 @@ regress_18435_test: Crash
 regress_18713_test: RuntimeError
 regress_22443_test: RuntimeError
 regress_22700_test: RuntimeError
-regress_22777_test: Crash
 regress_23089_test: Crash
 regress_23408_test: RuntimeError
 regress_25246_1_test: RuntimeError
-regress_26175_test: Crash
 regress_27164_test: CompileTimeError
 regress_r24720_test: RuntimeError
 reify_typevar_static_test/00: MissingCompileTimeError
@@ -408,25 +406,22 @@ accessor_conflict_import_prefixed2_test: RuntimeError
 accessor_conflict_import_prefixed_test: RuntimeError
 accessor_conflict_import_test: RuntimeError
 assertion_test: RuntimeError
-async_await_catch_regression_test: Crash
 async_await_test: Crash
 async_break_in_finally_test: RuntimeError
 async_control_structures_test: RuntimeError
-async_finally_rethrow_test: Crash
-async_rethrow_test: Crash
 async_star_cancel_and_throw_in_finally_test: RuntimeError
 async_star_cancel_while_paused_test: RuntimeError
 async_star_regression_fisk_test: Crash
 async_star_stream_take_test: Timeout
 async_star_take_reyield_test: Timeout
 async_star_test: Crash
-async_throw_in_catch_test/forceAwait: Crash
-async_throw_in_catch_test/none: Crash
-asyncstar_throw_in_catch_test: Crash
+async_throw_in_catch_test/forceAwait: RuntimeError
+async_throw_in_catch_test/none: RuntimeError
+asyncstar_throw_in_catch_test: Timeout
 asyncstar_yield_test: Timeout
 asyncstar_yieldstar_test: Timeout
-await_exceptions_test: Crash
-await_future_test: Crash
+await_exceptions_test: RuntimeError
+await_future_test: RuntimeError
 await_regression_test: RuntimeError
 bad_constructor_test/05: CompileTimeError
 bad_raw_string_negative_test: Fail
@@ -732,7 +727,6 @@ regress_18435_test: Crash
 regress_18535_test: Crash
 regress_18713_test: RuntimeError
 regress_22443_test: RuntimeError
-regress_22445_test: Crash
 regress_22700_test: RuntimeError
 regress_22777_test: Crash
 regress_23089_test: Crash
@@ -750,7 +744,6 @@ stack_trace_test: RuntimeError
 stacktrace_rethrow_error_test/none: RuntimeError
 stacktrace_rethrow_error_test/withtraceparameter: RuntimeError
 stacktrace_rethrow_nonerror_test: RuntimeError
-static_const_field_test: RuntimeError
 static_setter_get_test/01: RuntimeError
 super_call3_test/01: Crash
 super_call4_test: RuntimeError
@@ -769,7 +762,6 @@ super_operator_index8_test: RuntimeError
 super_test: RuntimeError
 switch7_negative_test: Fail
 switch_try_catch_test: RuntimeError
-sync_generator3_test/test1: Crash
 sync_generator3_test/test2: RuntimeError
 tearoff_basic_test: CompileTimeError
 tearoff_constructor_basic_test: CompileTimeError
@@ -797,6 +789,3 @@ vm/type_vm_test: RuntimeError
 # runtime/vm/object.cc: 2502: error: expected: num_type_arguments() == num_type_args
 regress_16640_test: Crash
 cyclic_type_test/03: Crash
-
-# runtime/vm/object.cc: 5070: error: expected: (index >= 0) && (index < Length())
-issue23244_test: Crash
