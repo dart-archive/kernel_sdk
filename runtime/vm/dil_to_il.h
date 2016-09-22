@@ -103,42 +103,41 @@ class ActiveClassScope {
   ActiveClassScope(ActiveClass* active_class,
                    Class* dil_class,
                    const dart::Class* klass)
-    : active_class_(active_class) {
-    saved_dil_class_ = active_class_->dil_class;
-    saved_klass_ = active_class_->klass;
-
+      : active_class_(active_class),
+        saved_(*active_class) {
     active_class_->dil_class = dil_class;
     active_class_->klass = klass;
+    active_class_->member = NULL;
+    active_class_->dil_function = NULL;
   }
 
   ~ActiveClassScope() {
-    active_class_->dil_class = saved_dil_class_;
-    active_class_->klass = saved_klass_;
+    *active_class_ = saved_;
   }
 
  private:
   ActiveClass* active_class_;
-  Class* saved_dil_class_;
-  const dart::Class* saved_klass_;
+  ActiveClass saved_;
 };
 
 
 class ActiveMemberScope {
  public:
-  ActiveMemberScope(ActiveClass* active_class,
-                    Member* member)
-    : active_class_(active_class) {
-    saved_member_ = active_class_->member;
+  ActiveMemberScope(ActiveClass* active_class, Member* member)
+      : active_class_(active_class),
+        saved_(*active_class) {
+    // The class and dil_class is inherited.
     active_class_->member = member;
+    active_class_->dil_function = NULL;
   }
 
   ~ActiveMemberScope() {
-    active_class_->member = saved_member_;
+    *active_class_ = saved_;
   }
 
  private:
   ActiveClass* active_class_;
-  Member* saved_member_;
+  ActiveClass saved_;
 };
 
 
@@ -146,18 +145,19 @@ class ActiveFunctionScope {
  public:
   ActiveFunctionScope(ActiveClass* active_class,
                       FunctionNode* dil_function)
-    : active_class_(active_class) {
-    saved_function_ = active_class_->dil_function;
+      : active_class_(active_class),
+        saved_(*active_class) {
+    // The class, dil_class, and member are inherited.
     active_class_->dil_function = dil_function;
   }
 
   ~ActiveFunctionScope() {
-    active_class_->dil_function = saved_function_;
+    *active_class_ = saved_;
   }
 
  private:
   ActiveClass* active_class_;
-  FunctionNode* saved_function_;
+  ActiveClass saved_;
 };
 
 

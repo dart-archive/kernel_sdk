@@ -2571,6 +2571,7 @@ void InterfaceType::WriteTo(Writer* writer) {
 FunctionType* FunctionType::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   FunctionType* type = new FunctionType();
+  TypeParameterScope<ReaderHelper> scope(reader->helper());
   type->type_parameters().ReadFrom(reader);
   type->required_parameter_count_ = reader->ReadUInt();
   type->positional_parameters().ReadFromStatic<DartType>(reader);
@@ -2600,6 +2601,7 @@ void FunctionType::WriteTo(Writer* writer) {
     positional_parameters_.WriteTo(writer);
     return_type_->WriteTo(writer);
   } else {
+    TypeParameterScope<WriterHelper> scope(writer->helper());
     writer->WriteTag(kFunctionType);
     type_parameters_.WriteTo(writer);
     writer->WriteUInt(required_parameter_count_);

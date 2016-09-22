@@ -711,6 +711,3 @@ LibTest/core/Invocation/isSetter_A01_t02: Crash
 LibTest/core/Invocation/memberName_A01_t01: RuntimeError
 LibTest/core/Invocation/namedArguments_A01_t01: Crash
 LibTest/core/Invocation/positionalArguments_A01_t01: Crash
-
-# runtime/vm/dil_to_il.cc: 3900: error: unreachable code
-Language/Expressions/Constants/identifier_denotes_a_constant_t04: Crash
