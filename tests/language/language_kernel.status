@@ -709,8 +709,6 @@ not_enough_positional_arguments_test/01: CompileTimeError
 not_enough_positional_arguments_test/02: MissingRuntimeError
 not_enough_positional_arguments_test/05: Crash
 null_test/none: RuntimeError
-number_identifier_test/02: MissingCompileTimeError
-number_identifier_test/04: Crash
 number_identifier_test/05: RuntimeError
 positional_parameters_type_test/01: MissingRuntimeError
 positional_parameters_type_test/02: MissingRuntimeError
