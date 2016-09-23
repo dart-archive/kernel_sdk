@@ -250,7 +250,6 @@ Language/Functions/External_Functions/not_connected_to_a_body_t01: RuntimeError
 Language/Functions/Formal_Parameters/syntax_t04: MissingCompileTimeError
 Language/Functions/Formal_Parameters/syntax_t05: MissingCompileTimeError
 Language/Functions/Formal_Parameters/syntax_t12: MissingCompileTimeError
-Language/Generics/malformed_t01: RuntimeError
 Language/Interfaces/Superinterfaces/Inheritance_and_Overriding/same_name_method_and_getter_t01: CompileTimeError
 Language/Interfaces/Superinterfaces/Inheritance_and_Overriding/same_name_method_and_getter_t02: CompileTimeError
 Language/Libraries_and_Scripts/Exports/invalid_uri_t02: Pass
@@ -564,7 +563,6 @@ Language/Functions/External_Functions/not_connected_to_a_body_t01: RuntimeError
 Language/Functions/Formal_Parameters/syntax_t04: MissingCompileTimeError
 Language/Functions/Formal_Parameters/syntax_t05: MissingCompileTimeError
 Language/Functions/Formal_Parameters/syntax_t12: MissingCompileTimeError
-Language/Generics/malformed_t01: RuntimeError
 Language/Interfaces/Superinterfaces/Inheritance_and_Overriding/same_name_method_and_getter_t01: CompileTimeError
 Language/Interfaces/Superinterfaces/Inheritance_and_Overriding/same_name_method_and_getter_t02: CompileTimeError
 Language/Libraries_and_Scripts/Exports/invalid_uri_t02: Pass
