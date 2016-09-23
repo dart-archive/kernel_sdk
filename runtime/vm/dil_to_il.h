@@ -348,6 +348,7 @@ class ConstantEvaluator : public ExpressionVisitor {
   virtual void VisitMethodInvocation(MethodInvocation* node);
   virtual void VisitStaticGet(StaticGet* node);
   virtual void VisitVariableGet(VariableGet* node);
+  virtual void VisitLet(Let* node);
   virtual void VisitStaticInvocation(StaticInvocation* node);
   virtual void VisitStringConcatenation(StringConcatenation* node);
   virtual void VisitConditionalExpression(ConditionalExpression* node);

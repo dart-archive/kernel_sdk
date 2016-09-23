@@ -1224,8 +1224,7 @@ class LogicalExpression : public Expression {
  public:
   enum Operator {
     kAnd,
-    kOr,
-    kIfNull
+    kOr
   };
 
   static LogicalExpression* ReadFrom(Reader* reader);

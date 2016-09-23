@@ -72,6 +72,13 @@ void ScopeBuilder::AddParameter(VariableDeclaration* declaration,
   LocalVariable* variable = MakeVariable(H.DartSymbol(declaration->name()));
   scope_->InsertParameterAt(pos, variable);
   result_->locals.Insert(declaration, variable);
+
+  // The default value may contain 'let' bindings for which the constant
+  // evaluator needs scope bindings.
+  Expression* defaultValue = declaration->initializer();
+  if (defaultValue != NULL) {
+    defaultValue->AcceptExpressionVisitor(this);
+  }
 }
 
 
@@ -1503,6 +1510,14 @@ void ConstantEvaluator::VisitVariableGet(VariableGet* node) {
 }
 
 
+void ConstantEvaluator::VisitLet(Let* node) {
+  VariableDeclaration* variable = node->variable();
+  LocalVariable* local = builder_->LookupVariable(variable);
+  local->SetConstValue(EvaluateExpression(variable->initializer()));
+  node->body()->AcceptExpressionVisitor(this);
+}
+
+
 void ConstantEvaluator::VisitStaticInvocation(StaticInvocation* node) {
   const Function& function = Function::ZoneHandle(Z,
       H.LookupStaticMethodByDilProcedure(node->procedure()));
@@ -1570,15 +1585,10 @@ void ConstantEvaluator::VisitLogicalExpression(LogicalExpression* node) {
     if (Bool::Cast(result_).value()) {
       EvaluateExpression(node->right());
     }
-  } else if (node->op() == LogicalExpression::kOr) {
+  } else {
+    ASSERT(node->op() == LogicalExpression::kOr);
     EvaluateExpression(node->left());
     if (!Bool::Cast(result_).value()) {
-      EvaluateExpression(node->right());
-    }
-  } else {
-    ASSERT(node->op() == LogicalExpression::kIfNull);
-    EvaluateExpression(node->left());
-    if (result_.IsNull()) {
       EvaluateExpression(node->right());
     }
   }
@@ -4528,69 +4538,40 @@ void FlowGraphBuilder::VisitConditionalExpression(ConditionalExpression* node) {
 
 
 void FlowGraphBuilder::VisitLogicalExpression(LogicalExpression* node) {
-  if (node->op() == LogicalExpression::kAnd ||
-      node->op() == LogicalExpression::kOr) {
-    bool negate;
-    Fragment instructions =
-        TranslateCondition(node->left(), &negate);
-    TargetEntryInstr* right_entry;
-    TargetEntryInstr* constant_entry;
+  bool negate;
+  Fragment instructions =
+      TranslateCondition(node->left(), &negate);
+  TargetEntryInstr* right_entry;
+  TargetEntryInstr* constant_entry;
 
-    if (node->op() == LogicalExpression::kAnd) {
-      instructions += BranchIfTrue(&right_entry, &constant_entry, negate);
-    } else {
-      instructions += BranchIfTrue(&constant_entry, &right_entry, negate);
-    }
-
-    Value* top = stack_;
-    Fragment right_fragment(right_entry);
-    right_fragment += TranslateCondition(node->right(), &negate);
-    right_fragment += Constant(Bool::True());
-    right_fragment += StrictCompare(
-        negate ? Token::kNE_STRICT : Token::kEQ_STRICT);
-    right_fragment += StoreLocal(parsed_function_->expression_temp_var());
-    right_fragment += Drop();
-
-    ASSERT(top == stack_);
-    Fragment constant_fragment(constant_entry);
-    constant_fragment +=
-        Constant(Bool::Get(node->op() == LogicalExpression::kOr));
-    constant_fragment += StoreLocal(parsed_function_->expression_temp_var());
-    constant_fragment += Drop();
-
-    JoinEntryInstr* join = BuildJoinEntry();
-    right_fragment += Goto(join);
-    constant_fragment += Goto(join);
-
-    fragment_ = Fragment(instructions.entry, join)
-        + LoadLocal(parsed_function_->expression_temp_var());
+  if (node->op() == LogicalExpression::kAnd) {
+    instructions += BranchIfTrue(&right_entry, &constant_entry, negate);
   } else {
-    ASSERT(node->op() == LogicalExpression::kIfNull);
-
-    TargetEntryInstr* null_entry;
-    TargetEntryInstr* nonnull_entry;
-    JoinEntryInstr* join = BuildJoinEntry();
-
-    // Evaluate `left` of `left ?? right` and compare it to null.
-    Fragment instructions = TranslateExpression(node->left());
-    instructions += StoreLocal(parsed_function_->expression_temp_var());
-    instructions += BranchIfNull(&null_entry, &nonnull_entry);
-
-    // If `left` was non-null we are done.
-    Fragment nonnull_fragment(nonnull_entry);
-    nonnull_fragment += Goto(join);
-
-    // If `left` was null we evaluate `right`.
-    Fragment null_fragment(null_entry);
-    null_fragment += TranslateExpression(node->right());
-    null_fragment += StoreLocal(parsed_function_->expression_temp_var());
-    null_fragment += Drop();
-    null_fragment += Goto(join);
-
-    fragment_ =
-        Fragment(instructions.entry, join) +
-        LoadLocal(parsed_function_->expression_temp_var());
+    instructions += BranchIfTrue(&constant_entry, &right_entry, negate);
   }
+
+  Value* top = stack_;
+  Fragment right_fragment(right_entry);
+  right_fragment += TranslateCondition(node->right(), &negate);
+  right_fragment += Constant(Bool::True());
+  right_fragment += StrictCompare(
+      negate ? Token::kNE_STRICT : Token::kEQ_STRICT);
+  right_fragment += StoreLocal(parsed_function_->expression_temp_var());
+  right_fragment += Drop();
+
+  ASSERT(top == stack_);
+  Fragment constant_fragment(constant_entry);
+  constant_fragment +=
+      Constant(Bool::Get(node->op() == LogicalExpression::kOr));
+  constant_fragment += StoreLocal(parsed_function_->expression_temp_var());
+  constant_fragment += Drop();
+
+  JoinEntryInstr* join = BuildJoinEntry();
+  right_fragment += Goto(join);
+  constant_fragment += Goto(join);
+
+  fragment_ = Fragment(instructions.entry, join)
+      + LoadLocal(parsed_function_->expression_temp_var());
 }
 
 

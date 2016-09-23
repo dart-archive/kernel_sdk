@@ -1701,7 +1701,6 @@ LogicalExpression* LogicalExpression::ReadFrom(Reader* reader) {
   expr->left_ = Expression::ReadFrom(reader);
   expr->operator_ = static_cast<Operator>(reader->ReadByte());
   expr->right_ = Expression::ReadFrom(reader);
-  reader->ReadOptional<DartType>();  // Unused static type.
   return expr;
 }
 
@@ -1711,7 +1710,6 @@ void LogicalExpression::WriteTo(Writer* writer) {
   left_->WriteTo(writer);
   writer->WriteByte(operator_);
   right_->WriteTo(writer);
-  writer->WriteOptional<DartType>(NULL);  // Unused static type.
 }
 
 ConditionalExpression* ConditionalExpression::ReadFrom(Reader* reader) {
