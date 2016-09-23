@@ -718,7 +718,6 @@ private_mixin2_test: RuntimeError
 redirecting_constructor_initializer_test: RuntimeError
 redirecting_factory_default_values_test/none: RuntimeError
 redirecting_factory_reflection_test: Crash
-regress_18435_test: Crash
 regress_18535_test: Crash
 regress_18713_test: RuntimeError
 regress_22443_test: RuntimeError
@@ -780,7 +779,6 @@ vm/debug_break_enabled_vm_test/none: CompileTimeError
 vm/reflect_core_vm_test: CompileTimeError
 vm/type_cast_vm_test: RuntimeError
 vm/type_vm_test: RuntimeError
-yieldstar_pause_test: Crash
 
 # runtime/vm/object.cc: 2502: error: expected: num_type_arguments() == num_type_args
 regress_16640_test: Crash
