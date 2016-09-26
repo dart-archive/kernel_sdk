@@ -729,7 +729,6 @@ regress_25246_1_test: RuntimeError
 regress_26175_test: Crash
 regress_27164_test: CompileTimeError
 regress_r24720_test: RuntimeError
-reify_typevar_static_test/00: MissingCompileTimeError
 reify_typevar_test: RuntimeError
 script1_negative_test: Fail
 script2_negative_test: Fail
@@ -766,11 +765,7 @@ try_finally_regress_25654_test: RuntimeError
 type_checks_in_factory_method_test: RuntimeError
 type_parameter_literal_test: RuntimeError
 type_parameter_test/04: Crash
-type_parameter_test/05: Crash
 type_variable_conflict2_test/02: MissingCompileTimeError
-type_variable_conflict2_test/06: MissingCompileTimeError
-type_variable_conflict2_test/08: MissingCompileTimeError
-type_variable_conflict2_test/10: MissingCompileTimeError
 type_variable_field_initializer_closure2_test: Crash
 type_variable_field_initializer_closure_test: Crash
 type_variable_function_type_test: RuntimeError
