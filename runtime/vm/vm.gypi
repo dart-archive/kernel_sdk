@@ -1272,6 +1272,9 @@
             # dart:nativewrappers are only available for the Dart VM.
             '../bin/builtin.dart',
             '../bin/nativewrappers.dart',
+            '../bin/vmservice/vmservice_io.dart',
+            '../bin/vmservice/loader.dart',
+            '../bin/vmservice/server.dart',
             '<(gen_source_dir)/patches/async_patch.dart',
             '<(gen_source_dir)/patches/collection_patch.dart',
             '<(gen_source_dir)/patches/convert_patch.dart',

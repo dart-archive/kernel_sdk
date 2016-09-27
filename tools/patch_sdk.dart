@@ -165,6 +165,12 @@ void main(List<String> argv) {
       var builtinLibraryOut = path.join(sdkOut, vmLibrary, '${vmLibrary}.dart');
       _writeSync(builtinLibraryOut, new File(builtinLibraryIn).readAsStringSync());
     }
+
+    for (var file in ['loader.dart', 'server.dart', 'vmservice_io.dart']) {
+      var libraryIn  = path.join(dartDir, 'runtime', 'bin', 'vmservice', file);
+      var libraryOut = path.join(sdkOut, 'vmservice_io', file);
+      _writeSync(libraryOut, new File(libraryIn).readAsStringSync());
+    }
   }
 }
 

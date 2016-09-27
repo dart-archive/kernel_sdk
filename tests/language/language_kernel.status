@@ -209,7 +209,6 @@ initializing_formal_access_test: CompileTimeError
 initializing_formal_capture_test: CompileTimeError
 initializing_formal_final_test: CompileTimeError
 initializing_formal_type_test: CompileTimeError
-inline_super_field_test: RuntimeError
 instance_creation_in_function_annotation_test: RuntimeError
 invocation_mirror_test: RuntimeError
 is_not_class2_test: RuntimeError
@@ -240,12 +239,6 @@ map_literal4_test: RuntimeError
 map_literal6_test: RuntimeError
 metadata_test: CompileTimeError
 method_override_test: RuntimeError
-mixin_extends_field_test: RuntimeError
-mixin_field_initializer_test: RuntimeError
-mixin_field_test: RuntimeError
-mixin_forwarding_constructor1_test: RuntimeError
-mixin_forwarding_constructor2_test: RuntimeError
-mixin_forwarding_constructor3_test: RuntimeError
 mixin_generic_test: RuntimeError
 mixin_illegal_super_use_test/01: MissingCompileTimeError
 mixin_illegal_super_use_test/02: MissingCompileTimeError
@@ -290,7 +283,6 @@ mixin_illegal_superclass_test/29: MissingCompileTimeError
 mixin_illegal_superclass_test/30: MissingCompileTimeError
 mixin_illegal_syntax_test/13: CompileTimeError
 mixin_illegal_syntax_test/none: CompileTimeError
-mixin_lib_extends_field_test: RuntimeError
 mixin_mixin2_test: RuntimeError
 mixin_mixin3_test: RuntimeError
 mixin_mixin4_test: RuntimeError
@@ -298,11 +290,6 @@ mixin_mixin5_test: RuntimeError
 mixin_mixin_bound2_test: RuntimeError
 mixin_mixin_bound_test: RuntimeError
 mixin_regress_13688_test: RuntimeError
-mixin_super_constructor2_test: RuntimeError
-mixin_super_constructor_default_test: RuntimeError
-mixin_super_constructor_named_test/none: RuntimeError
-mixin_super_constructor_positionals_test/none: RuntimeError
-mixin_super_constructor_test: RuntimeError
 mixin_super_test: RuntimeError
 mixin_type_parameters_mixin_extends_test: RuntimeError
 mixin_type_parameters_simple_test: RuntimeError
@@ -329,7 +316,6 @@ positional_parameters_type_test/02: MissingRuntimeError
 prefix10_negative_test: Fail
 prefix16_test: RuntimeError
 prefix21_test: RuntimeError
-private_mixin2_test: RuntimeError
 redirecting_constructor_initializer_test: RuntimeError
 redirecting_factory_default_values_test/none: RuntimeError
 redirecting_factory_reflection_test: RuntimeError
@@ -338,7 +324,7 @@ regress_22443_test: RuntimeError
 regress_22700_test: RuntimeError
 regress_23089_test: Crash
 regress_23408_test: RuntimeError
-regress_25246_1_test: RuntimeError
+regress_25246_1_test: Crash
 regress_27164_test: CompileTimeError
 regress_r24720_test: RuntimeError
 reify_typevar_static_test/00: MissingCompileTimeError
@@ -384,6 +370,7 @@ type_variable_field_initializer_closure_test: Crash
 type_variable_function_type_test: RuntimeError
 vm/debug_break_enabled_vm_test/01: CompileTimeError
 vm/debug_break_enabled_vm_test/none: CompileTimeError
+vm/optimized_guarded_field_isolates_test: Crash
 vm/reflect_core_vm_test: CompileTimeError
 vm/type_cast_vm_test: RuntimeError
 vm/type_vm_test: RuntimeError
@@ -591,7 +578,6 @@ initializing_formal_access_test: CompileTimeError
 initializing_formal_capture_test: CompileTimeError
 initializing_formal_final_test: CompileTimeError
 initializing_formal_type_test: CompileTimeError
-inline_super_field_test: RuntimeError
 instance_creation_in_function_annotation_test: Crash
 invocation_mirror_invoke_on2_test: Crash
 invocation_mirror_test: Crash
@@ -625,12 +611,6 @@ map_literal4_test: RuntimeError
 map_literal6_test: RuntimeError
 metadata_test: CompileTimeError
 method_override_test: RuntimeError
-mixin_extends_field_test: RuntimeError
-mixin_field_initializer_test: RuntimeError
-mixin_field_test: RuntimeError
-mixin_forwarding_constructor1_test: RuntimeError
-mixin_forwarding_constructor2_test: RuntimeError
-mixin_forwarding_constructor3_test: RuntimeError
 mixin_generic_test: RuntimeError
 mixin_illegal_super_use_test/01: MissingCompileTimeError
 mixin_illegal_super_use_test/02: MissingCompileTimeError
@@ -675,7 +655,6 @@ mixin_illegal_superclass_test/29: MissingCompileTimeError
 mixin_illegal_superclass_test/30: MissingCompileTimeError
 mixin_illegal_syntax_test/13: CompileTimeError
 mixin_illegal_syntax_test/none: CompileTimeError
-mixin_lib_extends_field_test: RuntimeError
 mixin_mixin2_test: RuntimeError
 mixin_mixin3_test: RuntimeError
 mixin_mixin4_test: RuntimeError
@@ -683,11 +662,6 @@ mixin_mixin5_test: RuntimeError
 mixin_mixin_bound2_test: RuntimeError
 mixin_mixin_bound_test: RuntimeError
 mixin_regress_13688_test: RuntimeError
-mixin_super_constructor2_test: RuntimeError
-mixin_super_constructor_default_test: RuntimeError
-mixin_super_constructor_named_test/none: RuntimeError
-mixin_super_constructor_positionals_test/none: RuntimeError
-mixin_super_constructor_test: RuntimeError
 mixin_super_test: RuntimeError
 mixin_type_parameters_mixin_extends_test: RuntimeError
 mixin_type_parameters_simple_test: RuntimeError
@@ -714,7 +688,6 @@ positional_parameters_type_test/02: MissingRuntimeError
 prefix10_negative_test: Fail
 prefix16_test: RuntimeError
 prefix21_test: RuntimeError
-private_mixin2_test: RuntimeError
 redirecting_constructor_initializer_test: RuntimeError
 redirecting_factory_default_values_test/none: RuntimeError
 redirecting_factory_reflection_test: Crash
@@ -725,7 +698,7 @@ regress_22700_test: RuntimeError
 regress_22777_test: Crash
 regress_23089_test: Crash
 regress_23408_test: RuntimeError
-regress_25246_1_test: RuntimeError
+regress_25246_1_test: Crash
 regress_26175_test: Crash
 regress_27164_test: CompileTimeError
 regress_r24720_test: RuntimeError
@@ -771,6 +744,7 @@ type_variable_field_initializer_closure_test: Crash
 type_variable_function_type_test: RuntimeError
 vm/debug_break_enabled_vm_test/01: CompileTimeError
 vm/debug_break_enabled_vm_test/none: CompileTimeError
+vm/optimized_guarded_field_isolates_test: Crash
 vm/reflect_core_vm_test: CompileTimeError
 vm/type_cast_vm_test: RuntimeError
 vm/type_vm_test: RuntimeError

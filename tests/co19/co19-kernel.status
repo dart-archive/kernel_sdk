@@ -244,6 +244,7 @@ Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_cl
 Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_closurization_t08: CompileTimeError
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t01: RuntimeError
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t02: RuntimeError
+Language/Expressions/Spawning_an_Isolate/new_isolate_t01: Crash
 Language/Expressions/Strings/adjacent_strings_t02: RuntimeError
 Language/Expressions/Type_Test/evaluation_t10: RuntimeError
 Language/Functions/External_Functions/not_connected_to_a_body_t01: RuntimeError
@@ -308,8 +309,6 @@ Language/Libraries_and_Scripts/top_level_syntax_t18: MissingCompileTimeError
 Language/Libraries_and_Scripts/top_level_syntax_t19: MissingCompileTimeError
 Language/Mixins/Mixin_Application/error_t01: MissingCompileTimeError
 Language/Mixins/Mixin_Application/error_t02: MissingCompileTimeError
-Language/Mixins/Mixin_Application/initializers_t02: RuntimeError
-Language/Mixins/Mixin_Application/initializers_t03: RuntimeError
 Language/Mixins/Mixin_Application/syntax_t16: Crash
 Language/Statements/Break/label_t03: MissingCompileTimeError
 Language/Statements/Break/label_t04: MissingCompileTimeError
@@ -556,6 +555,7 @@ Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_cl
 Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_closurization_t08: CompileTimeError
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t01: RuntimeError
 Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t02: RuntimeError
+Language/Expressions/Spawning_an_Isolate/new_isolate_t01: Crash
 Language/Expressions/Type_Test/evaluation_t10: RuntimeError
 Language/Expressions/Unary_Expressions/syntax_t10: Crash
 Language/Functions/External_Functions/not_connected_to_a_body_t01: RuntimeError
@@ -618,8 +618,6 @@ Language/Libraries_and_Scripts/top_level_syntax_t16: MissingCompileTimeError
 Language/Libraries_and_Scripts/top_level_syntax_t17: MissingCompileTimeError
 Language/Libraries_and_Scripts/top_level_syntax_t18: MissingCompileTimeError
 Language/Libraries_and_Scripts/top_level_syntax_t19: MissingCompileTimeError
-Language/Mixins/Mixin_Application/initializers_t02: RuntimeError
-Language/Mixins/Mixin_Application/initializers_t03: RuntimeError
 Language/Statements/Break/label_t03: MissingCompileTimeError
 Language/Statements/Break/label_t04: MissingCompileTimeError
 Language/Statements/Continue/label_t07: MissingCompileTimeError

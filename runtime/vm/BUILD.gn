@@ -349,6 +349,9 @@ group("patched_sdk") {
       "../lib/typed_data.dart",
       "../bin/builtin.dart",
       "../bin/nativewrappers.dart",
+      "../bin/vmservice/vmservice_io.dart",
+      "../bin/vmservice/loader.dart",
+      "../bin/vmservice/server.dart",
     ]
     # Add all the normal sdk sources.
     inputs += shared_sdk_sources

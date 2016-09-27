@@ -262,6 +262,12 @@ const Map<String, LibraryInfo> libraries = const {
       implementation: true,
       documented: false,
       platforms: VM_PLATFORM),
+
+  "vmservice_io": const LibraryInfo(
+      "vmservice_io/vmservice_io.dart",
+      implementation: true,
+      documented: false,
+      platforms: VM_PLATFORM),
 };
 
 /**
