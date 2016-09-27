@@ -500,21 +500,6 @@ static Dart_Handle LoadSnapshotCreationScript(const char* script_name) {
   intptr_t data_len;
   DartUtils::ReadFile(&data, &data_len, file);
   DartUtils::CloseFile(file);
-
-  intptr_t payload_bytes = data_len;
-  bool is_snapshot, is_dilfile;
-  const uint8_t* payload = DartUtils::SniffForMagicNumber(
-      data, &payload_bytes, &is_snapshot, &is_dilfile);
-
-  if (is_dilfile) {
-    Dart_Handle library = Dart_LoadDil(payload, payload_bytes);
-    free(const_cast<uint8_t*>(data));
-    return library;
-  } else if (is_snapshot) {
-    FATAL1("Cannot use a snapshot from %s to generate a snapshot\n",
-        script_name);
-  }
-
   Dart_Handle source = Dart_NewStringFromUTF8(data, data_len);
   free(const_cast<uint8_t*>(data));
   if (Dart_IsError(source)) {
@@ -1335,8 +1320,15 @@ int main(int argc, char** argv) {
     // Now we create an isolate into which we load all the code that needs to
     // be in the snapshot.
     isolate_data = new IsolateData(NULL, NULL, NULL);
-    if (Dart_CreateIsolate(
-            NULL, NULL, NULL, NULL, isolate_data, &error) == NULL) {
+
+    intptr_t payload_bytes = 0;
+    const uint8_t* payload = NULL;
+    bool is_dilfile = TryReadDil(app_script_name, &payload, &payload_bytes);
+    Dart_Isolate isolate = is_dilfile
+        ? Dart_CreateIsolateFromKernel(
+            NULL, NULL, payload, payload_bytes, NULL, isolate_data, &error)
+        : Dart_CreateIsolate(NULL, NULL, NULL, NULL, isolate_data, &error);
+    if (isolate == NULL) {
       fprintf(stderr, "%s", error);
       free(error);
       exit(255);
@@ -1345,21 +1337,29 @@ int main(int argc, char** argv) {
     result = Dart_SetEnvironmentCallback(EnvironmentCallback);
     CHECK_RESULT(result);
 
-    // Set up the library tag handler in such a manner that it will use the
-    // URL mapping specified on the command line to load the libraries.
-    result = Dart_SetLibraryTagHandler(CreateSnapshotLibraryTagHandler);
-    CHECK_RESULT(result);
-
     Dart_QualifiedFunctionName* entry_points =
         ParseEntryPointsManifestIfPresent();
 
-    SetupStubNativeResolversForPrecompilation(entry_points);
+    if (is_dilfile) {
+      Dart_Handle library = Dart_LoadDil(payload, payload_bytes);
+      free(const_cast<uint8_t*>(payload));
+      if (Dart_IsError(library)) FATAL("Failed to load app from Kernel IR");
 
-    // Load the specified script.
-    library = LoadSnapshotCreationScript(app_script_name);
-    VerifyLoaded(library);
+      SetupStubNativeResolversForPrecompilation(entry_points);
+    } else {
+      // Set up the library tag handler in such a manner that it will use the
+      // URL mapping specified on the command line to load the libraries.
+      result = Dart_SetLibraryTagHandler(CreateSnapshotLibraryTagHandler);
+      CHECK_RESULT(result);
 
-    ImportNativeEntryPointLibrariesIntoRoot(entry_points);
+      SetupStubNativeResolversForPrecompilation(entry_points);
+
+      // Load the specified script.
+      library = LoadSnapshotCreationScript(app_script_name);
+      VerifyLoaded(library);
+
+      ImportNativeEntryPointLibrariesIntoRoot(entry_points);
+    }
 
     // Ensure that we mark all libraries as loaded.
     result = Dart_FinalizeLoading(false);
@@ -1372,7 +1372,6 @@ int main(int argc, char** argv) {
     }
 
     CleanupEntryPointsCollection(entry_points);
-
     Dart_EnterIsolate(UriResolverIsolateScope::isolate);
     Dart_ShutdownIsolate();
   } else {
