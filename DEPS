@@ -58,7 +58,6 @@ vars = {
   "dartdoc_tag" : "@v0.9.7+3",
   "fixnum_tag": "@0.10.5",
   "kernel_rev": "@b06208ab881566280b3796c5ab87f870f5108cda",
-  "rasta_rev": "@9bf6b08dd2ff4e34b469ce025bb5be55edd1fe71",
   "func_tag": "@0.1.0",
   "glob_tag": "@1.1.3",
   "html_tag" : "@0.13.0",
@@ -205,8 +204,6 @@ deps = {
       (Var("github_mirror") % "dartdoc") + Var("dartdoc_tag"),
   Var("dart_root") + "/third_party/kernel":
       ("https://github.com/dart-lang/kernel.git") + Var("kernel_rev"),
-  Var("dart_root") + "/third_party/rasta":
-      ("https://github.com/dart-lang/rasta.git") + Var("rasta_rev"),
   Var("dart_root") + "/third_party/pkg/func":
       (Var("github_dartlang") % "func") + Var("func_tag"),
   Var("dart_root") + "/third_party/pkg/fixnum":
@@ -494,15 +491,6 @@ hooks = [
   {
     "pattern": ".",
     "action": ["python", Var("dart_root") + "/tools/gyp_dart.py"],
-  },
-  {
-    'name': 'sync_rasta_submodules',
-    'pattern': '.',
-    'action': [
-      'python',
-      Var('dart_root') + '/tools/git_submodules_sync.py',
-      Var('dart_root') + '/third_party/rasta',
-    ],
   },
   {
     'name': 'run_pub_get',
