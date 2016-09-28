@@ -744,7 +744,6 @@ type_variable_field_initializer_closure_test: Crash
 type_variable_function_type_test: RuntimeError
 vm/debug_break_enabled_vm_test/01: CompileTimeError
 vm/debug_break_enabled_vm_test/none: CompileTimeError
-vm/optimized_guarded_field_isolates_test: Crash
 vm/reflect_core_vm_test: CompileTimeError
 vm/type_cast_vm_test: RuntimeError
 vm/type_vm_test: RuntimeError

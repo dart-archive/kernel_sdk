@@ -573,7 +573,7 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
   intptr_t pos = 0;
   if (is_method) {
     ASSERT(!klass.IsNull());
-    function.SetParameterTypeAt(pos, T.ReceiverType(klass));
+    function.SetParameterTypeAt(pos, H.GetCanonicalType(klass));
     function.SetParameterNameAt(pos, Symbols::This());
     pos++;
   } else if (is_closure) {
