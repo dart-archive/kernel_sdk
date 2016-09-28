@@ -264,6 +264,21 @@ ScopeBuildingResult* ScopeBuilder::BuildScopes() {
         LocalVariable* variable = MakeVariable(Symbols::This(), klass_type);
         scope_->InsertParameterAt(pos++, variable);
         result_->this_variable = variable;
+
+        // We visit instance field initializers because they might contain
+        // [Let] expressions and we need to have a mapping.
+        if (node_->IsConstructor()) {
+          Class* klass = Class::Cast(Constructor::Cast(node_)->parent());
+
+          for (intptr_t i = 0; i < klass->fields().length(); i++) {
+            Field* field = klass->fields()[i];
+            if (!field->IsStatic() && (field->initializer() != NULL)) {
+              EnterScope(field);
+              field->initializer()->AcceptExpressionVisitor(this);
+              ExitScope();
+            }
+          }
+        }
       } else if (function.IsFactory()) {
         LocalVariable* variable = MakeVariable(
             Symbols::TypeArgumentsParameter(), AbstractType::dynamic_type());
@@ -3591,10 +3606,12 @@ Fragment FlowGraphBuilder::TranslateInitializers(
       dart::Field& field =
           dart::Field::ZoneHandle(Z, H.LookupFieldByDilField(dil_field));
 
+      EnterScope(dil_field);
       // TODO(kustermann): Support FLAG_use_field_guards.
       instructions += LoadLocal(scopes_->this_variable);
       instructions += TranslateExpression(init);
       instructions += StoreInstanceField(field);
+      ExitScope(dil_field);
     }
   }
 
