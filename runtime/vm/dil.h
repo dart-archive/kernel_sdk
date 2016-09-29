@@ -298,6 +298,30 @@ class StringTable {
   List<String> strings_;
 };
 
+class LineStartingTable {
+ public:
+  void ReadFrom(Reader* reader, intptr_t length);
+  void WriteTo(Writer* writer);
+  ~LineStartingTable() {
+    for (intptr_t i = 0; i < size_; ++i) {
+      delete[] values_[i];
+    }
+    delete[] values_;
+  }
+
+  intptr_t size() { return size_; }
+  intptr_t* valuesFor(int i) { return values_[i]; }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LineStartingTable);
+  LineStartingTable() : values_(NULL), size_(0) {}
+
+  friend class Program;
+
+  intptr_t** values_;
+  intptr_t size_;
+};
+
 // Forward declare all classes.
 #define DO(name) class name;
 DIL_ALL_NODES_DO(DO)
