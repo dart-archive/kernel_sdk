@@ -919,6 +919,8 @@ void LineStartingTable::WriteTo(Writer* writer) {
 
 Library* Library::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
+  int flags = reader->ReadFlags();
+  ASSERT(flags == 0); // external libraries not supported
   name_ = Reference::ReadStringFrom(reader);
   import_uri_ = Reference::ReadStringFrom(reader);
   reader->ReadUInt();  // TODO(jensj): source_uri_index
