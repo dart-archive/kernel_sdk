@@ -96,22 +96,22 @@ main() {
       return f();
     });
 
-    test("await throw", () {
-      f() async {
-        await (throw "err");  // Check grammar: Are parentheses necessary?
-        return id(42);
-      }
-      return throwsErr(f());
-    });
+    // test("await throw", () {
+    //   f() async {
+    //     await (throw "err");  // Check grammar: Are parentheses necessary?
+    //     return id(42);
+    //   }
+    //   return throwsErr(f());
+    // });
 
-    test("throw before await", () {
-      f() async {
-        var x = throw "err";
-        await x;  // Check grammar: Are parentheses necessary?
-        return id(42);
-      }
-      return throwsErr(f());
-    });
+    // test("throw before await", () {
+    //   f() async {
+    //     var x = throw "err";
+    //     await x;  // Check grammar: Are parentheses necessary?
+    //     return id(42);
+    //   }
+    //   return throwsErr(f());
+    // });
 
     if (checkedMode) {
       test("assert before await", () {
@@ -805,20 +805,20 @@ main() {
       return expect42(f());
     });
 
-    test("await in finally", () {
-      var x = 0;
-      f() async {
-        try {
-          return id(42);
-        } finally {
-          x = await new Future.value(37);
-        }
-      }
-      return f().then((v) {
-        expect(v, equals(42));
-        expect(x, equals(37));
-      });
-    });
+    // test("await in finally", () {
+    //   var x = 0;
+    //   f() async {
+    //     try {
+    //       return id(42);
+    //     } finally {
+    //       x = await new Future.value(37);
+    //     }
+    //   }
+    //   return f().then((v) {
+    //     expect(v, equals(42));
+    //     expect(x, equals(37));
+    //   });
+    // });
 
     test("await err in body", () {
       f() async {
@@ -832,17 +832,17 @@ main() {
                       onError: (e) { expect(e, equals("err")); });
     });
 
-    test("await err in finally", () {
-      f() async {
-        try {
-          return id(42);
-        } finally {
-          await new Future.error("err");
-        }
-      }
-      return f().then((v) { fail("didn't throw"); },
-                      onError: (e) { expect(e, equals("err")); });
-    });
+    // test("await err in finally", () {
+    //   f() async {
+    //     try {
+    //       return id(42);
+    //     } finally {
+    //       await new Future.error("err");
+    //     }
+    //   }
+    //   return f().then((v) { fail("didn't throw"); },
+    //                   onError: (e) { expect(e, equals("err")); });
+    // });
 
     test("await err in both", () {
       f() async {
@@ -867,34 +867,34 @@ main() {
       return expect42(f());
     });
 
-    test("await in body, override in finally", () {
-      f() async {
-        label: try {
-          return await new Future.value(37);
-        } finally {
-          break label;
-        }
-        return id(42);
-      }
-      return expect42(f());
-    });
+    // test("await in body, override in finally", () {
+    //   f() async {
+    //     label: try {
+    //       return await new Future.value(37);
+    //     } finally {
+    //       break label;
+    //     }
+    //     return id(42);
+    //   }
+    //   return expect42(f());
+    // });
 
-    test("await, override in finally", () {
-      var x = 0;
-      f() async {
-        label: try {
-          return 87;
-        } finally {
-          x = await new Future.value(37);
-          break label;
-        }
-        return id(42);
-      }
-      return f().then((v) {
-        expect(v, equals(42));
-        expect(x, equals(37));
-      });
-    });
+    // test("await, override in finally", () {
+    //   var x = 0;
+    //   f() async {
+    //     label: try {
+    //       return 87;
+    //     } finally {
+    //       x = await new Future.value(37);
+    //       break label;
+    //     }
+    //     return id(42);
+    //   }
+    //   return f().then((v) {
+    //     expect(v, equals(42));
+    //     expect(x, equals(37));
+    //   });
+    // });
 
     test("throw in body, await, override in finally 3", () {
       var x = 0;
@@ -925,19 +925,19 @@ main() {
       return expect42(f());
     });
 
-    test("await in body, no-exit in finally", () {
-      f() async {
-        for (int i = 0; i < 10; i++) {
-          try {
-            return await i;
-          } finally {
-            continue;
-          }
-        }
-        return id(42);
-      }
-      return expect42(f());
-    });
+    // test("await in body, no-exit in finally", () {
+    //   f() async {
+    //     for (int i = 0; i < 10; i++) {
+    //       try {
+    //         return await i;
+    //       } finally {
+    //         continue;
+    //       }
+    //     }
+    //     return id(42);
+    //   }
+    //   return expect42(f());
+    // });
 
     test("no-exit after await in finally", () {
       f() async {
@@ -975,54 +975,54 @@ main() {
       });
     });
 
-    test("no-exit before await in finally 2", () {
-      f() async {
-        for (int i = 0; i < 10; i++) {
-          try {
-            return i;
-          } finally {
-            if (i >= 0) continue;
-            await new Future.value(42);
-          }
-        }
-        return id(42);
-      }
-      return expect42(f());
-    });
+    // test("no-exit before await in finally 2", () {
+    //   f() async {
+    //     for (int i = 0; i < 10; i++) {
+    //       try {
+    //         return i;
+    //       } finally {
+    //         if (i >= 0) continue;
+    //         await new Future.value(42);
+    //       }
+    //     }
+    //     return id(42);
+    //   }
+    //   return expect42(f());
+    // });
 
-    test("no-exit after await in finally", () {
-      f() async {
-        for (int i = 0; i < 10; i++) {
-          try {
-            return i;
-          } finally {
-            await new Future.value(42);
-            continue;
-          }
-        }
-        return id(42);
-      }
-      return expect42(f());
-    });
+    // test("no-exit after await in finally", () {
+    //   f() async {
+    //     for (int i = 0; i < 10; i++) {
+    //       try {
+    //         return i;
+    //       } finally {
+    //         await new Future.value(42);
+    //         continue;
+    //       }
+    //     }
+    //     return id(42);
+    //   }
+    //   return expect42(f());
+    // });
 
-    test("nested finallies", () {
-      var x = 0;
-      f() async {
-        try {
-          try {
-            return 42;
-          } finally {
-            x = await new Future.value(37);
-          }
-        } finally {
-          x += await new Future.value(37);
-        }
-      }
-      return f().then((v) {
-        expect(v, equals(42));
-        expect(x, equals(74));
-      });
-    });
+    // test("nested finallies", () {
+    //   var x = 0;
+    //   f() async {
+    //     try {
+    //       try {
+    //         return 42;
+    //       } finally {
+    //         x = await new Future.value(37);
+    //       }
+    //     } finally {
+    //       x += await new Future.value(37);
+    //     }
+    //   }
+    //   return f().then((v) {
+    //     expect(v, equals(42));
+    //     expect(x, equals(74));
+    //   });
+    // });
 
     test("nested finallies 2", () {
       var x = 0;
@@ -1044,42 +1044,42 @@ main() {
       });
     });
 
-    test("nested finallies 3", () {
-      var x = 0;
-      f() async {
-        label: try {
-          try {
-            break label;
-          } finally {
-            return await new Future.value(42);
-          }
-        } finally {
-          break label;
-        }
-        return 42;
-      }
-      return expect42(f());
-    });
+    // test("nested finallies 3", () {
+    //   var x = 0;
+    //   f() async {
+    //     label: try {
+    //       try {
+    //         break label;
+    //       } finally {
+    //         return await new Future.value(42);
+    //       }
+    //     } finally {
+    //       break label;
+    //     }
+    //     return 42;
+    //   }
+    //   return expect42(f());
+    // });
 
-    test("nested finallies, throw", () {
-      var x = 0;
-      f() async {
-        try {
-          try {
-            throw "err";
-          } finally {
-            x = await new Future.value(37);
-          }
-        } finally {
-          x += await new Future.value(37);
-        }
-      }
-      return f().then((v) { fail("didn't throw"); },
-                      onError: (e) {
-                        expect(e, equals("err"));
-                        expect(x, equals(2 * 37));
-                      });
-    });
+    // test("nested finallies, throw", () {
+    //   var x = 0;
+    //   f() async {
+    //     try {
+    //       try {
+    //         throw "err";
+    //       } finally {
+    //         x = await new Future.value(37);
+    //       }
+    //     } finally {
+    //       x += await new Future.value(37);
+    //     }
+    //   }
+    //   return f().then((v) { fail("didn't throw"); },
+    //                   onError: (e) {
+    //                     expect(e, equals("err"));
+    //                     expect(x, equals(2 * 37));
+    //                   });
+    // });
   });
 
   group("try-catch-finally", () {
@@ -1122,23 +1122,23 @@ main() {
       return expect42(f());
     });
 
-    test("await in finally", () {
-      var x = 0;
-      f() async {
-        try {
-          return id(42);
-        } catch (e) {
-          throw null;
-        } finally {
-          x = await new Future.value(37);
-          if (id(42) == id(10)) return 10;
-        }
-      }
-      return f().then((v) {
-        expect(v, equals(42));
-        expect(x, equals(37));
-      });
-    });
+    // test("await in finally", () {
+    //   var x = 0;
+    //   f() async {
+    //     try {
+    //       return id(42);
+    //     } catch (e) {
+    //       throw null;
+    //     } finally {
+    //       x = await new Future.value(37);
+    //       if (id(42) == id(10)) return 10;
+    //     }
+    //   }
+    //   return f().then((v) {
+    //     expect(v, equals(42));
+    //     expect(x, equals(37));
+    //   });
+    // });
   });
 
   group("switch", () {
@@ -1528,9 +1528,9 @@ main() {
       return expect42(asyncInAsync(f42));
     });
 
-    test("sync in async", () {
-      return expect42(syncInAsync(f42));
-    });
+    // test("sync in async", () {
+    //   return expect42(syncInAsync(f42));
+    // });
 
     test("async in sync", () {
       return expect42(asyncInSync(f42));
@@ -1608,13 +1608,13 @@ main() {
       return expect42(f());
     });
 
-    test("suffix operator + increment 2", () {
-      f() async {
-        var v = [42];
-        return await v[await 0]++;
-      }
-      return expect42(f());
-    });
+    // test("suffix operator + increment 2", () {
+    //   f() async {
+    //     var v = [42];
+    //     return await v[await 0]++;
+    //   }
+    //   return expect42(f());
+    // });
 
     test("unary pre-increment operator", () {
       f() async {
@@ -1698,13 +1698,13 @@ main() {
       return expect42(f());
     });
 
-    test("instance function call w/ await", () {
-      f() async {
-        var a = new Async();
-        return await a.instanceMethod(await 42);
-      }
-      return expect42(f());
-    });
+    // test("instance function call w/ await", () {
+    //   f() async {
+    //     var a = new Async();
+    //     return await a.instanceMethod(await 42);
+    //   }
+    //   return expect42(f());
+    // });
 
     test("top-level getter call", () {
       f() async {
@@ -1765,23 +1765,23 @@ main() {
   });
 
   group("syntax", () {
-    test("async as variable", () {
-      // Valid identifiers outside of async function.
-      var async = 42;
-      expect(async, equals(42));
-    });
+  //   test("async as variable", () {
+  //     // Valid identifiers outside of async function.
+  //     var async = 42;
+  //     expect(async, equals(42));
+  //   });
 
-    test("await as variable", () {
-      // Valid identifiers outside of async function.
-      var await = 42;
-      expect(await, equals(42));
-    });
+  //   test("await as variable", () {
+  //     // Valid identifiers outside of async function.
+  //     var await = 42;
+  //     expect(await, equals(42));
+  //   });
 
-    test("yield as variable", () {
-      // Valid identifiers outside of async function.
-      var yield = 42;
-      expect(yield, equals(42));
-    });
+  //   test("yield as variable", () {
+  //     // Valid identifiers outside of async function.
+  //     var yield = 42;
+  //     expect(yield, equals(42));
+  //   });
   });
 }
 

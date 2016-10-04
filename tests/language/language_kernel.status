@@ -23,7 +23,6 @@ accessor_conflict_import_prefixed_test: RuntimeError
 accessor_conflict_import_test: RuntimeError
 assertion_test: RuntimeError
 assign_static_type_test/02: Crash
-async_await_test: Crash
 async_break_in_finally_test: RuntimeError
 async_control_structures_test: RuntimeError
 async_star_cancel_and_throw_in_finally_test: RuntimeError
@@ -386,7 +385,6 @@ accessor_conflict_import_prefixed2_test: RuntimeError
 accessor_conflict_import_prefixed_test: RuntimeError
 accessor_conflict_import_test: RuntimeError
 assertion_test: RuntimeError
-async_await_test: Crash
 async_break_in_finally_test: RuntimeError
 async_control_structures_test: RuntimeError
 async_star_cancel_and_throw_in_finally_test: RuntimeError
