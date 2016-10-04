@@ -84,6 +84,10 @@ class SimpleExpressionConverter : public ExpressionVisitor {
   dart::Instance* simple_value_;
 };
 
+void BuildingTranslationHelper::SetFinalize(bool finalize) {
+  reader_->finalize_ = finalize;
+}
+
 RawLibrary* BuildingTranslationHelper::LookupLibraryByDilLibrary(
     Library* library) {
   return reader_->LookupLibrary(library).raw();
@@ -119,9 +123,11 @@ Object& DilReader::ReadProgram() {
       Library* dil_library = program->libraries()[i];
       dart::Library& library = LookupLibrary(dil_library);
       if (!library.Loaded()) {
+        dart::Class& klass = dart::Class::Handle(Z);
         for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
-          Class* dil_klass = dil_library->classes()[i];
-          ClassFinalizer::FinalizeClass(LookupClass(dil_klass));
+          klass = LookupClass(dil_library->classes()[i]).raw();
+          ClassFinalizer::FinalizeTypesInClass(klass);
+          ClassFinalizer::FinalizeClass(klass);
         }
         library.SetLoaded();
       }
@@ -315,10 +321,13 @@ void DilReader::ReadPreliminaryClass(dart::Class* klass, Class* dil_klass) {
   klass->set_interfaces(interfaces);
   if (dil_klass->is_abstract()) klass->set_is_abstract();
   klass->set_is_cycle_free();
+
   // When bootstrapping we should not finalize types yet because they will be
   // finalized when the object store's pending_classes list is drained by
-  // ClassFinalizer::ProcessPendingClasses.
-  if (!bootstrapping_) ClassFinalizer::FinalizeTypesInClass(*klass);
+  // ClassFinalizer::ProcessPendingClasses.  Even when not bootstrapping we are
+  // careful not to eagerly finalize types that may introduce a circularity
+  // (such as type arguments, interface types, field types, etc.).
+  if (finalize_) ClassFinalizer::FinalizeTypesInClass(*klass);
 }
 
 void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {

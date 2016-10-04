@@ -3821,8 +3821,10 @@ AbstractType& DartTypeTranslator::TranslateTypeWithoutFinalization(
     DartType* node) {
   bool saved_finalize = finalize_;
   finalize_ = false;
+  H.SetFinalize(false);
   AbstractType& result = TranslateType(node);
   finalize_ = saved_finalize;
+  H.SetFinalize(saved_finalize);
   return result;
 }
 

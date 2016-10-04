@@ -24,6 +24,8 @@ class BuildingTranslationHelper : public TranslationHelper {
       : TranslationHelper(thread, zone, isolate), reader_(reader) {}
   virtual ~BuildingTranslationHelper() {}
 
+  virtual void SetFinalize(bool finalize);
+
   virtual RawLibrary* LookupLibraryByDilLibrary(Library* library);
   virtual RawClass* LookupClassByDilClass(Class* klass);
 
@@ -61,6 +63,7 @@ class DilReader {
         translation_helper_(this, thread_, zone_, isolate_),
         type_translator_(&translation_helper_, &active_class_, !bootstrapping),
         bootstrapping_(bootstrapping),
+        finalize_(!bootstrapping),
         buffer_(buffer),
         buffer_length_(len) {}
 
@@ -110,6 +113,9 @@ class DilReader {
   DartTypeTranslator type_translator_;
 
   bool bootstrapping_;
+
+  // Should created classes be finalized when they are created?
+  bool finalize_;
 
   const uint8_t* buffer_;
   intptr_t buffer_length_;

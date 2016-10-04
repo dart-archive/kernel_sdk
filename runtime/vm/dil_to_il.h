@@ -173,6 +173,11 @@ class TranslationHelper {
 
   Isolate* isolate() { return isolate_; }
 
+  // Set whether unfinalized classes should be finalized.  The base class
+  // implementation used at flow graph construction time looks up classes in the
+  // VM's heap, all of which should already be finalized.
+  virtual void SetFinalize(bool finalize) {}
+
   RawInstance* Canonicalize(const Instance& instance);
 
   const dart::String& DartString(const char* content,
