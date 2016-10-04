@@ -285,9 +285,7 @@ mixin_mixin4_test: RuntimeError
 mixin_mixin5_test: RuntimeError
 mixin_mixin_bound2_test: RuntimeError
 mixin_mixin_bound_test: RuntimeError
-mixin_regress_13688_test: RuntimeError
 mixin_super_test: RuntimeError
-mixin_type_parameters_mixin_extends_test: RuntimeError
 mixin_type_parameters_simple_test: RuntimeError
 mixin_type_parameters_super_extends_test: RuntimeError
 mixin_type_parameters_super_test: RuntimeError
@@ -642,9 +640,7 @@ mixin_mixin4_test: RuntimeError
 mixin_mixin5_test: RuntimeError
 mixin_mixin_bound2_test: RuntimeError
 mixin_mixin_bound_test: RuntimeError
-mixin_regress_13688_test: RuntimeError
 mixin_super_test: RuntimeError
-mixin_type_parameters_mixin_extends_test: RuntimeError
 mixin_type_parameters_simple_test: RuntimeError
 mixin_type_parameters_super_extends_test: RuntimeError
 mixin_type_parameters_super_test: RuntimeError

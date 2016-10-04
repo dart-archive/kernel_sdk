@@ -1448,17 +1448,7 @@ NOT_IN_PRODUCT(
     cls = Class::New<LinkedHashMap>();
     object_store->set_linked_hash_map_class(cls);
     cls.set_type_arguments_field_offset(LinkedHashMap::type_arguments_offset());
-    // This class, _InternalLinkedHashMap, has a mixin application as its
-    // superclass.  The mixin application includes two classes with type
-    // parameters <K, V> the same as _InternalLinkedHashMap's type parameters.
-    // The Dart->Kernel translator does not (yet) recognize that these are the
-    // same and so it introduces distinct type arguments for the two different
-    // classes that are mixed in.
-    //
-    // TODO(kmillikin): See if we can come up with a way that we don't need to
-    // hardcode the number of type arguments---it can obviously break if the SDK
-    // implementation changes.
-    cls.set_num_type_arguments(is_dilfile ? 4 : 2);
+    cls.set_num_type_arguments(2);
     cls.set_num_own_type_arguments(0);
     RegisterPrivateClass(cls, Symbols::_LinkedHashMap(), lib);
     pending_classes.Add(cls);
