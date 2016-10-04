@@ -8,6 +8,10 @@ Language/Metadata/*: Skip # No support for metadata ATM.
 LibTest/async/DeferredLibrary/DeferredLibrary_A01_t01: Skip # No support for deferred libraries.
 LibTest/isolate/*: Skip # No support for isolates ATM.
 
+# Override tests marked as failing elsewhere.
+[ $compiler == dartk || $compiler == dartkp ]
+Language/Libraries_and_Scripts/Exports/reexport_t01: Pass
+
 # Disable tests known to use await/async syntax if we don't run the
 # transformer.
 [ $kernel_transformers != continuation ]
@@ -360,8 +364,6 @@ Language/Classes/definition_t23: CompileTimeError
 Language/Enums/declaration_equivalent_t01: RuntimeError
 Language/Enums/syntax_t08: MissingCompileTimeError
 Language/Enums/syntax_t09: MissingCompileTimeError
-Language/Errors_and_Warnings/compile_error_t06: MissingCompileTimeError
-Language/Errors_and_Warnings/compile_error_t07: MissingCompileTimeError
 Language/Expressions/Assignment/indexed_expression_super_t01: RuntimeError
 Language/Expressions/Assignment/indexed_expression_super_t02: RuntimeError
 Language/Expressions/Assignment/indexed_expression_super_t04: RuntimeError
@@ -584,7 +586,6 @@ Language/Libraries_and_Scripts/definition_syntax_t08: MissingCompileTimeError
 Language/Libraries_and_Scripts/definition_syntax_t09: MissingCompileTimeError
 Language/Libraries_and_Scripts/definition_syntax_t10: MissingCompileTimeError
 Language/Libraries_and_Scripts/definition_syntax_t15: MissingCompileTimeError
-Language/Libraries_and_Scripts/definition_syntax_t16: MissingCompileTimeError
 Language/Libraries_and_Scripts/definition_syntax_t17: MissingCompileTimeError
 Language/Libraries_and_Scripts/definition_syntax_t18: MissingCompileTimeError
 Language/Libraries_and_Scripts/definition_syntax_t19: MissingCompileTimeError
@@ -631,7 +632,6 @@ Language/Variables/final_t04: MissingCompileTimeError
 Language/Variables/final_t05: MissingCompileTimeError
 Language/Variables/final_t06: MissingCompileTimeError
 Language/Variables/final_t07: MissingCompileTimeError
-Language/Variables/library_variable_t01: MissingCompileTimeError
 LibTest/core/Invocation/isAccessor_A01_t01: RuntimeError
 LibTest/core/Invocation/isAccessor_A01_t02: Crash
 LibTest/core/Invocation/isGetter_A01_t01: RuntimeError
