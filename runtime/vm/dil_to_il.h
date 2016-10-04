@@ -480,6 +480,8 @@ class ScopeBuilder : public RecursiveVisitor {
 
   virtual void VisitFunctionNode(FunctionNode* node);
 
+  virtual void VisitConstructor(Constructor* node);
+
  private:
   void EnterScope(TreeNode* node);
   void ExitScope();

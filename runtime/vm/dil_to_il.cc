@@ -623,6 +623,24 @@ void ScopeBuilder::VisitAssertStatement(AssertStatement* node) {
 }
 
 
+void ScopeBuilder::VisitConstructor(Constructor* node) {
+  // Field initializers that come from non-static field declarations are
+  // compiled as if they appear in the constructor initializer list.  This is
+  // important for closure-valued field initializers because the VM expects the
+  // corresponding closure functions to appear as if they were nested inside the
+  // constructor.
+  List<Field>& fields = Class::Cast(node->parent())->fields();
+  for (intptr_t i = 0; i < fields.length(); ++i) {
+    Field* field = fields[i];
+    Expression* initializer = field->initializer();
+    if (!field->IsStatic() && (initializer != NULL)) {
+      initializer->AcceptExpressionVisitor(this);
+    }
+  }
+  node->VisitChildren(this);
+}
+
+
 class BreakableBlock {
  public:
   BreakableBlock(FlowGraphBuilder* builder,
