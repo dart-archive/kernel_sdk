@@ -12,9 +12,8 @@
 #include "vm/globals.h"
 #include "vm/handles.h"
 #include "vm/os_thread.h"
-#include "vm/runtime_entry_list.h"
 #include "vm/store_buffer.h"
-#include "vm/virtual_memory.h"
+#include "vm/runtime_entry_list.h"
 
 namespace dart {
 
@@ -88,8 +87,6 @@ class Zone;
     StubCode::InvokeDartCode_entry()->code(), NULL)                            \
   V(RawCode*, call_to_runtime_stub_,                                           \
     StubCode::CallToRuntime_entry()->code(), NULL)                             \
-  V(RawCode*, guard_page_continuation_stub_,                                   \
-    StubCode::GuardPageContinuation_entry()->code(), NULL)                     \
   V(RawCode*, monomorphic_miss_stub_,                                          \
     StubCode::MonomorphicMiss_entry()->code(), NULL)                           \
   V(RawCode*, ic_lookup_through_code_stub_,                                    \
@@ -147,17 +144,6 @@ class Zone;
 // must currently be called manually (issue 23474).
 class Thread : public BaseThread {
  public:
-#if defined(USE_STACKOVERFLOW_TRAPS)
-  // We currently allocate two OS pages and place the [Thread] structure at the
-  // beginning of the second page and use the first page for interruptions via
-  // `mprotect()` calls.
-  //
-  // We choose this layout because the thread pointer is already in a register
-  // and by making the first page the guard page we can with a small negative
-  // (aligned) offset trigger it.
-  static const int kPollingAddressOffset = -16;
-#endif  // defined(USE_STACKOVERFLOW_TRAPS)
-
   // The kind of task this thread is performing. Sampled by the profiler.
   enum TaskKind {
     kUnknownTask = 0x0,
@@ -655,43 +641,6 @@ LEAF_RUNTIME_ENTRY_LIST(DEFINE_OFFSET_METHOD)
 
   void InitVMConstants();
 
-#if defined(USE_STACKOVERFLOW_TRAPS)
-#if defined(DART_PRECOMPILED_RUNTIME)
-  void MakeInterruptPageUnaccessable();
-  void MakeInterruptPageAccessable();
-
-  void* InterruptPagePollingAddress() {
-    return reinterpret_cast<uint8_t*>(this) + kPollingAddressOffset;
-  }
-
-  // This is the PC at which Dart code tried to access a guard page.  It will be
-  // set by the SEGV signal handler and restored when going back to Dart code.
-  intptr_t saved_interrupt_pc() {
-    return saved_interrupt_pc_;
-  }
-
-  void set_saved_interrupt_pc(intptr_t pc) {
-    ASSERT(saved_interrupt_pc_ == 0 || pc == 0);
-    saved_interrupt_pc_ = pc;
-  }
-
-  void set_has_stackoverflow(bool so) {
-    has_stackoverflow_ = so;
-  }
-
-  bool has_stackoverflow() {
-    return has_stackoverflow_;
-  }
-#endif  // defined(DART_PRECOMPILED_RUNTIME)
-
-  static intptr_t interruption_continuation_fun_offset() {
-    return OFFSET_OF(Thread, interruption_continuation_fun_);
-  }
-#endif  // defined(USE_STACKOVERFLOW_TRAPS)
-
- protected:
-  explicit Thread(Isolate* isolate);
-
  private:
   template<class T> T* AllocateReusableHandle();
 
@@ -750,19 +699,6 @@ LEAF_RUNTIME_ENTRY_LIST(DECLARE_MEMBERS)
 
   CompilerStats* compiler_stats_;
 
-  void* interruption_continuation_fun_;
-#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
-  friend class SegvHandler;
-
-  // The [VirtualMemory] used to hold the guard page and the page hosting the
-  // [Thread] object.
-  VirtualMemory* virtual_memory_;
-  bool virtual_memory_protected_;
-
-  intptr_t saved_interrupt_pc_;
-  bool has_stackoverflow_;
-#endif  // defined(DART_PRECOMPILED_RUNTIME) && defined(USE_STACKOVERFLOW_TRAPS)
-
   // Reusable handles support.
 #define REUSABLE_HANDLE_FIELDS(object)                                         \
   object* object##_handle_;
@@ -783,6 +719,8 @@ LEAF_RUNTIME_ENTRY_LIST(DECLARE_MEMBERS)
   uint32_t execution_state_;
 
   Thread* next_;  // Used to chain the thread structures in an isolate.
+
+  explicit Thread(Isolate* isolate);
 
   void StoreBufferRelease(
       StoreBuffer::ThresholdPolicy policy = StoreBuffer::kCheckThreshold);

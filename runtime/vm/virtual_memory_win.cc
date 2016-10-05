@@ -34,13 +34,6 @@ VirtualMemory* VirtualMemory::ReserveInternal(intptr_t size) {
 }
 
 
-VirtualMemory* VirtualMemory::ReserveAtInternal(intptr_t address,
-                                                intptr_t size) {
-  UNIMPLEMENTED();
-  return NULL;
-}
-
-
 VirtualMemory::~VirtualMemory() {
   if (embedder_allocated() || (reserved_size_ == 0)) {
     return;
@@ -72,8 +65,7 @@ bool VirtualMemory::Commit(uword addr, intptr_t size, bool executable) {
 
 
 bool VirtualMemory::Protect(void* address, intptr_t size, Protection mode) {
-  ASSERT(Thread::Current() == NULL ||
-         Thread::Current()->IsMutatorThread() ||
+  ASSERT(Thread::Current()->IsMutatorThread() ||
          Isolate::Current()->mutator_thread()->IsAtSafepoint());
   uword start_address = reinterpret_cast<uword>(address);
   uword end_address = start_address + size;

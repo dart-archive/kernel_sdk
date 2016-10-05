@@ -29,7 +29,6 @@ class Deserializer;
   V(UpdateStoreBuffer)                                                         \
   V(PrintStopMessage)                                                          \
   V(CallToRuntime)                                                             \
-  V(GuardPageContinuation)                                                     \
   V(LazyCompile)                                                               \
   V(CallBootstrapCFunction)                                                    \
   V(CallNativeCFunction)                                                       \

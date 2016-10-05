@@ -8,7 +8,6 @@
 #include "platform/globals.h"
 #include "vm/allocation.h"
 #include "vm/globals.h"
-#include "vm/virtual_memory.h"
 
 // Declare the OS-specific types ahead of defining the generic classes.
 #if defined(TARGET_OS_ANDROID)
@@ -138,20 +137,6 @@ class OSThread : public BaseThread {
   }
   static void SetCurrent(OSThread* current);
 
-#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
-  bool IsStackGuardPage(void* pointer) {
-    ASSERT(guard_page_is_active_);
-    uint8_t* value = reinterpret_cast<uint8_t*>(pointer);
-    return stack_ <= value && value < (stack_ + VirtualMemory::PageSize());
-  }
-
-  bool IsStackPage(void* pointer) {
-    ASSERT(guard_page_is_active_);
-    uint8_t* value = reinterpret_cast<uint8_t*>(pointer);
-    return stack_ <= value && value < (stack_ + stack_size_);
-  }
-#endif  // defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
-
   // TODO(5411455): Use flag to override default value and Validate the
   // stack size by querying OS.
   static uword GetSpecifiedStackSize() {
@@ -201,21 +186,6 @@ class OSThread : public BaseThread {
   static void EnableOSThreadCreation();
 
   static const intptr_t kStackSizeBuffer = (4 * KB * kWordSize);
-
-  // The maximum amount of stack space a runtime call can use in C++.
-  //
-  // If Dart code has less than that amount of stack space left, it will trigger
-  // a SEGV.  The runtime will need to ensure that we call no other dart if we
-  // run out of stack space.
-  //
-  // FIXME(kustermann): This should be guaranteed to be a multiple of page size.
-#ifdef __APPLE__
-  // MACH has simply bigger pages.
-  static const intptr_t kMaximumRuntimeStackSize = 32 * KB;
-#else
-  // arm64 linux needs 16kb (on 8kb it will not invoke my signal handler)
-  static const intptr_t kMaximumRuntimeStackSize = 16 * KB;
-#endif
 
   static const ThreadId kInvalidThreadId;
   static const ThreadJoinId kInvalidThreadJoinId;
@@ -277,18 +247,6 @@ class OSThread : public BaseThread {
   static Mutex* thread_list_lock_;
   static OSThread* thread_list_head_;
   static bool creation_enabled_;
-
-#if defined(USE_STACKOVERFLOW_TRAPS) && defined(DART_PRECOMPILED_RUNTIME)
-  // Stack memory region.  We expect that it consists of normal pages (lazily
-  // mapped) and we will use the lowest page as guard page.
-  uint8_t* stack_;
-  size_t stack_size_;
-
-  // The [guard_page_] is only non-NULL if explicitly allocated.
-  VirtualMemory* guard_page_;
-  bool guard_page_is_active_;
-  friend class SegvHandler;
-#endif  // defined(DART_PRECOMPILED_RUNTIME) && defined(USE_STACKOVERFLOW_TRAPS)
 
   friend class Isolate;  // to access set_thread(Thread*).
   friend class OSThreadIterator;

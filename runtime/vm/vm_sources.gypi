@@ -417,8 +417,6 @@
     'runtime_entry_mips.cc',
     'runtime_entry.cc',
     'runtime_entry_x64.cc',
-    'segv_handler.cc',
-    'segv_handler.h',
     'safepoint.cc',
     'safepoint.h',
     'scanner.cc',

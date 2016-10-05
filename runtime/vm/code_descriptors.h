@@ -70,17 +70,12 @@ class StackmapTableBuilder : public ZoneAllocated {
   StackmapTableBuilder()
       : stack_map_(Stackmap::ZoneHandle()),
         list_(GrowableObjectArray::ZoneHandle(
-            GrowableObjectArray::New(Heap::kOld))),
-        last_pc_(-1) { }
+            GrowableObjectArray::New(Heap::kOld))) { }
   ~StackmapTableBuilder() { }
 
   void AddEntry(intptr_t pc_offset,
                 BitmapBuilder* bitmap,
                 intptr_t register_bit_count);
-
-  bool WasLastEntryAt(intptr_t pc_offset) {
-    return last_pc_ == pc_offset;
-  }
 
   bool Verify();
 
@@ -92,7 +87,6 @@ class StackmapTableBuilder : public ZoneAllocated {
 
   Stackmap& stack_map_;
   GrowableObjectArray& list_;
-  intptr_t last_pc_;
   DISALLOW_COPY_AND_ASSIGN(StackmapTableBuilder);
 };
 

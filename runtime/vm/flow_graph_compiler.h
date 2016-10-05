@@ -374,14 +374,6 @@ class FlowGraphCompiler : public ValueObject {
     return return_code_label_;
   }
 
-  // TODO(kustermann): Get rid of this by using a trap-based mechanism not just
-  // for interruptions, but also for real stack overflows.
-  bool IsFirstStackoverflow() {
-    bool temp = is_first_stackoverflow_;
-    is_first_stackoverflow_ = false;
-    return temp;
-  }
-
   // Constructor is lighweight, major initialization work should occur here.
   // This makes it easier to measure time spent in the compiler.
   void InitCompiler();
@@ -553,14 +545,6 @@ class FlowGraphCompiler : public ValueObject {
   void RecordSafepoint(LocationSummary* locs,
                        intptr_t slow_path_argument_count = 0);
 
-#if defined(USE_STACKOVERFLOW_TRAPS)
-  void RecordSignalContinuationSafepoint(LocationSummary* locs);
-#endif  // defined(USE_STACKOVERFLOW_TRAPS)
-
-  void PushRegisterToStackmap(BitmapBuilder* bitmap,
-                              RegisterSet* registers,
-                              Register reg);
-
   Label* AddDeoptStub(intptr_t deopt_id,
                       ICData::DeoptReasonId reason,
                       uint32_t flags = 0);
@@ -654,10 +638,6 @@ class FlowGraphCompiler : public ValueObject {
     }
     ASSERT(code_source_map_builder_ != NULL);
     return code_source_map_builder_;
-  }
-
-  bool HasSafepointAtCurrentPC() {
-    return stackmap_table_builder()->WasLastEntryAt(assembler_->CodeSize());
   }
 
   void BeginCodeSourceRange();
@@ -876,7 +856,6 @@ class FlowGraphCompiler : public ValueObject {
   const GrowableArray<intptr_t>& caller_inline_id_;
   CodeStatistics* stats_;
   Label return_code_label_;
-  bool is_first_stackoverflow_;
 
   DISALLOW_COPY_AND_ASSIGN(FlowGraphCompiler);
 };

@@ -378,43 +378,6 @@ typedef simd128_value_t fpu_register_t;
 #endif  // TARGET_ARCH_ARM
 
 
-// Find out whether we use page-traps for stackoverflow checks
-// in the current configuration (compiler or runtime).
-//
-// Currently only if precompiling and one of:
-//   * ios & arm64
-//   * android & arm32
-//   * mac & x64
-//   * linux & x64/arm32/arm64
-//
-#if defined(DART_PRECOMPILED_RUNTIME) || defined(DART_PRECOMPILER)
-
-#if ((defined(TARGET_OS_ANDROID) && defined(TARGET_ARCH_ARM))  || \
-     (defined(TARGET_OS_MACOS) && defined(TARGET_ARCH_ARM64))  || \
-     (defined(TARGET_OS_MACOS) && defined(TARGET_ARCH_X64))    || \
-     (defined(TARGET_OS_LINUX) && defined(TARGET_ARCH_ARM64))  || \
-     (defined(TARGET_OS_LINUX) && defined(TARGET_ARCH_ARM))    || \
-     (defined(TARGET_OS_LINUX) && defined(TARGET_ARCH_X64)))
-
-// TODO(kustermann): For some reason a flutter android build on linux will
-// invoke the compiler with "-m32 -DTARGET_ARCH_ARM -DDART_PRECOMPILED_RUNTIME"
-// and the implicit "-D__IA32__".  Ideally this would never happen, since the
-// precompilation runtime should be the same architecture as "TARGET_ARCH_*"!
-//
-// We should get rid of this check!
-#if (!defined(DART_PRECOMPILED_RUNTIME) || (defined(__arm__)     || \
-                                            defined(__aarch64__) || \
-                                            defined(__x86_64__)))
-
-#define USE_STACKOVERFLOW_TRAPS
-
-#endif
-
-#endif
-
-#endif  // defined(DART_PRECOMPILED_RUNTIME) && defined(DART_PRECOMPILER)
-
-
 // Short form printf format specifiers
 #define Pd PRIdPTR
 #define Pu PRIuPTR

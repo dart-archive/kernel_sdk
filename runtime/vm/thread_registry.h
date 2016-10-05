@@ -17,9 +17,6 @@ namespace dart {
 // Unordered collection of threads relating to a particular isolate.
 class ThreadRegistry {
  public:
-  static Thread* CreateThread(Isolate* isolate);
-  static void DestroyThread(Thread* thread);
-
   ThreadRegistry()
       : threads_lock_(new Monitor()),
         active_list_(NULL),

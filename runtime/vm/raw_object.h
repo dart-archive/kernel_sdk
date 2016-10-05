@@ -1173,7 +1173,6 @@ class RawCode : public RawObject {
   friend class StackFrame;
   friend class Profiler;
   friend class FunctionDeserializationCluster;
-  friend class SegvHandler;
 };
 
 

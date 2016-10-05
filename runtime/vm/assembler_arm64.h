@@ -520,9 +520,6 @@ class Assembler : public ValueObject {
 
   void ReserveAlignedFrameSpace(intptr_t frame_space);
 
-  void PushCallerSavedFPUState();
-  void PopCallerSavedFPUState();
-
   // Instruction pattern from entrypoint is used in Dart frame prologs
   // to set up the frame and save a PC which can be used to figure out the
   // RawInstruction object corresponding to the code running in the frame.

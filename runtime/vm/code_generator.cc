@@ -1528,10 +1528,7 @@ DEFINE_RUNTIME_ENTRY(InvokeClosureNoSuchMethod, 3) {
 }
 
 
-void RealStackOverflow(Isolate* isolate,
-                       Thread* thread,
-                       Zone* zone,
-                       bool force_throw_stackoverflow) {
+DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
 #if defined(USING_SIMULATOR)
   uword stack_pos = Simulator::Current()->get_sp();
 #else
@@ -1545,8 +1542,7 @@ void RealStackOverflow(Isolate* isolate,
   // If an interrupt happens at the same time as a stack overflow, we
   // process the stack overflow now and leave the interrupt for next
   // time.
-  if (force_throw_stackoverflow ||
-      IsCalleeFrameOf(thread->saved_stack_limit(), stack_pos)) {
+  if (IsCalleeFrameOf(thread->saved_stack_limit(), stack_pos)) {
     // Use the preallocated stack overflow exception to avoid calling
     // into dart code.
     const Instance& exception =
@@ -1728,11 +1724,6 @@ void RealStackOverflow(Isolate* isolate,
       frame->set_pc_marker(optimized_code.raw());
     }
   }
-}
-
-
-DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
-  RealStackOverflow(isolate, thread, zone, false);
 }
 
 

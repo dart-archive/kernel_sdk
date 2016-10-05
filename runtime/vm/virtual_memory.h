@@ -54,11 +54,6 @@ class VirtualMemory {
     return ReserveInternal(size);
   }
 
-  static VirtualMemory* ReserveAt(intptr_t address, intptr_t size) {
-    ASSERT(address != 0 && size > 0 && (size % PageSize()) == 0);
-    return ReserveAtInternal(address, size);
-  }
-
   static intptr_t PageSize() {
     ASSERT(page_size_ != 0);
     ASSERT(Utils::IsPowerOfTwo(page_size_));
@@ -81,7 +76,6 @@ class VirtualMemory {
 
  private:
   static VirtualMemory* ReserveInternal(intptr_t size);
-  static VirtualMemory* ReserveAtInternal(intptr_t address, intptr_t size);
 
   // Free a sub segment. On operating systems that support it this
   // can give back the virtual memory to the system. Returns true on success.

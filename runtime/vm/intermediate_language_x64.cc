@@ -2651,19 +2651,12 @@ void CatchBlockEntryInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
 LocationSummary* CheckStackOverflowInstr::MakeLocationSummary(Zone* zone,
                                                               bool opt) const {
   const intptr_t kNumInputs = 0;
-#if defined(USE_STACKOVERFLOW_TRAPS)
-  const intptr_t kNumTemps = 0;
-#else
   const intptr_t kNumTemps = 1;
-#endif
-
   LocationSummary* summary = new(zone) LocationSummary(
-      zone, kNumInputs, kNumTemps, LocationSummary::kCallOnSlowPath);
-
-  if (kNumTemps == 1) {
-    summary->set_temp(0, Location::RequiresRegister());
-  }
-
+      zone, kNumInputs,
+                          kNumTemps,
+                          LocationSummary::kCallOnSlowPath);
+  summary->set_temp(0, Location::RequiresRegister());
   return summary;
 }
 
@@ -2722,41 +2715,7 @@ class CheckStackOverflowSlowPath : public SlowPathCode {
 
 
 void CheckStackOverflowInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
-#if defined(USE_STACKOVERFLOW_TRAPS)
-  bool generate_actual_stackoverflow_check = compiler->IsFirstStackoverflow();
-  if (generate_actual_stackoverflow_check) {
-    // We probe ahead and see if we hit the stackoverflow limit.  The reason to
-    // probe ahead by [OSThread::kMaximumRuntimeStackSize] is if this probe
-    // fails, then the SEGV signal handler will need to have space on the stack.
-    // The signal handler then redirects control flow to the runtime system -
-    // which also needs stack space.  Then the real (preallocated) stackoverflow
-    // exception gets thrown.
-    // NOTE: We don't need a safepoint here, because if this causes a trap an
-    // exception will be thrown and that will cause us to leave the frame
-    // (remember, this will be the very first SO check in function entry).
-    __ cmpq(RSP, Address(RSP, -OSThread::kMaximumRuntimeStackSize));
-  }
-
-  // NOTE: Since the instruction will cause a POSIX signal, the signal handler
-  // will redirect to a stack-overflow runtime call.  The saved PC on the
-  // stack will still point to the same instruction which caused the signal
-  // (not the next instruction).  It is therefore different than normal calls
-  // which save the PC of the next instruction.  We therefore do the
-  // `RecordSafepoint` call before the actual read.
-  if (compiler->HasSafepointAtCurrentPC()) {
-    // Since the two safepoints are not equal (signal continuation safepoints
-    // have more state) we need to ensure we have 2 different safepoints and
-    // therefore two different PCs.
-    __ nop();
-  }
-  compiler->RecordSignalContinuationSafepoint(locs());
-
-  // Generate an interrupt check (if we are interrupted this will cause a
-  // SEGV).  Just issue a compare and don't destroy any register.
-  __ cmpq(RSP, Address(THR, Thread::kPollingAddressOffset));
-#else  // defined(USE_STACKOVERFLOW_TRAPS)
-  CheckStackOverflowSlowPath* slow_path =
-      new CheckStackOverflowSlowPath(this);
+  CheckStackOverflowSlowPath* slow_path = new CheckStackOverflowSlowPath(this);
   compiler->AddSlowPathCode(slow_path);
 
   Register temp = locs()->temp(0).reg();
@@ -2778,7 +2737,6 @@ void CheckStackOverflowInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
     __ jmp(slow_path->entry_label());
   }
   __ Bind(slow_path->exit_label());
-#endif  // defined(USE_STACKOVERFLOW_TRAPS)
 }
 
 
