@@ -2640,9 +2640,9 @@ class CommandExecutorImpl implements CommandExecutor {
         return new RunningProcess(command, timeout).run();
       }
     } else if (command is KernelCompilationCommand) {
-      // For now, we always run rastak/dartk in batch mode.
+      // For now, we always run dartk in batch mode.
       var name = command.displayName;
-      assert(name == 'rasta' || name == 'dartk');
+      assert(name == 'dartk');
       return _getBatchRunner(name)
           .runCommand(name, command, timeout, command.arguments);
     } else if (command is CompilationCommand && dart2jsBatchMode) {

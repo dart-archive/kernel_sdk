@@ -78,7 +78,7 @@ class TestOptionsParser {
           (only valid with the following runtimes: dart_app)''',
           ['-c', '--compiler'],
           ['none', 'precompiler', 'dart2js', 'dart2analyzer', 'dart2app',
-           'dart2appjit', 'dartk', 'dartkp', 'rasta', 'rastap', 'ir2ir'],
+           'dart2appjit', 'dartk', 'dartkp', 'ir2ir'],
           'none'),
       // TODO(antonm): fix the option drt.
       new _TestOptionSpecification(
@@ -693,11 +693,9 @@ Note: currently only implemented for dart2js.''',
       case 'precompiler':
         validRuntimes = const ['dart_precompiled'];
         break;
-      case 'rasta':
       case 'dartk':
         validRuntimes = const ['vm'];
         break;
-      case 'rastap':
       case 'dartkp':
         validRuntimes = const ['dart_precompiled'];
         break;
@@ -711,7 +709,7 @@ Note: currently only implemented for dart2js.''',
         ];
         break;
     }
-    var kernelCompilers = const ['rasta', 'rastap', 'dartk', 'dartkp', 'ir2ir'];
+    var kernelCompilers = const ['dartk', 'dartkp', 'ir2ir'];
     if (config['kernel_transformers']?.length > 0 &&
         !kernelCompilers.contains(config['compiler'])) {
       isValid = false;

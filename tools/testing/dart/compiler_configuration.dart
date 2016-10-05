@@ -94,17 +94,6 @@ abstract class CompilerConfiguration {
       case 'ir2ir':
         return ComposedCompilerConfiguration.createIr2IrConfiguration(
             configuration['kernel_transformers']);
-      case 'rasta':
-        return ComposedCompilerConfiguration.createRastaConfiguration(
-            isHostChecked: isHostChecked,
-            kernel_transformers: configuration['kernel_transformers']);
-      case 'rastap':
-        return ComposedCompilerConfiguration.createRastaPConfiguration(
-            isHostChecked: isHostChecked,
-            arch: configuration['arch'],
-            useBlobs: useBlobs,
-            isAndroid: configuration['system'] == 'android',
-            kernel_transformers: configuration['kernel_transformers']);
       case 'dartk':
         return ComposedCompilerConfiguration.createDartKConfiguration(
             isHostChecked: isHostChecked,
@@ -225,50 +214,6 @@ class NoneCompilerConfiguration extends CompilerConfiguration {
       ..addAll(vmOptions)
       ..addAll(sharedOptions)
       ..addAll(originalArguments);
-  }
-}
-
-/// The "rasta" compiler.
-class RastaCompilerConfiguration extends CompilerConfiguration {
-  RastaCompilerConfiguration({bool isHostChecked})
-      : super._subclass(isHostChecked: isHostChecked);
-
-  String computeCompilerPath(String buildDir) {
-    var prefix = 'third_party/rasta/bin';
-    String suffix = executableScriptSuffix;
-    if (isHostChecked) {
-      return '$prefix/rastak_developer$suffix';
-    } else {
-      return '$prefix/rastak$suffix';
-    }
-  }
-
-  CompilationCommand computeCompilationCommand(
-      String outputFileName,
-      String buildDir,
-      CommandBuilder commandBuilder,
-      List arguments,
-      Map<String, String> environmentOverrides) {
-    return commandBuilder.getKernelCompilationCommand(
-        'rasta',
-        outputFileName,
-        true,
-        bootstrapDependencies(buildDir),
-        computeCompilerPath(buildDir),
-        []..addAll(arguments)..add(outputFileName),
-        environmentOverrides);
-  }
-
-  CommandArtifact computeCompilationArtifact(
-      String buildDir,
-      String tempDir,
-      CommandBuilder commandBuilder,
-      List arguments,
-      Map<String, String> environmentOverrides) {
-    return new CommandArtifact(<Command>[
-      this.computeCompilationCommand('$tempDir/out.dill', buildDir,
-          CommandBuilder.instance, arguments, environmentOverrides)
-    ], '$tempDir/out.dill', 'application/dart');
   }
 }
 
@@ -416,40 +361,6 @@ class ComposedCompilerConfiguration extends CompilerConfiguration {
       List<String> originalArguments,
       CommandArtifact artifact) {
     return <String>[artifact.filename];
-  }
-
-  static ComposedCompilerConfiguration createRastaPConfiguration(
-      {bool isHostChecked, String arch, bool useBlobs, bool isAndroid,
-       String kernel_transformers}) {
-    var nested = [];
-
-    // Compile with rasta.
-    nested.add(new PipelineCommand.runWithDartOrDillFile(
-        new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
-
-    // Run zero or more transformations.
-    addKernelTransformations(nested, kernel_transformers);
-
-    // Run the normal precompiler.
-    nested.add(new PipelineCommand.runWithPreviousDilOutput(
-        new PrecompilerCompilerConfiguration(
-          arch: arch, useBlobs: useBlobs, isAndroid: isAndroid)));
-
-    return new ComposedCompilerConfiguration(nested);
-  }
-
-  static ComposedCompilerConfiguration createRastaConfiguration(
-      {bool isHostChecked, String kernel_transformers}) {
-    var nested = [];
-
-    // Compile with rasta.
-    nested.add(new PipelineCommand.runWithDartOrDillFile(
-        new RastaCompilerConfiguration(isHostChecked: isHostChecked)));
-
-    // Run zero or more transformations.
-    addKernelTransformations(nested, kernel_transformers);
-
-    return new ComposedCompilerConfiguration(nested);
   }
 
   static ComposedCompilerConfiguration createDartKPConfiguration(
