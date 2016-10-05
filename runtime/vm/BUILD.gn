@@ -25,9 +25,6 @@ config("libdart_vm_config") {
 
 
 static_library("libdart_platform") {
-  if (!is_debug) {
-    configs -= ["//build/config:release"]
-  }
   configs += ["..:dart_config", "..:dart_product_config"]
   public_configs = [":libdart_vm_config"]
 
@@ -62,9 +59,6 @@ vm_sources_list = exec_script("../../tools/gypi_to_gn.py",
 
 static_library("libdart_vm") {
   deps = [":patched_sdk"]
-  if (!is_debug) {
-    configs -= ["//build/config:release"]
-  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiled_runtime_config"]
@@ -79,9 +73,6 @@ static_library("libdart_vm") {
 
 static_library("libdart_vm_nosnapshot") {
   deps = [":patched_sdk"]
-  if (!is_debug) {
-    configs -= ["//build/config:release"]
-  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiled_runtime_config"]
@@ -97,9 +88,6 @@ static_library("libdart_vm_nosnapshot") {
 
 static_library("libdart_vm_nosnapshot_with_precompiler") {
   deps = [":patched_sdk"]
-  if (!is_debug) {
-    configs -= ["//build/config:release"]
-  }
   configs += ["..:dart_config",
               "..:dart_product_config",
               "..:dart_precompiler_config"]
@@ -204,9 +192,6 @@ template("generate_core_libraries") {
   }
 
   static_library("libdart_lib_nosnapshot") {
-    if (!is_debug) {
-      configs -= ["//build/config:release"]
-    }
     configs += ["..:dart_config",
                 "..:dart_product_config",
                 "..:dart_precompiled_runtime_config"]
@@ -217,9 +202,6 @@ template("generate_core_libraries") {
     ]
   }
   static_library("libdart_lib_nosnapshot_with_precompiler") {
-    if (!is_debug) {
-      configs -= ["//build/config:release"]
-    }
     configs += ["..:dart_config",
                 "..:dart_product_config",
                 "..:dart_precompiler_config" ]
@@ -230,9 +212,6 @@ template("generate_core_libraries") {
     ]
   }
   static_library("libdart_lib") {
-    if (!is_debug) {
-      configs -= ["//build/config:release"]
-    }
     configs += ["..:dart_config",
                 "..:dart_product_config",
                 "..:dart_precompiled_runtime_config"]

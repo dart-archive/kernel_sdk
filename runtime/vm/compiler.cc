@@ -1896,9 +1896,7 @@ void BackgroundCompiler::Run() {
       }
       while (running_ && !function.IsNull() && !isolate_->IsTopLevelParsing()) {
         // Check that we have aggregated and cleared the stats.
-#ifndef PRODUCT
         ASSERT(thread->compiler_stats()->IsCleared());
-#endif  // !PRODUCT
         const Error& error = Error::Handle(zone,
             Compiler::CompileOptimizedFunction(thread,
                                                function,

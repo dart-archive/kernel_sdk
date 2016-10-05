@@ -143,9 +143,6 @@ void MethodRecognizer::InitializeState() {
   libs.Add(&Library::ZoneHandle(Library::DeveloperLibrary()));
   Function& func = Function::Handle();
 
-// TODO(kustermann): Figure out why fingerprint validation failes in
-// PRODUCT+DEBUG mode.
-//
 // TODO(kmillikin): Re-enable the fingerprint checks when compiling from
 // source.  Come up with some mechanism to detect changes to recognized
 // methods when compiling from Kernel.
@@ -159,8 +156,6 @@ void MethodRecognizer::InitializeState() {
 
   RECOGNIZED_LIST(SET_RECOGNIZED_KIND);
 
-// TODO(kustermann): Figure out why fingerprint validation failes in
-// PRODUCT+DEBUG mode.
 #define SET_FUNCTION_BIT(class_name, function_name, dest, fp, setter, value)   \
   func = Library::GetFunction(libs, #class_name, #function_name);              \
   if (func.IsNull()) {                                                         \

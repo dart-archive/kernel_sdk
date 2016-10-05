@@ -1904,7 +1904,6 @@ void Precompiler::DropClasses() {
     constants = cls.constants();
     ASSERT(constants.Length() == 0);
 
-#ifndef PRODUCT
 #if defined(DEBUG)
     intptr_t instances =
         class_table->StatsWithUpdatedSize(cid)->post_gc.new_count +
@@ -1915,7 +1914,6 @@ void Precompiler::DropClasses() {
              instances);
     }
 #endif
-#endif  // !PRODUCT
 
     dropped_class_count_++;
     if (FLAG_trace_precompiler) {

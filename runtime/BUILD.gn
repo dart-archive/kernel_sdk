@@ -48,6 +48,10 @@ config("dart_product_config") {
   }
 
   if (dart_runtime_mode == "release") {
+    if (dart_debug) {
+      print("Debug and release mode are mutually exclusive.")
+    }
+    assert(!dart_debug)
     defines += ["PRODUCT"]
   }
 }
@@ -64,6 +68,11 @@ config("dart_precompiled_runtime_config") {
   }
 
   if (dart_runtime_mode == "release") {
+    if (dart_debug) {
+      print("Debug and release mode are mutually exclusive.")
+    }
+    assert(!dart_debug)
+
     if (!dart_experimental_interpreter) {
       defines += ["DART_PRECOMPILED_RUNTIME"]
     }
@@ -134,7 +143,7 @@ config("dart_config") {
 
   if (dart_debug) {
     cflags += [
-      "-O0",
+      "-O1",
     ]
   } else {
     cflags += [
@@ -151,10 +160,6 @@ config("dart_config") {
 }
 
 static_library("libdart") {
-  if (!is_debug) {
-    configs -= ["//build/config:release"]
-  }
-
   configs += [":dart_config",
               ":dart_product_config",
               ":dart_precompiled_runtime_config"]
@@ -205,9 +210,6 @@ action("generate_version_cc_file") {
 
 
 executable("libdart_dependency_helper") {
-  if (!is_debug) {
-    configs -= ["//build/config:release"]
-  }
   configs += [":dart_config",
               ":dart_product_config",
               ":dart_precompiled_runtime_config"]
