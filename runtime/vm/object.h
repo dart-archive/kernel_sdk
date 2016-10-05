@@ -4683,19 +4683,6 @@ class Code : public Object {
   const Comments& comments() const;
   void set_comments(const Comments& comments) const;
 
-  CodeStatistics* stats() const {
-#ifdef DART_PRECOMPILER
-    return raw_ptr()->function_stats_;
-#else
-    return NULL;
-#endif
-  }
-  void set_stats(CodeStatistics* stats) const {
-#ifdef DART_PRECOMPILER
-    StoreNonPointer(&raw_ptr()->function_stats_, stats);
-#endif
-  }
-
   RawObject* return_address_metadata() const {
     return raw_ptr()->return_address_metadata_;
   }

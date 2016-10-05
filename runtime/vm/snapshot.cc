@@ -20,7 +20,6 @@
 #include "vm/symbols.h"
 #include "vm/timeline.h"
 #include "vm/version.h"
-#include "vm/code_statistics.h"
 
 // We currently only expect the Dart mutator to read snapshots.
 #define ASSERT_NO_SAFEPOINT_SCOPE()                            \
@@ -28,8 +27,6 @@
     ASSERT(thread()->no_safepoint_scope_depth() != 0)
 
 namespace dart {
-
-DECLARE_FLAG(bool, emit_unwinding_data);
 
 static const int kNumInitialReferences = 64;
 
@@ -695,35 +692,6 @@ int32_t InstructionsWriter::GetObjectOffsetFor(RawObject* raw_object) {
 }
 
 
-void InstructionsWriter::DumpCombinedCodeStatistics() const {
-  CombinedCodeStatistics instruction_stats;
-  intptr_t count = instructions_.length();
-  intptr_t missing_count = 0;
-  for (intptr_t i = 0; i < count; i++) {
-    const Code &code = *instructions_[i].code_;
-    CodeStatistics* stats = code.stats();
-    if (stats != NULL) {
-      stats->AppendTo(&instruction_stats);
-    } else {
-      missing_count++;
-    }
-  }
-  instruction_stats.DumpStatistics();
-  if (missing_count > 0) {
-    fprintf(stderr, "--------------------\n");
-    fprintf(
-        stderr,
-        "Missed statistics for %" Pd " out of %" Pd " functions\n",
-        missing_count, count);
-    fprintf(stderr, "--------------------\n");
-  }
-
-  fprintf(stderr, "--------------------\n");
-  fprintf(stderr, "Emitted %" Pd " functions\n", count);
-  fprintf(stderr, "--------------------\n");
-}
-
-
 void InstructionsWriter::DumpInstructionsSizes() const {
   String& str = String::Handle();
   Object& owner = Object::Handle();
@@ -764,21 +732,6 @@ static void EnsureIdentifier(char* label) {
 }
 
 
-void AssemblyInstructionsWriter::WriteByteSequenceText(uword start, uword end) {
-  const uword prefix = (end - start) % kWordSize;
-  uint8_t* p = reinterpret_cast<uint8_t*>(start);
-  for (uword i = 0; i < prefix; i++) {
-    WriteByteLiteralText(p[i]);
-  }
-
-  uword* const suffix = reinterpret_cast<uword*>(p + prefix);
-  uword* const pend = reinterpret_cast<uword*>(end);
-  for (uword* x = suffix; x < pend; x++) {
-    WriteWordLiteralText(*x);
-  }
-}
-
-
 void AssemblyInstructionsWriter::Write() {
   Thread* thread = Thread::Current();
   Zone* zone = thread->zone();
@@ -798,9 +751,7 @@ void AssemblyInstructionsWriter::Write() {
     data.obj_ = &Object::Handle(zone, data.raw_obj_);
   }
 
-  if (FLAG_emit_unwinding_data) {
-    assembly_stream_.Print(".cfi_sections .eh_frame, .debug_frame\n");
-  }
+  SetSection(AssemblyInstructionsWriter::kRXSection);
   assembly_stream_.Print(".text\n");
   assembly_stream_.Print(".globl _kInstructionsSnapshot\n");
   // Start snapshot at page boundary.
@@ -870,64 +821,24 @@ void AssemblyInstructionsWriter::Write() {
       UNREACHABLE();
     }
 
-    const Code::Comments& comments = code.comments();
-    intptr_t comment_finger = 0;
-
-    if (FLAG_emit_unwinding_data) {
-#if defined(TARGET_ARCH_ARM)
-      assembly_stream_.Print(".fnstart\n");
-#endif
-      assembly_stream_.Print(".cfi_startproc\n");
-    }
-
     {
       // 3. Write from the entry point to the end.
       NoSafepointScope no_safepoint;
       uword beginning = reinterpret_cast<uword>(insns.raw()) - kHeapObjectTag;
-      const uword entry = beginning + Instructions::HeaderSize();
-      const uword payload_size = Utils::RoundUp(insns.size(),
-                                                OS::PreferredCodeAlignment());
-      const uword end = entry + payload_size;
+      uword entry = beginning + Instructions::HeaderSize();
+      uword payload_size = insns.size();
+      payload_size = Utils::RoundUp(payload_size, OS::PreferredCodeAlignment());
+      uword end = entry + payload_size;
 
       ASSERT(Utils::IsAligned(beginning, sizeof(uint64_t)));
       ASSERT(Utils::IsAligned(entry, sizeof(uint64_t)));
       ASSERT(Utils::IsAligned(end, sizeof(uint64_t)));
 
-      uword cursor = entry;
-      while (cursor < end) {
-        const intptr_t pc_offset = static_cast<intptr_t>(cursor - entry);
-
-        // Emit all comments that are below the current cursor.
-        while (comment_finger < comments.Length() &&
-               comments.PCOffsetAt(comment_finger) <= pc_offset) {
-          const char* comment =
-              String::Handle(comments.CommentAt(comment_finger)).ToCString();
-          if (comment[0] == '.') {  // Is comment a directive to assembler?
-            assembly_stream_.Print("%s\n", comment);
-          } else {
-#if defined(TARGET_ARCH_ARM) || defined(TARGET_ARCH_ARM64)
-            assembly_stream_.Print("@ %s\n", comment);
-#else
-            assembly_stream_.Print("# %s\n", comment);
-#endif
-          }
-          comment_finger++;
-        }
-
-        // Find the first comment after the cursor and emit all code
-        // from current cursor to the next comment.
-        const uword next_offset = (comment_finger < comments.Length()) ?
-            (entry + comments.PCOffsetAt(comment_finger)) : end;
-        WriteByteSequenceText(cursor, next_offset);
-        cursor = next_offset;
+      for (uword* cursor = reinterpret_cast<uword*>(entry);
+           cursor < reinterpret_cast<uword*>(end);
+           cursor++) {
+        WriteWordLiteral(*cursor);
       }
-    }
-
-    if (FLAG_emit_unwinding_data) {
-      assembly_stream_.Print(".cfi_endproc\n");
-#if defined(TARGET_ARCH_ARM)
-      assembly_stream_.Print(".fnend\n");
-#endif
     }
   }
 

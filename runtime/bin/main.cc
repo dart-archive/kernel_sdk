@@ -1732,9 +1732,6 @@ void main(int argc, char** argv) {
   if ((gen_snapshot_kind == kAppAOT) || is_noopt) {
     vm_options.AddArgument("--precompilation");
   }
-  if ((gen_snapshot_kind == kAppAOT) && !use_blobs) {
-    vm_options.AddArgument("--emit_unwinding_data");
-  }
 #if defined(DART_PRECOMPILED_RUNTIME)
   vm_options.AddArgument("--precompilation");
 #endif

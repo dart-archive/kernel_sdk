@@ -427,8 +427,7 @@ class Assembler : public ValueObject {
 
   const Code::Comments& GetCodeComments() const;
 
-  static const char* RegisterName(Register reg,
-                                  bool use_aliases = true);
+  static const char* RegisterName(Register reg);
 
   static const char* FpuRegisterName(FpuRegister reg);
 

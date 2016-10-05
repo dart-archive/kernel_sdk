@@ -27,9 +27,6 @@ DEFINE_FLAG(bool, dump_instructions_sizes, false,
             "Dump per-symbol information about the size of the "
             "generated code written into the instructions snapshot");
 
-DEFINE_FLAG(bool, print_instruction_stats, false,
-            "Print instruction statistics");
-
 static RawObject* AllocateUninitialized(PageSpace* old_space, intptr_t size) {
   ASSERT(Utils::IsAligned(size, kObjectAlignment));
   uword address = old_space->TryAllocateDataBumpLocked(size,
@@ -4972,9 +4969,6 @@ void FullSnapshotWriter::WriteFullSnapshot() {
 
   if (Snapshot::IncludesCode(kind_)) {
     instructions_writer_->Write();
-    if (FLAG_print_instruction_stats) {
-      instructions_writer_->DumpCombinedCodeStatistics();
-    }
 
     OS::Print("VMIsolate(CodeSize): %" Pd "\n", VmIsolateSnapshotSize());
     OS::Print("Isolate(CodeSize): %" Pd "\n", IsolateSnapshotSize());

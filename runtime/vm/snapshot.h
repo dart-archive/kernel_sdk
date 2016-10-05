@@ -757,7 +757,6 @@ class InstructionsWriter : public ZoneAllocated {
   }
 
   void DumpInstructionsSizes() const;
-  void DumpCombinedCodeStatistics() const;
 
   virtual intptr_t text_size() = 0;
   virtual intptr_t data_size() = 0;
@@ -837,13 +836,6 @@ class AssemblyInstructionsWriter : public InstructionsWriter {
 #endif
     data_size_ += sizeof(value);
   }
-
-  void WriteByteLiteralText(uword value) {
-    assembly_stream_.Print(".byte 0x%0.8" Px "\n", value);
-		text_size_ += sizeof(value);
-  }
-
-  void WriteByteSequenceText(uword start, uword end);
 
   WriteStream assembly_stream_;
   intptr_t text_size_;

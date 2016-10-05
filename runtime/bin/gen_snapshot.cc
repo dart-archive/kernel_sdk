@@ -291,11 +291,6 @@ static bool IsSnapshottingForPrecompilation() {
 }
 
 
-static bool IsAssemblySnapshot() {
-  return (assembly_filename != NULL);
-}
-
-
 // Parse out the command line arguments. Returns -1 if the arguments
 // are incorrect, 0 otherwise.
 static int ParseArguments(int argc,
@@ -1237,9 +1232,6 @@ int main(int argc, char** argv) {
     // This is for the iPod Touch 5th Generation (and maybe other older devices)
     vm_options.AddArgument("--no-use_integer_division");
 #endif
-    if (IsAssemblySnapshot()) {
-      vm_options.AddArgument("--emit_unwinding_data");
-    }
   }
 
   Dart_SetVMFlags(vm_options.count(), vm_options.arguments());

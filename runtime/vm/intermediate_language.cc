@@ -24,7 +24,6 @@
 #include "vm/scopes.h"
 #include "vm/stub_code.h"
 #include "vm/symbols.h"
-#include "vm/code_statistics.h"
 
 #include "vm/il_printer.h"
 
@@ -3213,8 +3212,6 @@ bool PolymorphicInstanceCallInstr::HasOnlyDispatcherTargets() const {
 void PolymorphicInstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   ASSERT(ic_data().NumArgsTested() == 1);
   if (!with_checks()) {
-    compiler->SpecialStatsBegin(
-        CombinedCodeStatistics::kPolymorphicInstanceCallAsStaticCall);
     ASSERT(ic_data().HasOneTarget());
     const Function& target = Function::ZoneHandle(ic_data().GetTargetAt(0));
     compiler->GenerateStaticCall(deopt_id(),
@@ -3224,12 +3221,9 @@ void PolymorphicInstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
                                  instance_call()->argument_names(),
                                  locs(),
                                  ICData::Handle());
-    compiler->SpecialStatsEnd(
-        CombinedCodeStatistics::kPolymorphicInstanceCallAsStaticCall);
     return;
   }
 
-  compiler->StatsBegin(this);
   compiler->EmitPolymorphicInstanceCall(ic_data(),
                                         instance_call()->ArgumentCount(),
                                         instance_call()->argument_names(),
@@ -3237,7 +3231,6 @@ void PolymorphicInstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
                                         instance_call()->token_pos(),
                                         locs(),
                                         complete());
-  compiler->StatsEnd(this);
 }
 #endif
 
