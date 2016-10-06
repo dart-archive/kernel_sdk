@@ -751,7 +751,6 @@ void AssemblyInstructionsWriter::Write() {
     data.obj_ = &Object::Handle(zone, data.raw_obj_);
   }
 
-  SetSection(AssemblyInstructionsWriter::kRXSection);
   assembly_stream_.Print(".text\n");
   assembly_stream_.Print(".globl _kInstructionsSnapshot\n");
   // Start snapshot at page boundary.
@@ -837,7 +836,7 @@ void AssemblyInstructionsWriter::Write() {
       for (uword* cursor = reinterpret_cast<uword*>(entry);
            cursor < reinterpret_cast<uword*>(end);
            cursor++) {
-        WriteWordLiteral(*cursor);
+        WriteWordLiteralText(*cursor);
       }
     }
   }
