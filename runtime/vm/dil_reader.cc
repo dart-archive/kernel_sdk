@@ -725,7 +725,7 @@ dart::Class& DilReader::LookupClass(Class* klass) {
     // we do not risk allocating the class again by calling LookupClass
     // recursively from ReadPreliminaryClass for the same class.
     classes_.Insert(klass, handle);
-    if (!handle->is_cycle_free()) {
+    if (!handle->is_type_finalized()) {
       ReadPreliminaryClass(handle, klass);
     }
   }
