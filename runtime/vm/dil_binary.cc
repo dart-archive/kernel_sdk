@@ -456,13 +456,6 @@ class Reader {
     }
   }
 
-  TokenPosition ReadPosition() {
-    intptr_t value = ReadUInt();
-    // Position is saved as unsigned,
-    // but actually ranges from -1 and up (thus the -1)
-    return TokenPosition(value - 1);
-  }
-
   intptr_t ReadListLength() {
     return ReadUInt();
   }
@@ -665,11 +658,6 @@ class Writer {
   void WriteBytes(uint8_t* bytes, int length) {
     out_->WriteBytes(bytes, length);
     offset_ += length;
-  }
-
-  void WritePosition(TokenPosition position) {
-    intptr_t value = position.value() + 1;
-    WriteUInt(value);
   }
 
   template<typename T>
@@ -897,8 +885,8 @@ void StringTable::WriteTo(Writer* writer) {
   }
 }
 
-void LineStartingTable::ReadFrom(Reader* reader) {
-  size_ = reader->helper()->program()->source_uri_table().strings().length();
+void LineStartingTable::ReadFrom(Reader* reader, intptr_t length) {
+  size_ = length;
   values_ = new intptr_t*[size_];
   for (intptr_t i = 0; i < size_; ++i) {
     intptr_t line_count = reader->ReadUInt();
@@ -906,9 +894,9 @@ void LineStartingTable::ReadFrom(Reader* reader) {
     line_starts[0] = line_count;
     intptr_t previous_line_start = 0;
     for (intptr_t j = 0; j < line_count; ++j) {
-      intptr_t line_start = reader->ReadUInt() + previous_line_start;
-      line_starts[j + 1] = line_start;
-      previous_line_start = line_start;
+      intptr_t lineStart = reader->ReadUInt() + previous_line_start;
+      line_starts[j + 1] = lineStart;
+      previous_line_start = lineStart;
     }
     values_[i] = line_starts;
   }
@@ -935,7 +923,7 @@ Library* Library::ReadFrom(Reader* reader) {
   ASSERT(flags == 0); // external libraries not supported
   name_ = Reference::ReadStringFrom(reader);
   import_uri_ = Reference::ReadStringFrom(reader);
-  source_uri_index_ = reader->ReadUInt();
+  reader->ReadUInt();  // TODO(jensj): source_uri_index
 
   int num_classes = reader->ReadUInt();
   classes().EnsureInitialized(num_classes);
@@ -960,7 +948,7 @@ void Library::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   name_->WriteTo(writer);
   import_uri_->WriteTo(writer);
-  writer->WriteUInt(source_uri_index_);
+  writer->WriteUInt(0);  // TODO(jensj): source_uri_index
 
   writer->WriteUInt(classes_.length());
   for (int i = 0; i < classes_.length(); i++) {
@@ -982,7 +970,7 @@ Class* Class::ReadFrom(Reader* reader) {
 
   is_abstract_ = reader->ReadBool();
   name_ = Reference::ReadStringFrom(reader);
-  source_uri_index_ = reader->ReadUInt();
+  reader->ReadUInt();  // TODO(jensj): source_uri_index
   annotations_.ReadFromStatic<Expression>(reader);
 
   return this;
@@ -992,7 +980,7 @@ void Class::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteBool(is_abstract_);
   name_->WriteTo(writer);
-  writer->WriteUInt(source_uri_index_);
+  writer->WriteUInt(0);  // TODO(jensj): source_uri_index
   annotations_.WriteTo(writer);
 }
 
@@ -1214,10 +1202,10 @@ Field* Field::ReadFrom(Reader* reader) {
   ASSERT(tag == kField);
 
   // TODO: Do we need a variable scope here?
-  position_ = reader->ReadPosition();
+  reader->ReadUInt();  // TODO(jensj): offset
   flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
-  source_uri_index_ = reader->ReadUInt();
+  reader->ReadUInt();  // TODO(jensj): source_uri_index
   annotations_.ReadFromStatic<Expression>(reader);
   type_ = DartType::ReadFrom(reader);
   inferred_value_ = reader->ReadOptional<InferredValue>();
@@ -1228,10 +1216,10 @@ Field* Field::ReadFrom(Reader* reader) {
 void Field::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kField);
-  writer->WritePosition(position_);
+  writer->WriteUInt(0);  // TODO(jensj): offset
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
-  writer->WriteUInt(source_uri_index_);
+  writer->WriteUInt(0);  // TODO(jensj): source_uri_index
   annotations_.WriteTo(writer);
   type_->WriteTo(writer);
   writer->WriteOptional<InferredValue>(inferred_value_);
@@ -1273,7 +1261,7 @@ Procedure* Procedure::ReadFrom(Reader* reader) {
   kind_ = static_cast<ProcedureKind>(reader->ReadByte());
   flags_ = reader->ReadFlags();
   name_ = Name::ReadFrom(reader);
-  source_uri_index_ = reader->ReadUInt();
+  reader->ReadUInt();  // TODO(jensj): source_uri_index
   annotations_.ReadFromStatic<Expression>(reader);
   function_ = reader->ReadOptional<FunctionNode>();
   return this;
@@ -1287,7 +1275,7 @@ void Procedure::WriteTo(Writer* writer) {
   writer->WriteByte(kind_);
   writer->WriteFlags(flags_);
   name_->WriteTo(writer);
-  writer->WriteUInt(source_uri_index_);
+  writer->WriteUInt(0);  // TODO(jensj): source_uri_index
   annotations_.WriteTo(writer);
   writer->WriteOptional<FunctionNode>(function_);
 }
@@ -1549,7 +1537,7 @@ void VariableSet::WriteTo(Writer* writer) {
 PropertyGet* PropertyGet::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   PropertyGet* get = new PropertyGet();
-  get->position_ = reader->ReadPosition();
+  reader->ReadUInt();  // TODO(jensj): offset
   get->receiver_ = Expression::ReadFrom(reader);
   get->name_ = Name::ReadFrom(reader);
   get->interfaceTarget_ = Reference::ReadMemberFrom(reader, true);
@@ -1559,7 +1547,7 @@ PropertyGet* PropertyGet::ReadFrom(Reader* reader) {
 void PropertyGet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kPropertyGet);
-  writer->WritePosition(position_);
+  writer->WriteUInt(0);  // TODO(jensj): offset
   receiver_->WriteTo(writer);
   name_->WriteTo(writer);
   Reference::WriteMemberTo(writer, interfaceTarget_, true);
@@ -1568,7 +1556,7 @@ void PropertyGet::WriteTo(Writer* writer) {
 PropertySet* PropertySet::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   PropertySet* set = new PropertySet();
-  set->position_ = reader->ReadPosition();
+  reader->ReadUInt();  // TODO(jensj): offset
   set->receiver_ = Expression::ReadFrom(reader);
   set->name_ = Name::ReadFrom(reader);
   set->value_= Expression::ReadFrom(reader);
@@ -1579,7 +1567,7 @@ PropertySet* PropertySet::ReadFrom(Reader* reader) {
 void PropertySet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kPropertySet);
-  writer->WritePosition(position_);
+  writer->WriteUInt(0);  // TODO(jensj): offset
   receiver_->WriteTo(writer);
   name_->WriteTo(writer);
   value_->WriteTo(writer);
@@ -1621,7 +1609,7 @@ void DirectPropertySet::WriteTo(Writer* writer) {
 StaticGet* StaticGet::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   StaticGet* get = new StaticGet();
-  get->position_ = reader->ReadPosition();
+  reader->ReadUInt();  // TODO(jensj): offset
   get->target_ = Reference::ReadMemberFrom(reader);
   return get;
 }
@@ -1629,7 +1617,7 @@ StaticGet* StaticGet::ReadFrom(Reader* reader) {
 void StaticGet::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kStaticGet);
-  writer->WritePosition(position_);
+  writer->WriteUInt(0);  // TODO(jensj): offset
   Reference::WriteMemberTo(writer, target_);
 }
 
@@ -1680,7 +1668,7 @@ void NamedExpression::WriteTo(Writer* writer) {
 MethodInvocation* MethodInvocation::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   MethodInvocation* invocation = new MethodInvocation();
-  invocation->position_ = reader->ReadPosition();
+  reader->ReadUInt();  // TODO(jensj): offset
   invocation->receiver_ = Expression::ReadFrom(reader);
   invocation->name_ = Name::ReadFrom(reader);
   invocation->arguments_ = Arguments::ReadFrom(reader);
@@ -1691,7 +1679,7 @@ MethodInvocation* MethodInvocation::ReadFrom(Reader* reader) {
 void MethodInvocation::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kMethodInvocation);
-  writer->WritePosition(position_);
+  writer->WriteUInt(0);  // TODO(jensj): offset
   receiver_->WriteTo(writer);
   name_->WriteTo(writer);
   arguments_->WriteTo(writer);
@@ -1717,18 +1705,18 @@ void DirectMethodInvocation::WriteTo(Writer* writer) {
 
 StaticInvocation* StaticInvocation::ReadFrom(Reader* reader, bool is_const) {
   TRACE_READ_OFFSET();
-  StaticInvocation* invocation = new StaticInvocation();
-  invocation->is_const_ = is_const;
-  invocation->position_ = reader->ReadPosition();
-  invocation->procedure_ = Procedure::Cast(Reference::ReadMemberFrom(reader));
-  invocation->arguments_ = Arguments::ReadFrom(reader);
-  return invocation;
+
+  reader->ReadUInt();  // TODO(jensj): offset
+  Member* member = Reference::ReadMemberFrom(reader);
+  Arguments* args = Arguments::ReadFrom(reader);
+
+  return new StaticInvocation(Procedure::Cast(member), args, is_const);
 }
 
 void StaticInvocation::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(is_const_ ? kConstStaticInvocation : kStaticInvocation);
-  writer->WritePosition(position_);
+  writer->WriteUInt(0);  // TODO(jensj): offset
   Reference::WriteMemberTo(writer, procedure_);
   arguments_->WriteTo(writer);
 }
@@ -1737,7 +1725,7 @@ ConstructorInvocation* ConstructorInvocation::ReadFrom(Reader* reader, bool is_c
   TRACE_READ_OFFSET();
   ConstructorInvocation* invocation = new ConstructorInvocation();
   invocation->is_const_ = is_const;
-  invocation->position_ = reader->ReadPosition();
+  reader->ReadUInt();  // TODO(jensj): offset
   invocation->target_ = Constructor::Cast(Reference::ReadMemberFrom(reader));
   invocation->arguments_ = Arguments::ReadFrom(reader);
   return invocation;
@@ -1746,7 +1734,7 @@ ConstructorInvocation* ConstructorInvocation::ReadFrom(Reader* reader, bool is_c
 void ConstructorInvocation::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(is_const_ ? kConstConstructorInvocation : kConstructorInvocation);
-  writer->WritePosition(position_);
+  writer->WriteUInt(0);  // TODO(jensj): offset
   Reference::WriteMemberTo(writer, target_);
   arguments_->WriteTo(writer);
 }
@@ -1974,7 +1962,7 @@ void Rethrow::WriteTo(Writer* writer) {
 Throw* Throw::ReadFrom(Reader* reader) {
   TRACE_READ_OFFSET();
   Throw* t = new Throw();
-  t->position_ = reader->ReadPosition();
+  reader->ReadUInt();  // TODO(jensj): offset
   t->expression_ = Expression::ReadFrom(reader);
   return t;
 }
@@ -1982,7 +1970,7 @@ Throw* Throw::ReadFrom(Reader* reader) {
 void Throw::WriteTo(Writer* writer) {
   TRACE_WRITE_OFFSET();
   writer->WriteTag(kThrow);
-  writer->WritePosition(position_);
+  writer->WriteUInt(0);  // TODO(jensj): offset
   expression_->WriteTo(writer);
 }
 
@@ -2702,8 +2690,11 @@ Program* Program::ReadFrom(Reader* reader) {
   reader->helper()->set_program(program);
 
   program->string_table_.ReadFrom(reader);
-  program->source_uri_table_.ReadFrom(reader);
-  program->line_starting_table_.ReadFrom(reader);
+  StringTable dummy1;
+  dummy1.ReadFrom(reader);  // TODO(jensj): source_uri_table
+  LineStartingTable dummy2;
+  // TODO(jensj) line_starting_table
+  dummy2.ReadFrom(reader, dummy1.strings_.length());
 
   int libraries = reader->ReadUInt();
   program->libraries().EnsureInitialized(libraries);
@@ -2730,8 +2721,10 @@ void Program::WriteTo(Writer* writer) {
   // NOTE: Currently we don't GC strings and we require that all referenced
   // strings in nodes are present in [string_table_].
   string_table_.WriteTo(writer);
-  source_uri_table_.WriteTo(writer);
-  line_starting_table_.WriteTo(writer);
+  StringTable dummy1;
+  dummy1.WriteTo(writer);  // TODO(jensj): source_uri_table
+  LineStartingTable dummy2;
+  dummy2.WriteTo(writer);  // TODO(jensj) line_starting_table
 
   libraries_.WriteTo(writer);
   Reference::WriteMemberTo(writer, main_method_);

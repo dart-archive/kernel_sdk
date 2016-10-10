@@ -97,18 +97,9 @@ RawClass* BuildingTranslationHelper::LookupClassByDilClass(Class* klass) {
   return reader_->LookupClass(klass).raw();
 }
 
-Program* DilReader::ReadPrecompiledProgram() {
-  Program* program = ReadPrecompiledDilFromBuffer(buffer_, buffer_length_);
-  if (program == NULL) return NULL;
-  intptr_t source_file_count = program->line_starting_table().size();
-  scripts_ = Array::New(source_file_count);
-  program_ = program;
-  return program;
-}
-
 Object& DilReader::ReadProgram() {
   ASSERT(!bootstrapping_);
-  Program* program = ReadPrecompiledProgram();
+  Program* program = ReadPrecompiledDilFromBuffer(buffer_, buffer_length_);
   if (program == NULL) {
     const dart::String& error = H.DartString("Failed to read .dill file");
     return Object::Handle(Z, ApiError::New(error));
@@ -148,7 +139,6 @@ Object& DilReader::ReadProgram() {
     Object& main_obj = Object::Handle(Z,
         library.LookupObjectAllowPrivate(H.DartSymbol("main")));
     ASSERT(!main_obj.IsNull());
-
     return library;
   } else {
     // Everything else is a compile-time error. We don't use the [error] since
@@ -179,7 +169,12 @@ void DilReader::ReadLibrary(Library* dil_library) {
     library.SetLoadInProgress();
   }
   // Setup toplevel class (which contains library fields/procedures).
-  Script& script = ScriptAt(dil_library->source_uri_index());
+
+  // FIXME(kustermann): Figure out why we need this script stuff here.
+  Script& script = Script::Handle(Z,
+      Script::New(H.DartString(""), H.DartString(""), RawScript::kScriptTag));
+  script.SetLocationOffset(0, 0);
+  script.Tokenize(H.DartString("nop() {}"));
   dart::Class& toplevel_class = dart::Class::Handle(dart::Class::New(
       library, Symbols::TopLevel(), script, TokenPosition::kNoSource));
   toplevel_class.set_is_cycle_free();
@@ -200,8 +195,8 @@ void DilReader::ReadLibrary(Library* dil_library) {
         name,
         dil_field->IsFinal(),
         dil_field->IsConst(),
-        ClassForScriptAt(toplevel_class, dil_field->source_uri_index()),
-        dil_field->position()));
+        toplevel_class,
+        TokenPosition::kNoSource));
     field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
     const AbstractType& type = T.TranslateType(dil_field->type());
     field.SetFieldType(type);
@@ -341,6 +336,8 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
 
   ActiveClassScope active_class_scope(&active_class_, dil_klass, &klass);
 
+  TokenPosition pos(0);
+
   for (intptr_t i = 0; i < dil_klass->fields().length(); i++) {
     Field* dil_field = dil_klass->fields()[i];
     ActiveMemberScope active_member_scope(&active_class_, dil_field);
@@ -361,7 +358,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
                          false,  // is_reflectable
                          klass,
                          type,
-                         dil_field->position()));
+                         pos));
     field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
 
     if (dil_field->IsStatic()) {
@@ -388,7 +385,7 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
           dil_constructor->IsExternal(),
           false,  // is_native
           klass,
-          TokenPosition::kNoSource));
+          pos));
     klass.AddFunction(function);
     function.set_dil_function(reinterpret_cast<intptr_t>(dil_constructor));
     function.set_result_type(T.ReceiverType(klass));
@@ -420,6 +417,7 @@ void DilReader::ReadProcedure(const dart::Library& library,
       &active_class_, dil_procedure->function());
 
   const dart::String& name = H.DartProcedureName(dil_procedure);
+  TokenPosition pos(0);
   bool is_method = dil_klass != NULL && !dil_procedure->IsStatic();
   bool is_abstract = dil_procedure->IsAbstract();
   bool is_external = dil_procedure->IsExternal();
@@ -455,7 +453,6 @@ void DilReader::ReadProcedure(const dart::Library& library,
       break;
     }
   }
-
   dart::Function& function = dart::Function::ZoneHandle(Z, Function::New(
         name,
         GetFunctionType(dil_procedure),
@@ -464,8 +461,8 @@ void DilReader::ReadProcedure(const dart::Library& library,
         is_abstract,
         is_external,
         native_name != NULL,  // is_native
-        ClassForScriptAt(owner, dil_procedure->source_uri_index()),
-        TokenPosition::kNoSource));
+        owner,
+        pos));
   owner.AddFunction(function);
   function.set_dil_function(reinterpret_cast<intptr_t>(dil_procedure));
   function.set_is_debuggable(false);
@@ -484,40 +481,6 @@ void DilReader::ReadProcedure(const dart::Library& library,
   }
 }
 
-const Object& DilReader::ClassForScriptAt(const dart::Class& klass,
-        intptr_t source_uri_index) {
-  Script& correct_script = ScriptAt(source_uri_index);
-  if (klass.script() != correct_script.raw()) {
-    // TODO(jensj): We could probably cache this so we don't create
-    // new PatchClasses all the time
-    return PatchClass::ZoneHandle(Z, PatchClass::New(klass, correct_script));
-  }
-  return klass;
-}
-
-Script& DilReader::ScriptAt(intptr_t source_uri_index) {
-  Script& script = Script::ZoneHandle(Z);
-  script ^= scripts_.At(source_uri_index);
-  if (script.IsNull()) {
-    String* uri = program_->source_uri_table().strings()[source_uri_index];
-    script = Script::New(H.DartString(uri),
-          dart::String::ZoneHandle(Z),
-          RawScript::kDilTag);
-    scripts_.SetAt(source_uri_index, script);
-    intptr_t* line_starts = program_->line_starting_table()
-          .valuesFor(source_uri_index);
-    intptr_t line_count = line_starts[0];
-    Array& array_object = Array::Handle(Z, Array::New(line_count));
-    Smi& value = Smi::Handle(Z);
-    for (intptr_t i = 0; i < line_count; ++i) {
-      value = Smi::New(line_starts[i + 1]);
-      array_object.SetAt(i, value);
-    }
-    script.set_line_starts(array_object);
-  }
-  return script;
-}
-
 void DilReader::GenerateFieldAccessors(const dart::Class& klass,
                                        const dart::Field& field,
                                        Field* dil_field) {
@@ -529,6 +492,7 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
   ASSERT(!dil_field->IsStatic() ||
          dil_field->initializer() == NULL ||
          field.has_initializer());
+  TokenPosition pos(0);
 
   // For static fields we only need the getter if the field is lazily
   // initialized.
@@ -551,8 +515,8 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
       false,  // is_abstract
       false,  // is_external
       false,  // is_native
-      ClassForScriptAt(klass, dil_field->source_uri_index()),
-      dil_field->position()));
+      klass,
+      pos));
   klass.AddFunction(getter);
   if (klass.IsTopLevel()) {
     dart::Library& library = dart::Library::Handle(Z, klass.library());
@@ -575,8 +539,8 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
           false,  // is_abstract
           false,  // is_external
           false,  // is_native
-          ClassForScriptAt(klass, dil_field->source_uri_index()),
-          dil_field->position()));
+          klass,
+          pos));
     klass.AddFunction(setter);
     setter.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
     setter.set_result_type(Object::void_type());
@@ -700,8 +664,8 @@ void DilReader::GenerateStaticFieldInitializer(const dart::Field& field,
                         false,  // is_abstract
                         false,  // is_external
                         false,  // is_native
-                        ClassForScriptAt(owner, dil_field->source_uri_index()),
-                        dil_field->position()));
+                        owner,
+                        TokenPosition::kNoSource));
       initializer.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
       initializer.set_result_type(AbstractType::dynamic_type());
       initializer.set_is_debuggable(false);
@@ -743,15 +707,18 @@ dart::Class& DilReader::LookupClass(Class* klass) {
       // least we could have a singleton.  At best, we'd change IsOptimizable to
       // detect test functions some other way (like simply not setting the
       // optimizable bit on those functions in the first place).
-
-      Script& script = ScriptAt(klass->source_uri_index());
+      TokenPosition pos(0);
+      Script& script = Script::Handle(Z, Script::New(H.DartString(""),
+          H.DartString(""), RawScript::kScriptTag));
       handle = &dart::Class::Handle(Z,
-          dart::Class::New(library, name, script, TokenPosition::kNoSource));
+          dart::Class::New(library, name, script, pos));
       library.AddClass(*handle);
     } else if (handle->script() == Script::null()) {
       // When bootstrapping we can encounter classes that do not yet have a
       // dummy script.
-      Script& script = ScriptAt(klass->source_uri_index());
+      TokenPosition pos(0);
+      Script& script = Script::Handle(Z, Script::New(H.DartString(""),
+          H.DartString(""), RawScript::kScriptTag));
       handle->set_script(script);
     }
     // Insert the class in the cache before calling ReadPreliminaryClass so

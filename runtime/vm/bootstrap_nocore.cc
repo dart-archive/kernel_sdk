@@ -52,8 +52,8 @@ RawError* BootstrapFromDil(Thread* thread,
                            const uint8_t* dilfile,
                            intptr_t dilfile_length) {
   Zone* zone = thread->zone();
-  dil::DilReader reader(dilfile, dilfile_length, true);
-  dil::Program* program = reader.ReadPrecompiledProgram();
+  dil::Program* program =
+      ReadPrecompiledDilFromBuffer(dilfile, dilfile_length);
   if (program == NULL) {
     const String& message =
         String::Handle(zone, String::New("Failed to read .dill file"));
@@ -74,6 +74,7 @@ RawError* BootstrapFromDil(Thread* thread,
   Library& library = Library::Handle(zone);
   String& dart_name = String::Handle(zone);
   String& dil_name = String::Handle(zone);
+  dil::DilReader reader(NULL, -1, true);
   for (intptr_t i = 0; i < bootstrap_library_count; ++i) {
     ObjectStore::BootstrapLibraryId id = bootstrap_libraries[i].index_;
     library = isolate->object_store()->bootstrap_library(id);
