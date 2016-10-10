@@ -9,6 +9,7 @@
 
 #include "platform/assert.h"
 #include "vm/globals.h"
+#include "token_position.h"
 
 #define DIL_NODES_DO(M) \
   M(Name) \
@@ -300,7 +301,7 @@ class StringTable {
 
 class LineStartingTable {
  public:
-  void ReadFrom(Reader* reader, intptr_t length);
+  void ReadFrom(Reader* reader);
   void WriteTo(Writer* writer);
   ~LineStartingTable() {
     for (intptr_t i = 0; i < size_; ++i) {
@@ -392,6 +393,7 @@ class Library : public TreeNode {
   virtual void VisitChildren(Visitor* visitor);
 
   String* import_uri() { return import_uri_; }
+  intptr_t source_uri_index() { return source_uri_index_; }
   String* name() { return name_; }
   List<Class>& classes() { return classes_; }
   List<Field>& fields() { return fields_; }
@@ -428,6 +430,7 @@ class Library : public TreeNode {
 
   Ref<String> name_;
   Ref<String> import_uri_;
+  intptr_t source_uri_index_;
   List<Class> classes_;
   List<Field> fields_;
   List<Procedure> procedures_;
@@ -448,6 +451,7 @@ class Class : public TreeNode {
 
   Library* parent() { return parent_; }
   String* name() { return name_; }
+  intptr_t source_uri_index() { return source_uri_index_; }
   bool is_abstract() { return is_abstract_; }
   List<Expression>& annotations() { return annotations_; }
 
@@ -468,6 +472,7 @@ class Class : public TreeNode {
 
   Ref<Library> parent_;
   Ref<String> name_;
+  intptr_t source_uri_index_;
   bool is_abstract_;
   List<Expression> annotations_;
 };
@@ -591,22 +596,26 @@ class Field : public Member {
   bool IsConst() { return (flags_ & kFlagConst) == kFlagConst; }
   bool IsFinal() { return (flags_ & kFlagFinal) == kFlagFinal; }
   bool IsStatic() { return (flags_ & kFlagStatic) == kFlagStatic; }
+  intptr_t source_uri_index() { return source_uri_index_; }
 
   DartType* type() { return type_; }
   InferredValue* inferred_value() { return inferred_value_; }
   Expression* initializer() { return initializer_; }
+  TokenPosition position() { return position_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Field);
-  Field() {}
+  Field() : position_(TokenPosition::kNoSource) {}
 
   template<typename T>
   friend class List;
 
   word flags_;
+  intptr_t source_uri_index_;
   Child<DartType> type_;
   Child<InferredValue> inferred_value_;
   Child<Expression> initializer_;
+  TokenPosition position_;
 };
 
 class Constructor : public Member {
@@ -684,6 +693,7 @@ class Procedure : public Member {
   bool IsAbstract() { return (flags_ & kFlagAbstract) == kFlagAbstract; }
   bool IsExternal() { return (flags_ & kFlagExternal) == kFlagExternal; }
   bool IsConst() { return (flags_ & kFlagConst) == kFlagConst; }
+  intptr_t source_uri_index() { return source_uri_index_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Procedure);
@@ -694,6 +704,7 @@ class Procedure : public Member {
 
   ProcedureKind kind_;
   word flags_;
+  intptr_t source_uri_index_;
   Child<FunctionNode> function_;
 };
 
@@ -866,6 +877,10 @@ class Expression : public TreeNode {
 
   virtual void AcceptTreeVisitor(TreeVisitor* visitor);
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor) = 0;
+  TokenPosition position() { return position_; }
+ protected:
+  Expression() : position_(TokenPosition::kNoSource) {}
+  TokenPosition position_;
 };
 
 class InvalidExpression : public Expression {
@@ -1176,10 +1191,6 @@ class StaticInvocation : public Expression {
   static StaticInvocation* ReadFrom(Reader* reader, bool is_const);
   virtual void WriteTo(Writer* writer);
 
-  explicit StaticInvocation(Procedure* procedure,
-                            Arguments* args,
-                            bool is_const)
-      : procedure_(procedure), arguments_(args), is_const_(is_const) {}
   ~StaticInvocation();
 
   virtual void AcceptExpressionVisitor(ExpressionVisitor* visitor);
@@ -2519,6 +2530,8 @@ class Program : public TreeNode {
   virtual void VisitChildren(Visitor* visitor);
 
   StringTable& string_table() { return string_table_; }
+  StringTable& source_uri_table() { return source_uri_table_; }
+  LineStartingTable& line_starting_table() { return line_starting_table_; }
   List<Library>& libraries() { return libraries_; }
   Procedure* main_method() { return main_method_; }
 
@@ -2529,6 +2542,8 @@ class Program : public TreeNode {
   List<Library> libraries_;
   Ref<Procedure> main_method_;
   StringTable string_table_;
+  StringTable source_uri_table_;
+  LineStartingTable line_starting_table_;
 };
 
 class Reference {
