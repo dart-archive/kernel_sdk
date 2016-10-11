@@ -1608,16 +1608,34 @@ RawObject* Compiler::EvaluateStaticInitializer(const Field& field) {
       Zone* zone = thread->zone();
       ParsedFunction* parsed_function;
 
-      const Class& klass = Class::Handle(zone, field.Owner());
-      const String& init_name = String::Handle(
-          zone,
-          Symbols::FromConcat(thread,
-                              Symbols::InitPrefix(),
-                              String::Handle(zone, field.name())));
-      const Function& initializer_fun = Function::ZoneHandle(zone,
-          klass.LookupFunctionAllowPrivate(init_name));
-      if (!initializer_fun.IsNull() && initializer_fun.dil_function() != 0) {
-        parsed_function = new(zone) ParsedFunction(thread, initializer_fun);
+      // Create a one-time-use function to evaluate the initializer and invoke
+      // it immediately.
+      if (field.dil_field() != 0) {
+        // kImplicitStaticFinalGetter is used for both implicit static getters
+        // and static initializers.  The Kernel graph builder will tell the
+        // difference by pattern matching on the name.
+        const String& name = String::Handle(zone,
+            Symbols::FromConcat(thread,
+                Symbols::InitPrefix(), String::Handle(zone, field.name())));
+        const Script& script = Script::Handle(zone, field.Script());
+        Object& owner = Object::Handle(zone, field.Owner());
+        owner = PatchClass::New(Class::Cast(owner), script);
+        const Function& function = Function::ZoneHandle(zone,
+            Function::New(name,
+                          RawFunction::kImplicitStaticFinalGetter,
+                          true,  // is_static
+                          false,  // is_const
+                          false,  // is_abstract
+                          false,  // is_external
+                          false,  // is_native
+                          owner,
+                          TokenPosition::kNoSource));
+        function.set_dil_function(field.dil_field());
+        function.set_result_type(AbstractType::Handle(zone, field.type()));
+        function.set_is_reflectable(false);
+        function.set_is_debuggable(false);
+        function.set_is_inlinable(false);
+        parsed_function = new(zone) ParsedFunction(thread, function);
       } else {
         parsed_function = Parser::ParseStaticFieldInitializer(field);
         parsed_function->AllocateVariables();

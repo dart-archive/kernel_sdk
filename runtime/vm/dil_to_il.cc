@@ -216,6 +216,13 @@ void ScopeBuilder::AddVariable(VariableDeclaration* declaration) {
 }
 
 
+static bool IsStaticInitializer(const Function& function, Zone* zone) {
+  return (function.kind() == RawFunction::kImplicitStaticFinalGetter) &&
+      dart::String::Handle(zone, function.name())
+          .StartsWith(Symbols::InitPrefix());
+}
+
+
 ScopeBuildingResult* ScopeBuilder::BuildScopes() {
   if (result_ != NULL) return result_;
 
@@ -296,9 +303,13 @@ ScopeBuildingResult* ScopeBuilder::BuildScopes() {
       break;
     }
     case RawFunction::kImplicitGetter:
-    case RawFunction::kImplicitStaticGetter:
+    case RawFunction::kImplicitStaticFinalGetter:
     case RawFunction::kImplicitSetter: {
       ASSERT(node_->IsField());
+      if (IsStaticInitializer(function, Z)) {
+        node_->AcceptVisitor(this);
+        break;
+      }
       bool is_setter = function.IsImplicitSetterFunction();
       bool is_method = !function.IsStaticFunction();
       intptr_t pos = 0;
@@ -315,9 +326,6 @@ ScopeBuildingResult* ScopeBuilder::BuildScopes() {
       }
       break;
     }
-    case RawFunction::kStaticInitializer:
-      node_->AcceptVisitor(this);
-      break;
     case RawFunction::kMethodExtractor: {
       // Add a receiver parameter.  Though it is captured, we emit code to
       // explicitly copy it to a fixed offset in a freshly-allocated context
@@ -2781,15 +2789,12 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
       }
     }
     case RawFunction::kImplicitGetter:
-    case RawFunction::kImplicitStaticGetter:
+    case RawFunction::kImplicitStaticFinalGetter:
     case RawFunction::kImplicitSetter: {
-      ASSERT(node_->IsField());
-      return BuildGraphOfFieldAccessor(Field::Cast(node_),
-                                       scopes_->setter_value);
-    }
-    case RawFunction::kStaticInitializer: {
-      ASSERT(node_->IsField());
-      return BuildGraphOfStaticFieldInitializer(Field::Cast(node_));
+      Field* field = Field::Cast(node_);
+      return IsStaticInitializer(function, Z)
+          ? BuildGraphOfStaticFieldInitializer(field)
+          : BuildGraphOfFieldAccessor(field, scopes_->setter_value);
     }
     case RawFunction::kMethodExtractor:
       return BuildGraphOfMethodExtractor(function);

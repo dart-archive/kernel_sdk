@@ -1146,8 +1146,8 @@ void Parser::ParseFunction(ParsedFunction* parsed_function) {
       ASSERT(!func.is_static());
       node_sequence = parser.ParseInstanceSetter(func);
       break;
-    case RawFunction::kImplicitStaticGetter:
-      node_sequence = parser.ParseStaticGetter(func);
+    case RawFunction::kImplicitStaticFinalGetter:
+      node_sequence = parser.ParseStaticFinalGetter(func);
       INC_STAT(thread, num_implicit_final_getters, 1);
       break;
     case RawFunction::kMethodExtractor:
@@ -1165,7 +1165,6 @@ void Parser::ParseFunction(ParsedFunction* parsed_function) {
 
     // These functions have their own parser or are not parsed.
     case RawFunction::kIrregexpFunction:
-    case RawFunction::kStaticInitializer:
     case RawFunction::kSignatureFunction:
       UNREACHABLE();
   }
@@ -1362,7 +1361,7 @@ ParsedFunction* Parser::ParseStaticFieldInitializer(const Field& field) {
 
   const Function& initializer = Function::ZoneHandle(zone,
       Function::New(init_name,
-                    RawFunction::kStaticInitializer,
+                    RawFunction::kImplicitStaticFinalGetter,
                     true,   // static
                     false,  // !const
                     false,  // !abstract
@@ -1399,8 +1398,8 @@ ParsedFunction* Parser::ParseStaticFieldInitializer(const Field& field) {
 }
 
 
-SequenceNode* Parser::ParseStaticGetter(const Function& func) {
-  TRACE_PARSER("ParseStaticGetter");
+SequenceNode* Parser::ParseStaticFinalGetter(const Function& func) {
+  TRACE_PARSER("ParseStaticFinalGetter");
   ParamList params;
   ASSERT(func.num_fixed_parameters() == 0);  // static.
   ASSERT(!func.HasOptionalParameters());
@@ -2324,7 +2323,7 @@ RawFunction* Parser::GetSuperFunction(TokenPosition token_pos,
     const String& getter_name = String::ZoneHandle(Z, Field::GetterName(name));
     super_func = Resolver::ResolveDynamicAnyArgs(Z, super_class, getter_name);
     ASSERT(super_func.IsNull() ||
-           (super_func.kind() != RawFunction::kImplicitStaticGetter));
+           (super_func.kind() != RawFunction::kImplicitStaticFinalGetter));
   }
   if (super_func.IsNull()) {
     super_func = Resolver::ResolveDynamicAnyArgs(Z,
@@ -4262,15 +4261,15 @@ void Parser::ParseFieldDefinition(ClassDesc* members, MemberDesc* field) {
     }
 
     // For static final fields (this includes static const fields), set value to
-    // "uninitialized" and create a kImplicitStaticGetter getter method.
+    // "uninitialized" and create a kImplicitStaticFinalGetter getter method.
     if (field->has_static && has_initializer) {
       class_field.SetStaticValue(init_value, true);
       if (!has_simple_literal) {
         String& getter_name =
             String::Handle(Z, Field::GetterSymbol(*field->name));
         getter = Function::New(getter_name,
-                               RawFunction::kImplicitStaticGetter,
-                               /* is_static = */ true,
+                               RawFunction::kImplicitStaticFinalGetter,
+                               field->has_static,
                                field->has_const,
                                /* is_abstract = */ false,
                                /* is_external = */ false,
@@ -4291,8 +4290,8 @@ void Parser::ParseFieldDefinition(ClassDesc* members, MemberDesc* field) {
       String& getter_name =
           String::Handle(Z, Field::GetterSymbol(*field->name));
       getter = Function::New(getter_name, RawFunction::kImplicitGetter,
-                             /* is_static = */ false,
-                             /* is_const = */ field->has_final,
+                             field->has_static,
+                             field->has_final,
                              /* is_abstract = */ false,
                              /* is_external = */ false,
                              /* is_native = */ false,
@@ -4310,8 +4309,8 @@ void Parser::ParseFieldDefinition(ClassDesc* members, MemberDesc* field) {
         String& setter_name =
             String::Handle(Z, Field::SetterSymbol(*field->name));
         setter = Function::New(setter_name, RawFunction::kImplicitSetter,
-                               /* is_static = */ false,
-                               /* is_const = */ false,
+                               field->has_static,
+                               field->has_final,
                                /* is_abstract = */ false,
                                /* is_external = */ false,
                                /* is_native = */ false,
@@ -5604,6 +5603,7 @@ void Parser::ParseTopLevelVariable(TopLevel* top_level,
   const bool is_const = (CurrentToken() == Token::kCONST);
   // Const fields are implicitly final.
   const bool is_final = is_const || (CurrentToken() == Token::kFINAL);
+  const bool is_static = true;
   const AbstractType& type = AbstractType::ZoneHandle(Z,
       ParseConstFinalVarOrType(ClassFinalizer::kResolveTypeParameters));
   Field& field = Field::Handle(Z);
@@ -5655,11 +5655,11 @@ void Parser::ParseTopLevelVariable(TopLevel* top_level,
       field.set_has_initializer(true);
 
       if (!has_simple_literal) {
-        // Create a static getter.
+        // Create a static final getter.
         String& getter_name = String::Handle(Z, Field::GetterSymbol(var_name));
         getter = Function::New(getter_name,
-                               RawFunction::kImplicitStaticGetter,
-                               /* is_static = */ true,
+                               RawFunction::kImplicitStaticFinalGetter,
+                               is_static,
                                is_const,
                                /* is_abstract = */ false,
                                /* is_external = */ false,
@@ -11625,7 +11625,7 @@ AstNode* Parser::ParseStaticCall(const Class& cls,
                                      kNumArguments,
                                      Object::empty_array());
       if (!func.IsNull()) {
-        ASSERT(func.kind() != RawFunction::kImplicitStaticGetter);
+        ASSERT(func.kind() != RawFunction::kImplicitStaticFinalGetter);
         closure = new(Z) StaticGetterNode(
             call_pos,
             NULL,
@@ -11727,7 +11727,7 @@ AstNode* Parser::GenerateStaticFieldLookup(const Field& field,
     return new(Z) LoadStaticFieldNode(
         ident_pos, Field::ZoneHandle(Z, field.raw()));
   } else {
-    ASSERT(getter.kind() == RawFunction::kImplicitStaticGetter);
+    ASSERT(getter.kind() == RawFunction::kImplicitStaticFinalGetter);
     return new(Z) StaticGetterNode(ident_pos,
                                    NULL,  // Receiver.
                                    field_owner,
@@ -11764,7 +11764,7 @@ AstNode* Parser::GenerateStaticFieldAccess(const Class& cls,
                                          field_name);
       }
     } else {
-      ASSERT(func.kind() != RawFunction::kImplicitStaticGetter);
+      ASSERT(func.kind() != RawFunction::kImplicitStaticFinalGetter);
       access = new(Z) StaticGetterNode(
           ident_pos, NULL, Class::ZoneHandle(Z, cls.raw()), field_name);
     }
@@ -12489,7 +12489,7 @@ void Parser::InsertCachedConstantValue(const Script& script,
 
 void Parser::CacheConstantValue(TokenPosition token_pos,
                                 const Instance& value) {
-  if (current_function().kind() == RawFunction::kStaticInitializer) {
+  if (current_function().kind() == RawFunction::kImplicitStaticFinalGetter) {
     // Don't cache constants in initializer expressions. They get
     // evaluated only once.
     return;
@@ -12569,7 +12569,7 @@ StaticGetterNode* Parser::RunStaticFieldInitializer(
                                   kNumArguments,
                                   Object::empty_array()));
       ASSERT(!func.IsNull());
-      ASSERT(func.kind() == RawFunction::kImplicitStaticGetter);
+      ASSERT(func.kind() == RawFunction::kImplicitStaticFinalGetter);
       Object& const_value = Object::Handle(Z);
       const_value = DartEntry::InvokeFunction(func, Object::empty_array());
       if (const_value.IsError()) {
@@ -12604,7 +12604,7 @@ StaticGetterNode* Parser::RunStaticFieldInitializer(
     }
   }
   if (getter.IsNull() ||
-      (getter.kind() == RawFunction::kImplicitStaticGetter)) {
+      (getter.kind() == RawFunction::kImplicitStaticFinalGetter)) {
     return NULL;
   }
   ASSERT(getter.kind() == RawFunction::kImplicitGetter);

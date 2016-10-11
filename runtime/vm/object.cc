@@ -5500,11 +5500,10 @@ void Function::set_saved_args_desc(const Array& value) const {
 }
 
 
-RawField* Function::LookupImplicitGetterSetterOrInitializerField() const {
+RawField* Function::LookupImplicitGetterSetterField() const {
   ASSERT((kind() == RawFunction::kImplicitGetter) ||
          (kind() == RawFunction::kImplicitSetter) ||
-         (kind() == RawFunction::kImplicitStaticGetter) ||
-         (kind() == RawFunction::kStaticInitializer));
+         (kind() == RawFunction::kImplicitStaticFinalGetter));
   const Class& owner = Class::Handle(Owner());
   ASSERT(!owner.IsNull());
   const Array& fields = Array::Handle(owner.fields());
@@ -5661,32 +5660,43 @@ const char* Function::KindToCString(RawFunction::Kind kind) {
   switch (kind) {
     case RawFunction::kRegularFunction:
       return "RegularFunction";
+      break;
     case RawFunction::kClosureFunction:
       return "ClosureFunction";
+      break;
     case RawFunction::kSignatureFunction:
       return "SignatureFunction";
+      break;
     case RawFunction::kGetterFunction:
       return "GetterFunction";
+      break;
     case RawFunction::kSetterFunction:
       return "SetterFunction";
+      break;
     case RawFunction::kConstructor:
       return "Constructor";
+      break;
     case RawFunction::kImplicitGetter:
       return "ImplicitGetter";
+      break;
     case RawFunction::kImplicitSetter:
       return "ImplicitSetter";
-    case RawFunction::kImplicitStaticGetter:
-      return "ImplicitStaticGetter";
-    case RawFunction::kStaticInitializer:
-      return "StaticInitializer";
+      break;
+    case RawFunction::kImplicitStaticFinalGetter:
+      return "ImplicitStaticFinalGetter";
+      break;
     case RawFunction::kMethodExtractor:
       return "MethodExtractor";
+      break;
     case RawFunction::kNoSuchMethodDispatcher:
       return "NoSuchMethodDispatcher";
+      break;
     case RawFunction::kInvokeFieldDispatcher:
       return "InvokeFieldDispatcher";
+      break;
     case RawFunction::kIrregexpFunction:
       return "IrregexpFunction";
+      break;
   }
   UNREACHABLE();
   return NULL;
@@ -7229,11 +7239,9 @@ const char* Function::ToCString() const {
     case RawFunction::kImplicitSetter:
       kind_str = " setter";
       break;
-    case RawFunction::kImplicitStaticGetter:
-      kind_str = " static-getter";
+    case RawFunction::kImplicitStaticFinalGetter:
+      kind_str = " static-final-getter";
       break;
-    case RawFunction::kStaticInitializer:
-      kind_str = " static-initializer";
     case RawFunction::kMethodExtractor:
       kind_str = " method-extractor";
       break;

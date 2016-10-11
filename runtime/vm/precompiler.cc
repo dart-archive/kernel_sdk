@@ -1056,11 +1056,11 @@ RawFunction* Precompiler::CompileStaticInitializer(const Field& field,
         Symbols::FromConcat(thread, Symbols::InitPrefix(),
         String::Handle(zone, field.name())));
 
-    // Create a static initializer.
+    // Create a static final getter.
     const dart::Class& owner = dart::Class::Handle(zone, field.Owner());
     const Function& initializer_fun = Function::ZoneHandle(
         zone, dart::Function::New(init_name,
-                                  RawFunction::kStaticInitializer,
+                                  RawFunction::kImplicitStaticFinalGetter,
                                   true,  // is_static
                                   false,  // is_const
                                   false,  // is_abstract
@@ -1580,7 +1580,7 @@ void Precompiler::DropFunctions() {
     while (it.HasNext()) {
       cls = it.GetNextClass();
       if (cls.IsDynamicClass()) {
-        continue;  // Class 'dynamic' is in the read-only VM isolate.
+        continue;  // class 'dynamic' is in the read-only VM isolate.
       }
 
       functions = cls.functions();
@@ -1594,10 +1594,9 @@ void Precompiler::DropFunctions() {
         } else {
           bool top_level = cls.IsTopLevel();
           if (top_level &&
-              (function.kind() != RawFunction::kStaticInitializer) &&
-              (function.kind() != RawFunction::kImplicitStaticGetter)) {
-            // Static initializers and implicit static getters are not
-            // added to the library dictionary in the first place.
+              (function.kind() != RawFunction::kImplicitStaticFinalGetter)) {
+            // Implicit static final getters are not added to the library
+            // dictionary in the first place.
             name = function.DictionaryName();
             bool removed = lib.RemoveObject(function, name);
             ASSERT(removed);

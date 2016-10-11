@@ -22,7 +22,6 @@ accessor_conflict_import_prefixed2_test: RuntimeError
 accessor_conflict_import_prefixed_test: RuntimeError
 accessor_conflict_import_test: RuntimeError
 assertion_test: RuntimeError
-assign_static_type_test/02: Crash
 async_break_in_finally_test: RuntimeError
 async_control_structures_test: RuntimeError
 async_star_cancel_and_throw_in_finally_test: RuntimeError
@@ -352,7 +351,6 @@ try_finally_regress_25654_test: RuntimeError
 type_checks_in_factory_method_test: RuntimeError
 type_parameter_literal_test: RuntimeError
 type_parameter_test/04: Crash
-type_parameter_test/05: Crash
 type_variable_conflict2_test/02: MissingCompileTimeError
 type_variable_conflict2_test/06: MissingCompileTimeError
 type_variable_conflict2_test/08: MissingCompileTimeError

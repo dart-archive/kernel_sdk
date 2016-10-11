@@ -799,18 +799,18 @@ class RawFunction : public RawObject {
   enum Kind {
     kRegularFunction,
     kClosureFunction,
-    kSignatureFunction,  // a signature only without actual code
-    kGetterFunction,  // a getter function, e.g: get foo() { .. }
-    kSetterFunction,  // a setter function, e.g: set foo(..) { .. }
+    kSignatureFunction,  // represents a signature only without actual code.
+    kGetterFunction,     // represents getter functions e.g: get foo() { .. }.
+    kSetterFunction,     // represents setter functions e.g: set foo(..) { .. }.
     kConstructor,
-    kImplicitGetter,  // an implicit getter for fields
-    kImplicitSetter,  // an implicit setter for fields
-    kImplicitStaticGetter,  // an implicit getter for static fields
-    kStaticInitializer,  // a lazy initializer for static fields
-    kMethodExtractor,  // convert method into implicit closure on the receiver
-    kNoSuchMethodDispatcher,  // invoke noSuchMethod
-    kInvokeFieldDispatcher,  // invoke a field as a closure
-    kIrregexpFunction,  // a generated irregexp matcher function
+    kImplicitGetter,     // represents an implicit getter for fields.
+    kImplicitSetter,     // represents an implicit setter for fields.
+    kImplicitStaticFinalGetter,  // represents an implicit getter for static
+                                 // final fields (incl. static const fields).
+    kMethodExtractor,  // converts method into implicit closure on the receiver.
+    kNoSuchMethodDispatcher,  // invokes noSuchMethod.
+    kInvokeFieldDispatcher,  // invokes a field as a closure.
+    kIrregexpFunction,   // represents a generated irregexp matcher function.
   };
 
   enum AsyncModifier {

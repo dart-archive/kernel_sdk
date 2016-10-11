@@ -200,7 +200,7 @@ void DilReader::ReadLibrary(Library* dil_library) {
     field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
     const AbstractType& type = T.TranslateType(dil_field->type());
     field.SetFieldType(type);
-    GenerateStaticFieldInitializer(field, dil_field);
+    field.set_has_initializer(dil_field->initializer() != NULL);
     GenerateFieldAccessors(toplevel_class, field, dil_field);
     toplevel_class.AddField(field);
     library.AddObject(field, name);
@@ -360,12 +360,8 @@ void DilReader::ReadClass(const dart::Library& library, Class* dil_klass) {
                          type,
                          pos));
     field.set_dil_field(reinterpret_cast<intptr_t>(dil_field));
-
-    if (dil_field->IsStatic()) {
-      GenerateStaticFieldInitializer(field, dil_field);
-    }
+    field.set_has_initializer(dil_field->initializer() != NULL);
     GenerateFieldAccessors(klass, field, dil_field);
-
     klass.AddField(field);
   }
 
@@ -484,28 +480,27 @@ void DilReader::ReadProcedure(const dart::Library& library,
 void DilReader::GenerateFieldAccessors(const dart::Class& klass,
                                        const dart::Field& field,
                                        Field* dil_field) {
-  // If the field is static and has an initializer, we assume that
-  // GenerateStaticFieldInitializer has been called to determine if the
-  // initializer value is simple enough to set directly on the field.
-  // GenerateStaticFieldInitializer will set field.has_initializer() if the
-  // field has an initializer.
-  ASSERT(!dil_field->IsStatic() ||
-         dil_field->initializer() == NULL ||
-         field.has_initializer());
   TokenPosition pos(0);
 
-  // For static fields we only need the getter if the field is lazily
-  // initialized.
-  if (dil_field->IsStatic() &&
-      !(field.has_initializer() && field.IsUninitialized())) {
-    return;
+  if (dil_field->IsStatic() && dil_field->initializer() != NULL) {
+    // Static fields with initializers either have the static value set to the
+    // initializer value if it is simple enough or else set to an uninitialized
+    // sentinel.
+    SimpleExpressionConverter converter(H.thread(), Z);
+    if (converter.IsSimple(dil_field->initializer())) {
+      // We do not need a getter.
+      field.SetStaticValue(converter.SimpleValue(), true);
+      return;
+    }
+    // We do need a getter that evaluates the initializer if necessary.
+    field.SetStaticValue(Object::sentinel(), true);
   }
 
   const dart::String& getter_name = H.DartGetterName(dil_field->name());
   Function& getter = Function::ZoneHandle(Z, Function::New(
       getter_name,
       dil_field->IsStatic()
-          ? RawFunction::kImplicitStaticGetter
+          ? RawFunction::kImplicitStaticFinalGetter
           : RawFunction::kImplicitGetter,
       dil_field->IsStatic(),
       // The functions created by the parser have is_const for static fields
@@ -523,7 +518,7 @@ void DilReader::GenerateFieldAccessors(const dart::Class& klass,
     library.AddObject(getter, getter_name);
   }
   getter.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
-  getter.set_result_type(AbstractType::dynamic_type());
+  getter.set_result_type(AbstractType::Handle(Z, field.type()));
   getter.set_is_debuggable(false);
   SetupFieldAccessorFunction(klass, getter);
 
@@ -637,41 +632,6 @@ void DilReader::SetupFieldAccessorFunction(const dart::Class& klass,
     function.SetParameterTypeAt(pos, AbstractType::dynamic_type());
     function.SetParameterNameAt(pos, Symbols::Value());
     pos++;
-  }
-}
-
-void DilReader::GenerateStaticFieldInitializer(const dart::Field& field,
-                                               Field* dil_field) {
-  Expression* initializer = dil_field->initializer();
-  if (initializer != NULL) {
-    field.set_has_initializer(true);
-
-    SimpleExpressionConverter converter(H.thread(), Z);
-    if (converter.IsSimple(initializer)) {
-      field.SetStaticValue(converter.SimpleValue(), true);
-    } else {
-      field.SetStaticValue(Object::sentinel(), true);
-
-      // Create a static final getter.
-      dart::Class& owner = dart::Class::Handle(Z, field.Owner());
-      const dart::String& initializer_name =
-          H.DartInitializerName(dil_field->name());
-      Function& initializer = Function::Handle(Z,
-          Function::New(initializer_name,
-                        RawFunction::kStaticInitializer,
-                        true,  // is_static
-                        false,  // is_const
-                        false,  // is_abstract
-                        false,  // is_external
-                        false,  // is_native
-                        owner,
-                        TokenPosition::kNoSource));
-      initializer.set_dil_function(reinterpret_cast<intptr_t>(dil_field));
-      initializer.set_result_type(AbstractType::dynamic_type());
-      initializer.set_is_debuggable(false);
-      initializer.set_is_reflectable(false);
-      owner.AddFunction(initializer);
-    }
   }
 }
 

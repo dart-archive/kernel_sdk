@@ -97,8 +97,7 @@ DART_EXPORT Dart_Handle Dart_GetFunctionNames(Dart_Handle target) {
         // Skip implicit getters and setters.
         if (func.kind() == RawFunction::kImplicitGetter ||
             func.kind() == RawFunction::kImplicitSetter ||
-            func.kind() == RawFunction::kImplicitStaticGetter ||
-            func.kind() == RawFunction::kStaticInitializer ||
+            func.kind() == RawFunction::kImplicitStaticFinalGetter ||
             func.kind() == RawFunction::kMethodExtractor ||
             func.kind() == RawFunction::kNoSuchMethodDispatcher) {
           continue;

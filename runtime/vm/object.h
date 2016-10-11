@@ -2329,7 +2329,7 @@ class Function : public Object {
   RawContextScope* context_scope() const;
   void set_context_scope(const ContextScope& value) const;
 
-  RawField* LookupImplicitGetterSetterOrInitializerField() const;
+  RawField* LookupImplicitGetterSetterField() const;
 
   // Enclosing function of this local function.
   RawFunction* parent_function() const;
@@ -2411,8 +2411,7 @@ class Function : public Object {
         return true;
       case RawFunction::kClosureFunction:
       case RawFunction::kConstructor:
-      case RawFunction::kImplicitStaticGetter:
-      case RawFunction::kStaticInitializer:
+      case RawFunction::kImplicitStaticFinalGetter:
       case RawFunction::kIrregexpFunction:
         return false;
       case RawFunction::kSignatureFunction:
@@ -2431,8 +2430,7 @@ class Function : public Object {
       case RawFunction::kSetterFunction:
       case RawFunction::kImplicitGetter:
       case RawFunction::kImplicitSetter:
-      case RawFunction::kImplicitStaticGetter:
-      case RawFunction::kStaticInitializer:
+      case RawFunction::kImplicitStaticFinalGetter:
       case RawFunction::kIrregexpFunction:
         return true;
       case RawFunction::kClosureFunction:

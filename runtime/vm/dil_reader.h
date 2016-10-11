@@ -97,9 +97,6 @@ class DilReader {
   void SetupFieldAccessorFunction(const dart::Class& klass,
                                   const dart::Function& function);
 
-  void GenerateStaticFieldInitializer(const dart::Field& field,
-                                      Field* dil_field);
-
   dart::Library& LookupLibrary(Library* library);
   dart::Class& LookupClass(Class* klass);
 

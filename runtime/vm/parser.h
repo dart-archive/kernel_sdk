@@ -625,7 +625,7 @@ class Parser : public ValueObject {
 
   SequenceNode* ParseInstanceGetter(const Function& func);
   SequenceNode* ParseInstanceSetter(const Function& func);
-  SequenceNode* ParseStaticGetter(const Function& func);
+  SequenceNode* ParseStaticFinalGetter(const Function& func);
   SequenceNode* ParseStaticInitializer();
   SequenceNode* ParseMethodExtractor(const Function& func);
   SequenceNode* ParseNoSuchMethodDispatcher(const Function& func);
