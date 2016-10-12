@@ -123,7 +123,9 @@ Object& DilReader::ReadProgram() {
       Library* dil_library = program->libraries()[i];
       dart::Library& library = LookupLibrary(dil_library);
       if (!library.Loaded()) {
-        dart::Class& klass = dart::Class::Handle(Z);
+        dart::Class& klass = dart::Class::Handle(Z, library.toplevel_class());
+        ClassFinalizer::FinalizeTypesInClass(klass);
+        ClassFinalizer::FinalizeClass(klass);
         for (intptr_t i = 0; i < dil_library->classes().length(); i++) {
           klass = LookupClass(dil_library->classes()[i]).raw();
           ClassFinalizer::FinalizeTypesInClass(klass);
@@ -685,7 +687,7 @@ dart::Class& DilReader::LookupClass(Class* klass) {
     // we do not risk allocating the class again by calling LookupClass
     // recursively from ReadPreliminaryClass for the same class.
     classes_.Insert(klass, handle);
-    if (!handle->is_type_finalized()) {
+    if (!handle->is_cycle_free()) {
       ReadPreliminaryClass(handle, klass);
     }
   }

@@ -541,6 +541,7 @@ void Object::InitOnce(Isolate* isolate) {
     cls.set_state_bits(0);
     cls.set_is_finalized();
     cls.set_is_type_finalized();
+    cls.set_is_cycle_free();
     cls.set_type_arguments_field_offset_in_words(Class::kNoTypeArguments);
     cls.set_num_type_arguments(0);
     cls.set_num_own_type_arguments(0);
@@ -561,6 +562,7 @@ void Object::InitOnce(Isolate* isolate) {
   cls.set_num_own_type_arguments(0);
   cls.set_is_finalized();
   cls.set_is_type_finalized();
+  cls.set_is_cycle_free();
 
   // Allocate and initialize the forwarding corpse class.
   cls = Class::New<ForwardingCorpse::FakeInstance>(kForwardingCorpse);
@@ -568,6 +570,7 @@ void Object::InitOnce(Isolate* isolate) {
   cls.set_num_own_type_arguments(0);
   cls.set_is_finalized();
   cls.set_is_type_finalized();
+  cls.set_is_cycle_free();
 
   // Allocate and initialize the sentinel values of Null class.
   {
@@ -829,20 +832,23 @@ void Object::InitOnce(Isolate* isolate) {
   cls.set_is_abstract();
   cls.set_num_type_arguments(0);
   cls.set_num_own_type_arguments(0);
-  cls.set_is_type_finalized();
   cls.set_is_finalized();
+  cls.set_is_type_finalized();
+  cls.set_is_cycle_free();
   dynamic_class_ = cls.raw();
 
   cls = Class::New<Instance>(kVoidCid);
   cls.set_num_type_arguments(0);
   cls.set_num_own_type_arguments(0);
-  cls.set_is_type_finalized();
   cls.set_is_finalized();
+  cls.set_is_type_finalized();
+  cls.set_is_cycle_free();
   void_class_ = cls.raw();
 
   cls = Class::New<Type>();
-  cls.set_is_type_finalized();
   cls.set_is_finalized();
+  cls.set_is_type_finalized();
+  cls.set_is_cycle_free();
 
   cls = dynamic_class_;
   *dynamic_type_ = Type::NewNonParameterizedType(cls);
@@ -3275,6 +3281,7 @@ RawClass* Class::NewNativeWrapper(const Library& library,
     cls.set_num_native_fields(field_count);
     cls.set_is_finalized();
     cls.set_is_type_finalized();
+    cls.set_is_cycle_free();
     cls.set_is_synthesized_class();
     library.AddClass(cls);
     return cls.raw();

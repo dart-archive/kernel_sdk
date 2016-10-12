@@ -1489,6 +1489,7 @@ void ClassFinalizer::ResolveAndFinalizeMemberTypes(const Class& cls) {
                             /* is_native = */ false,
                             cls,
                             field.token_pos()));
+          getter.set_dil_function(field.dil_field());
           getter.set_result_type(type);
           getter.set_is_debuggable(false);
           cls.AddFunction(getter);
