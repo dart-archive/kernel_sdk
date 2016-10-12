@@ -593,22 +593,28 @@ void DilReader::SetupFunctionParameters(TranslationHelper translation_helper_,
   }
   for (intptr_t i = 0; i < node->positional_parameters().length(); i++, pos++) {
     VariableDeclaration* dil_variable = node->positional_parameters()[i];
-    const AbstractType& type = T.TranslateType(dil_variable->type());
+    const AbstractType& type =
+        T.TranslateTypeWithoutFinalization(dil_variable->type());
     function.SetParameterTypeAt(pos,
         type.IsMalformed() ? Type::dynamic_type() : type);
     function.SetParameterNameAt(pos, H.DartSymbol(dil_variable->name()));
   }
   for (intptr_t i = 0; i < node->named_parameters().length(); i++, pos++) {
     VariableDeclaration* named_expression = node->named_parameters()[i];
-    const AbstractType& type = T.TranslateType(named_expression->type());
+    const AbstractType& type =
+        T.TranslateTypeWithoutFinalization(named_expression->type());
     function.SetParameterTypeAt(pos,
         type.IsMalformed() ? Type::dynamic_type() : type);
     function.SetParameterNameAt(pos, H.DartSymbol(named_expression->name()));
   }
 
-  const AbstractType& return_type = T.TranslateType(node->return_type());
-  function.set_result_type(
-      return_type.IsMalformed() ? Type::dynamic_type() : return_type);
+  // The result type for generative constructors has already been set.
+  if (!function.IsGenerativeConstructor()) {
+    const AbstractType& return_type =
+        T.TranslateTypeWithoutFinalization(node->return_type());
+    function.set_result_type(
+        return_type.IsMalformed() ? Type::dynamic_type() : return_type);
+  }
 }
 
 void DilReader::SetupFieldAccessorFunction(const dart::Class& klass,
