@@ -1004,6 +1004,7 @@ class RawScript : public RawObject {
     kSourceTag,
     kPatchTag,
     kEvaluateTag,
+    kDilTag,
   };
 
  private:
@@ -1013,6 +1014,7 @@ class RawScript : public RawObject {
   RawString* url_;
   RawString* resolved_url_;
   RawArray* compile_time_constants_;
+  RawArray* line_starts_;
   RawTokenStream* tokens_;
   RawString* source_;
   RawObject** to() {return reinterpret_cast<RawObject**>(&ptr()->source_); }

@@ -8863,6 +8863,8 @@ const char* Script::GetKindAsCString() const {
       return "patch";
     case RawScript::kEvaluateTag:
       return "evaluate";
+    case RawScript::kDilTag:
+      return "dil";
     default:
       UNIMPLEMENTED();
   }
@@ -8883,6 +8885,11 @@ void Script::set_resolved_url(const String& value) const {
 
 void Script::set_source(const String& value) const {
   StorePointer(&raw_ptr()->source_, value.raw());
+}
+
+
+void Script::set_line_starts(const Array& value) const {
+  StorePointer(&raw_ptr()->line_starts_, value.raw());
 }
 
 
@@ -8936,6 +8943,48 @@ void Script::GetTokenLocation(TokenPosition token_pos,
                               intptr_t* token_len) const {
   ASSERT(line != NULL);
   Zone* zone = Thread::Current()->zone();
+
+  if (this->kind() == RawScript::kDilTag) {
+    const Array& line_starts_array = Array::Handle(line_starts());
+    if (line_starts_array.IsNull()) {
+      // Scripts in the AOT snapshot do not have a line starts array.
+      *line = -1;
+      if (column != NULL) {
+        *column = -1;
+      }
+      if (token_len != NULL) {
+        *token_len = 1;
+      }
+      return;
+    }
+    ASSERT(line_starts_array.Length() > 0);
+    intptr_t offset = token_pos.value();
+    int min = 0;
+    int max = line_starts_array.Length() - 1;
+
+    // Binary search to find the line containing this offset.
+    Smi& smi = Smi::Handle();
+    while (min < max) {
+      int midpoint = (max - min + 1) / 2 + min;
+
+      smi ^= line_starts_array.At(midpoint);
+      if (smi.Value() > offset) {
+        max = midpoint - 1;
+      } else {
+        min = midpoint;
+      }
+    }
+    *line = min + 1;
+    if (column != NULL) {
+      smi ^= line_starts_array.At(min);
+      *column = offset - smi.Value() + 1;
+    }
+    if (token_len != NULL) {
+      *token_len = 1;
+    }
+    return;
+  }
+
   const TokenStream& tkns = TokenStream::Handle(zone, tokens());
   if (tkns.IsNull()) {
     *line = -1;
@@ -8947,7 +8996,7 @@ void Script::GetTokenLocation(TokenPosition token_pos,
     }
     return;
   }
-  if (column == NULL) {
+  if (!HasSource()) {
     TokenStream::Iterator tkit(zone,
                                tkns,
                                TokenPosition::kMinSource,
@@ -8968,7 +9017,9 @@ void Script::GetTokenLocation(TokenPosition token_pos,
     scanner.ScanTo(src_pos);
     intptr_t relative_line = scanner.CurrentPosition().line;
     *line = relative_line + line_offset();
-    *column = scanner.CurrentPosition().column;
+    if (column != NULL) {
+      *column = scanner.CurrentPosition().column;
+    }
     if (token_len != NULL) {
       if (scanner.current_token().literal != NULL) {
         *token_len = scanner.current_token().literal->Length();
@@ -8977,7 +9028,7 @@ void Script::GetTokenLocation(TokenPosition token_pos,
       }
     }
     // On the first line of the script we must add the column offset.
-    if (relative_line == 1) {
+    if (column != NULL && relative_line == 1) {
       *column += col_offset();
     }
   }
@@ -22413,11 +22464,7 @@ static intptr_t PrintOneStacktrace(Zone* zone,
   intptr_t line = -1;
   intptr_t column = -1;
   if (!script.IsNull() && token_pos.IsReal()) {
-    if (script.HasSource()) {
-      script.GetTokenLocation(token_pos, &line, &column);
-    } else {
-      script.GetTokenLocation(token_pos, &line, NULL);
-    }
+    script.GetTokenLocation(token_pos, &line, &column);
   }
   char* chars = NULL;
   if (column >= 0) {
