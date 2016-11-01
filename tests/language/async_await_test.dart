@@ -96,6 +96,7 @@ main() {
       return f();
     });
 
+    // Crashes in the AOT compiler.
     // test("await throw", () {
     //   f() async {
     //     await (throw "err");  // Check grammar: Are parentheses necessary?
@@ -104,6 +105,7 @@ main() {
     //   return throwsErr(f());
     // });
 
+    // Crashes in the AOT compiler.
     // test("throw before await", () {
     //   f() async {
     //     var x = throw "err";
@@ -805,6 +807,8 @@ main() {
       return expect42(f());
     });
 
+    // Fails (x is 0, not 37) due to incorrect placement of inlined finally code
+    // (not in the future).
     // test("await in finally", () {
     //   var x = 0;
     //   f() async {
@@ -832,6 +836,7 @@ main() {
                       onError: (e) { expect(e, equals("err")); });
     });
 
+    // Crashes in both the JIT and AOT compilers.
     // test("await err in finally", () {
     //   f() async {
     //     try {
@@ -1528,9 +1533,9 @@ main() {
       return expect42(asyncInAsync(f42));
     });
 
-    // test("sync in async", () {
-    //   return expect42(syncInAsync(f42));
-    // });
+    test("sync in async", () {
+      return expect42(syncInAsync(f42));
+    });
 
     test("async in sync", () {
       return expect42(asyncInSync(f42));
@@ -1608,13 +1613,13 @@ main() {
       return expect42(f());
     });
 
-    // test("suffix operator + increment 2", () {
-    //   f() async {
-    //     var v = [42];
-    //     return await v[await 0]++;
-    //   }
-    //   return expect42(f());
-    // });
+    test("suffix operator + increment 2", () {
+      f() async {
+        var v = [42];
+        return await v[await 0]++;
+      }
+      return expect42(f());
+    });
 
     test("unary pre-increment operator", () {
       f() async {
@@ -1698,13 +1703,13 @@ main() {
       return expect42(f());
     });
 
-    // test("instance function call w/ await", () {
-    //   f() async {
-    //     var a = new Async();
-    //     return await a.instanceMethod(await 42);
-    //   }
-    //   return expect42(f());
-    // });
+    test("instance function call w/ await", () {
+      f() async {
+        var a = new Async();
+        return await a.instanceMethod(await 42);
+      }
+      return expect42(f());
+    });
 
     test("top-level getter call", () {
       f() async {
@@ -1761,27 +1766,26 @@ main() {
         expect(e is AssertionError, isTrue);
       });
     });
-
   });
 
   group("syntax", () {
-  //   test("async as variable", () {
-  //     // Valid identifiers outside of async function.
-  //     var async = 42;
-  //     expect(async, equals(42));
-  //   });
+    test("async as variable", () {
+      // Valid identifiers outside of async function.
+      var async = 42;
+      expect(async, equals(42));
+    });
 
-  //   test("await as variable", () {
-  //     // Valid identifiers outside of async function.
-  //     var await = 42;
-  //     expect(await, equals(42));
-  //   });
+    test("await as variable", () {
+      // Valid identifiers outside of async function.
+      var await = 42;
+      expect(await, equals(42));
+    });
 
-  //   test("yield as variable", () {
-  //     // Valid identifiers outside of async function.
-  //     var yield = 42;
-  //     expect(yield, equals(42));
-  //   });
+    test("yield as variable", () {
+      // Valid identifiers outside of async function.
+      var yield = 42;
+      expect(yield, equals(42));
+    });
   });
 }
 
