@@ -55,13 +55,6 @@ Language/Classes/definition_t23: CompileTimeError
 Language/Enums/declaration_equivalent_t01: RuntimeError
 Language/Enums/syntax_t08: MissingCompileTimeError
 Language/Enums/syntax_t09: MissingCompileTimeError
-Language/Expressions/Assignment/indexed_expression_super_t01: RuntimeError
-Language/Expressions/Assignment/indexed_expression_super_t02: RuntimeError
-Language/Expressions/Assignment/indexed_expression_super_t04: RuntimeError
-Language/Expressions/Assignment/super_assignment_failed_t01: RuntimeError
-Language/Expressions/Assignment/super_assignment_failed_t02: RuntimeError
-Language/Expressions/Assignment/super_assignment_t06: RuntimeError
-Language/Expressions/Assignment/super_assignment_value_t02: RuntimeError
 Language/Expressions/Constants/exception_t01: MissingCompileTimeError
 Language/Expressions/Constants/exception_t02: MissingCompileTimeError
 Language/Expressions/Constants/string_length_t01: Crash
@@ -103,11 +96,6 @@ Language/Expressions/Method_Invocation/Ordinary_Invocation/evaluation_t07: Runti
 Language/Expressions/Method_Invocation/Ordinary_Invocation/method_lookup_failed_t18: RuntimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/syntax_t05: MissingCompileTimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/syntax_t10: MissingCompileTimeError
-Language/Expressions/Method_Invocation/Super_Invocation/evaluation_t05: Crash
-Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t01: RuntimeError
-Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t02: RuntimeError
-Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t03: RuntimeError
-Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t04: RuntimeError
 Language/Expressions/Method_Invocation/Super_Invocation/syntax_t05: MissingCompileTimeError
 Language/Expressions/Object_Identity/string_t01: RuntimeError
 Language/Expressions/Property_Extraction/Anonymous_Constructor_Closurization/identical_t01: CompileTimeError
@@ -244,8 +232,6 @@ Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_cl
 Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_closurization_t06: CompileTimeError
 Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_closurization_t07: CompileTimeError
 Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_closurization_t08: CompileTimeError
-Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t01: RuntimeError
-Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t02: RuntimeError
 Language/Expressions/Spawning_an_Isolate/new_isolate_t01: Crash
 Language/Expressions/Strings/adjacent_strings_t02: RuntimeError
 Language/Expressions/Type_Test/evaluation_t10: RuntimeError
@@ -328,17 +314,6 @@ Language/Variables/final_t04: MissingCompileTimeError
 Language/Variables/final_t05: MissingCompileTimeError
 Language/Variables/final_t06: MissingCompileTimeError
 Language/Variables/final_t07: MissingCompileTimeError
-LibTest/core/Invocation/isAccessor_A01_t01: RuntimeError
-LibTest/core/Invocation/isAccessor_A01_t02: RuntimeError
-LibTest/core/Invocation/isGetter_A01_t01: RuntimeError
-LibTest/core/Invocation/isGetter_A01_t02: RuntimeError
-LibTest/core/Invocation/isMethod_A01_t01: RuntimeError
-LibTest/core/Invocation/isMethod_A01_t02: RuntimeError
-LibTest/core/Invocation/isSetter_A01_t01: RuntimeError
-LibTest/core/Invocation/isSetter_A01_t02: RuntimeError
-LibTest/core/Invocation/memberName_A01_t01: RuntimeError
-LibTest/core/Invocation/namedArguments_A01_t01: RuntimeError
-LibTest/core/Invocation/positionalArguments_A01_t01: RuntimeError
 
 # dartk: precompilation failures
 [ $compiler == dartkp && $runtime == dart_precompiled ]
@@ -364,13 +339,6 @@ Language/Classes/definition_t23: CompileTimeError
 Language/Enums/declaration_equivalent_t01: RuntimeError
 Language/Enums/syntax_t08: MissingCompileTimeError
 Language/Enums/syntax_t09: MissingCompileTimeError
-Language/Expressions/Assignment/indexed_expression_super_t01: RuntimeError
-Language/Expressions/Assignment/indexed_expression_super_t02: RuntimeError
-Language/Expressions/Assignment/indexed_expression_super_t04: RuntimeError
-Language/Expressions/Assignment/super_assignment_failed_t01: RuntimeError
-Language/Expressions/Assignment/super_assignment_failed_t02: RuntimeError
-Language/Expressions/Assignment/super_assignment_t06: RuntimeError
-Language/Expressions/Assignment/super_assignment_value_t02: RuntimeError
 Language/Expressions/Constants/exception_t01: Crash
 Language/Expressions/Constants/exception_t02: Crash
 Language/Expressions/Constants/string_length_t01: Crash
@@ -410,11 +378,6 @@ Language/Expressions/Method_Invocation/Ordinary_Invocation/evaluation_t07: Runti
 Language/Expressions/Method_Invocation/Ordinary_Invocation/method_lookup_failed_t18: RuntimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/syntax_t05: MissingCompileTimeError
 Language/Expressions/Method_Invocation/Ordinary_Invocation/syntax_t10: MissingCompileTimeError
-Language/Expressions/Method_Invocation/Super_Invocation/evaluation_t05: Crash
-Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t01: RuntimeError
-Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t02: RuntimeError
-Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t03: RuntimeError
-Language/Expressions/Method_Invocation/Super_Invocation/getter_lookup_failed_t04: RuntimeError
 Language/Expressions/Method_Invocation/Super_Invocation/syntax_t05: MissingCompileTimeError
 Language/Expressions/Multiplicative_Expressions/syntax_t01: Crash
 Language/Expressions/Null/instance_of_class_null_t01: Crash
@@ -552,8 +515,6 @@ Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_cl
 Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_closurization_t06: CompileTimeError
 Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_closurization_t07: CompileTimeError
 Language/Expressions/Property_Extraction/Ordinary_Member_Closurization/setter_closurization_t08: CompileTimeError
-Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t01: RuntimeError
-Language/Expressions/Property_Extraction/Super_Getter_Access_and_Method_Closurization/no_such_method_t02: RuntimeError
 Language/Expressions/Type_Test/evaluation_t10: RuntimeError
 Language/Expressions/Unary_Expressions/syntax_t10: Crash
 Language/Functions/External_Functions/not_connected_to_a_body_t01: RuntimeError
@@ -632,14 +593,3 @@ Language/Variables/final_t04: MissingCompileTimeError
 Language/Variables/final_t05: MissingCompileTimeError
 Language/Variables/final_t06: MissingCompileTimeError
 Language/Variables/final_t07: MissingCompileTimeError
-LibTest/core/Invocation/isAccessor_A01_t01: RuntimeError
-LibTest/core/Invocation/isAccessor_A01_t02: Crash
-LibTest/core/Invocation/isGetter_A01_t01: RuntimeError
-LibTest/core/Invocation/isGetter_A01_t02: Crash
-LibTest/core/Invocation/isMethod_A01_t01: Crash
-LibTest/core/Invocation/isMethod_A01_t02: RuntimeError
-LibTest/core/Invocation/isSetter_A01_t01: RuntimeError
-LibTest/core/Invocation/isSetter_A01_t02: Crash
-LibTest/core/Invocation/memberName_A01_t01: RuntimeError
-LibTest/core/Invocation/namedArguments_A01_t01: Crash
-LibTest/core/Invocation/positionalArguments_A01_t01: Crash

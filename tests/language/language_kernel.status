@@ -29,7 +29,7 @@ async_star_cancel_while_paused_test: RuntimeError
 async_star_regression_fisk_test: Timeout
 async_star_stream_take_test: Timeout
 async_star_take_reyield_test: Timeout
-async_star_test: RuntimeError
+async_star_test: Timeout
 async_throw_in_catch_test/forceAwait: RuntimeError
 async_throw_in_catch_test/none: RuntimeError
 asyncstar_throw_in_catch_test: Timeout
@@ -153,7 +153,6 @@ external_test/25: MissingCompileTimeError
 f_bounded_equality_test: RuntimeError
 field_initialization_order_test: RuntimeError
 final_field_initialization_order_test: RuntimeError
-final_super_field_set_test/01: RuntimeError
 final_syntax_test/01: MissingCompileTimeError
 final_syntax_test/02: MissingCompileTimeError
 final_syntax_test/03: MissingCompileTimeError
@@ -169,7 +168,6 @@ fixed_type_variable_test/05: RuntimeError
 fixed_type_variable_test/06: RuntimeError
 for2_test: RuntimeError
 for_variable_capture_test: RuntimeError
-forwarding_factory_constructor_default_values_test: RuntimeError
 function_subtype2_test: RuntimeError
 function_subtype_bound_closure3_test: RuntimeError
 function_subtype_bound_closure4_test: RuntimeError
@@ -204,7 +202,6 @@ initializing_formal_capture_test: CompileTimeError
 initializing_formal_final_test: CompileTimeError
 initializing_formal_type_test: CompileTimeError
 instance_creation_in_function_annotation_test: RuntimeError
-invocation_mirror_test: RuntimeError
 is_not_class2_test: RuntimeError
 issue13474_test: RuntimeError
 issue23244_test: Crash
@@ -309,7 +306,6 @@ prefix10_negative_test: Fail
 prefix16_test: RuntimeError
 prefix21_test: RuntimeError
 redirecting_constructor_initializer_test: RuntimeError
-redirecting_factory_default_values_test/none: RuntimeError
 redirecting_factory_reflection_test: RuntimeError
 regress_18713_test: RuntimeError
 regress_22443_test: RuntimeError
@@ -324,19 +320,6 @@ script2_negative_test: Fail
 setter_no_getter_call_test/none: RuntimeError
 static_setter_get_test/01: RuntimeError
 super_call3_test/01: Crash
-super_call4_test: RuntimeError
-super_getter_setter_test: RuntimeError
-super_no_such_method1_test/01: RuntimeError
-super_no_such_method2_test/01: RuntimeError
-super_no_such_method3_test/01: RuntimeError
-super_no_such_method4_test/01: RuntimeError
-super_no_such_method5_test/01: RuntimeError
-super_operator_index3_test: RuntimeError
-super_operator_index4_test: RuntimeError
-super_operator_index5_test: RuntimeError
-super_operator_index6_test: RuntimeError
-super_operator_index7_test: RuntimeError
-super_operator_index8_test: RuntimeError
 super_test: RuntimeError
 switch7_negative_test: Fail
 switch_try_catch_test: RuntimeError
@@ -377,7 +360,7 @@ async_star_cancel_while_paused_test: RuntimeError
 async_star_regression_fisk_test: Timeout
 async_star_stream_take_test: Timeout
 async_star_take_reyield_test: Timeout
-async_star_test: Crash
+async_star_test: Timeout
 async_throw_in_catch_test/forceAwait: RuntimeError
 async_throw_in_catch_test/none: RuntimeError
 asyncstar_throw_in_catch_test: Timeout
@@ -498,7 +481,6 @@ external_test/25: MissingCompileTimeError
 f_bounded_equality_test: RuntimeError
 field_initialization_order_test: RuntimeError
 final_field_initialization_order_test: RuntimeError
-final_super_field_set_test/01: RuntimeError
 final_syntax_test/01: MissingCompileTimeError
 final_syntax_test/02: MissingCompileTimeError
 final_syntax_test/03: MissingCompileTimeError
@@ -514,7 +496,6 @@ fixed_type_variable_test/05: RuntimeError
 fixed_type_variable_test/06: RuntimeError
 for2_test: RuntimeError
 for_variable_capture_test: RuntimeError
-forwarding_factory_constructor_default_values_test: RuntimeError
 full_stacktrace1_test: RuntimeError
 full_stacktrace2_test: RuntimeError
 full_stacktrace3_test: RuntimeError
@@ -554,7 +535,6 @@ initializing_formal_final_test: CompileTimeError
 initializing_formal_type_test: CompileTimeError
 instance_creation_in_function_annotation_test: Crash
 invocation_mirror_invoke_on2_test: Crash
-invocation_mirror_test: Crash
 is_not_class2_test: RuntimeError
 issue13474_test: RuntimeError
 issue21079_test: Crash
@@ -661,7 +641,6 @@ prefix10_negative_test: Fail
 prefix16_test: RuntimeError
 prefix21_test: RuntimeError
 redirecting_constructor_initializer_test: RuntimeError
-redirecting_factory_default_values_test/none: RuntimeError
 redirecting_factory_reflection_test: Crash
 regress_18535_test: Crash
 regress_18713_test: RuntimeError
@@ -682,19 +661,6 @@ stacktrace_rethrow_error_test/withtraceparameter: RuntimeError
 stacktrace_rethrow_nonerror_test: RuntimeError
 static_setter_get_test/01: RuntimeError
 super_call3_test/01: Crash
-super_call4_test: RuntimeError
-super_getter_setter_test: RuntimeError
-super_no_such_method1_test/01: RuntimeError
-super_no_such_method2_test/01: RuntimeError
-super_no_such_method3_test/01: RuntimeError
-super_no_such_method4_test/01: RuntimeError
-super_no_such_method5_test/01: RuntimeError
-super_operator_index3_test: RuntimeError
-super_operator_index4_test: RuntimeError
-super_operator_index5_test: RuntimeError
-super_operator_index6_test: RuntimeError
-super_operator_index7_test: RuntimeError
-super_operator_index8_test: RuntimeError
 super_test: RuntimeError
 switch7_negative_test: Fail
 switch_try_catch_test: RuntimeError
