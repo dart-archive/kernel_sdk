@@ -360,7 +360,7 @@ async_star_cancel_while_paused_test: RuntimeError
 async_star_regression_fisk_test: Timeout
 async_star_stream_take_test: Timeout
 async_star_take_reyield_test: Timeout
-async_star_test: Timeout
+async_star_test: Crash
 async_throw_in_catch_test/forceAwait: RuntimeError
 async_throw_in_catch_test/none: RuntimeError
 asyncstar_throw_in_catch_test: Timeout
@@ -661,6 +661,7 @@ stacktrace_rethrow_error_test/withtraceparameter: RuntimeError
 stacktrace_rethrow_nonerror_test: RuntimeError
 static_setter_get_test/01: RuntimeError
 super_call3_test/01: Crash
+super_call4_test: RuntimeError
 super_test: RuntimeError
 switch7_negative_test: Fail
 switch_try_catch_test: RuntimeError
