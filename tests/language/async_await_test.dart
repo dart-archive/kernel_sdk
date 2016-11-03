@@ -807,22 +807,20 @@ main() {
       return expect42(f());
     });
 
-    // Fails (x is 0, not 37) due to incorrect placement of inlined finally code
-    // (not in the future).
-    // test("await in finally", () {
-    //   var x = 0;
-    //   f() async {
-    //     try {
-    //       return id(42);
-    //     } finally {
-    //       x = await new Future.value(37);
-    //     }
-    //   }
-    //   return f().then((v) {
-    //     expect(v, equals(42));
-    //     expect(x, equals(37));
-    //   });
-    // });
+    test("await in finally", () {
+      var x = 0;
+      f() async {
+        try {
+          return id(42);
+        } finally {
+          x = await new Future.value(37);
+        }
+      }
+      return f().then((v) {
+        expect(v, equals(42));
+        expect(x, equals(37));
+      });
+    });
 
     test("await err in body", () {
       f() async {
@@ -872,34 +870,34 @@ main() {
       return expect42(f());
     });
 
-    // test("await in body, override in finally", () {
-    //   f() async {
-    //     label: try {
-    //       return await new Future.value(37);
-    //     } finally {
-    //       break label;
-    //     }
-    //     return id(42);
-    //   }
-    //   return expect42(f());
-    // });
+    test("await in body, override in finally", () {
+      f() async {
+        label: try {
+          return await new Future.value(37);
+        } finally {
+          break label;
+        }
+        return id(42);
+      }
+      return expect42(f());
+    });
 
-    // test("await, override in finally", () {
-    //   var x = 0;
-    //   f() async {
-    //     label: try {
-    //       return 87;
-    //     } finally {
-    //       x = await new Future.value(37);
-    //       break label;
-    //     }
-    //     return id(42);
-    //   }
-    //   return f().then((v) {
-    //     expect(v, equals(42));
-    //     expect(x, equals(37));
-    //   });
-    // });
+    test("await, override in finally", () {
+      var x = 0;
+      f() async {
+        label: try {
+          return 87;
+        } finally {
+          x = await new Future.value(37);
+          break label;
+        }
+        return id(42);
+      }
+      return f().then((v) {
+        expect(v, equals(42));
+        expect(x, equals(37));
+      });
+    });
 
     test("throw in body, await, override in finally 3", () {
       var x = 0;
@@ -930,19 +928,19 @@ main() {
       return expect42(f());
     });
 
-    // test("await in body, no-exit in finally", () {
-    //   f() async {
-    //     for (int i = 0; i < 10; i++) {
-    //       try {
-    //         return await i;
-    //       } finally {
-    //         continue;
-    //       }
-    //     }
-    //     return id(42);
-    //   }
-    //   return expect42(f());
-    // });
+    test("await in body, no-exit in finally", () {
+      f() async {
+        for (int i = 0; i < 10; i++) {
+          try {
+            return await i;
+          } finally {
+            continue;
+          }
+        }
+        return id(42);
+      }
+      return expect42(f());
+    });
 
     test("no-exit after await in finally", () {
       f() async {
@@ -980,54 +978,54 @@ main() {
       });
     });
 
-    // test("no-exit before await in finally 2", () {
-    //   f() async {
-    //     for (int i = 0; i < 10; i++) {
-    //       try {
-    //         return i;
-    //       } finally {
-    //         if (i >= 0) continue;
-    //         await new Future.value(42);
-    //       }
-    //     }
-    //     return id(42);
-    //   }
-    //   return expect42(f());
-    // });
+    test("no-exit before await in finally 2", () {
+      f() async {
+        for (int i = 0; i < 10; i++) {
+          try {
+            return i;
+          } finally {
+            if (i >= 0) continue;
+            await new Future.value(42);
+          }
+        }
+        return id(42);
+      }
+      return expect42(f());
+    });
 
-    // test("no-exit after await in finally", () {
-    //   f() async {
-    //     for (int i = 0; i < 10; i++) {
-    //       try {
-    //         return i;
-    //       } finally {
-    //         await new Future.value(42);
-    //         continue;
-    //       }
-    //     }
-    //     return id(42);
-    //   }
-    //   return expect42(f());
-    // });
+    test("no-exit after await in finally", () {
+      f() async {
+        for (int i = 0; i < 10; i++) {
+          try {
+            return i;
+          } finally {
+            await new Future.value(42);
+            continue;
+          }
+        }
+        return id(42);
+      }
+      return expect42(f());
+    });
 
-    // test("nested finallies", () {
-    //   var x = 0;
-    //   f() async {
-    //     try {
-    //       try {
-    //         return 42;
-    //       } finally {
-    //         x = await new Future.value(37);
-    //       }
-    //     } finally {
-    //       x += await new Future.value(37);
-    //     }
-    //   }
-    //   return f().then((v) {
-    //     expect(v, equals(42));
-    //     expect(x, equals(74));
-    //   });
-    // });
+    test("nested finallies", () {
+      var x = 0;
+      f() async {
+        try {
+          try {
+            return 42;
+          } finally {
+            x = await new Future.value(37);
+          }
+        } finally {
+          x += await new Future.value(37);
+        }
+      }
+      return f().then((v) {
+        expect(v, equals(42));
+        expect(x, equals(74));
+      });
+    });
 
     test("nested finallies 2", () {
       var x = 0;
@@ -1049,23 +1047,25 @@ main() {
       });
     });
 
-    // test("nested finallies 3", () {
-    //   var x = 0;
-    //   f() async {
-    //     label: try {
-    //       try {
-    //         break label;
-    //       } finally {
-    //         return await new Future.value(42);
-    //       }
-    //     } finally {
-    //       break label;
-    //     }
-    //     return 42;
-    //   }
-    //   return expect42(f());
-    // });
+    test("nested finallies 3", () {
+      var x = 0;
+      f() async {
+        label: try {
+          try {
+            break label;
+          } finally {
+            return await new Future.value(42);
+          }
+        } finally {
+          break label;
+        }
+        return 42;
+      }
+      return expect42(f());
+    });
 
+    // Expected: 'err'
+    // Actual: NullThrownError
     // test("nested finallies, throw", () {
     //   var x = 0;
     //   f() async {
@@ -1127,23 +1127,23 @@ main() {
       return expect42(f());
     });
 
-    // test("await in finally", () {
-    //   var x = 0;
-    //   f() async {
-    //     try {
-    //       return id(42);
-    //     } catch (e) {
-    //       throw null;
-    //     } finally {
-    //       x = await new Future.value(37);
-    //       if (id(42) == id(10)) return 10;
-    //     }
-    //   }
-    //   return f().then((v) {
-    //     expect(v, equals(42));
-    //     expect(x, equals(37));
-    //   });
-    // });
+    test("await in finally", () {
+      var x = 0;
+      f() async {
+        try {
+          return id(42);
+        } catch (e) {
+          throw null;
+        } finally {
+          x = await new Future.value(37);
+          if (id(42) == id(10)) return 10;
+        }
+      }
+      return f().then((v) {
+        expect(v, equals(42));
+        expect(x, equals(37));
+      });
+    });
   });
 
   group("switch", () {
